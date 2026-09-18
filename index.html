@@ -7,6 +7,7 @@
   <meta name="description" content="Kalendár smien pre ChillPoint Laser Aréna Trnava">
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     :root{--yellow:#f5bb16;--black:#0a0c0f;--panel:#17191d;--line:#34373c;--muted:#a7a9ad;--white:#fff;--red:#ff6c6c;--green:#5fd67a}
     *{box-sizing:border-box}
@@ -127,6 +128,9 @@
     .form{display:grid;gap:9px}
     .form label{display:block;color:var(--yellow);font-size:12px;font-weight:800;letter-spacing:.1em;margin:5px 0 0}
     .form input{width:100%;height:44px;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:0 13px}
+    .form textarea{width:100%;min-height:80px;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:10px 13px;font:inherit;resize:vertical}
+    .note-box{background:#241d10;border:1px solid #4a3a10;color:#f1e6b8;padding:12px;font-size:14px;white-space:pre-wrap}
+    .day.past{opacity:.5}
     .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
     .msg{color:var(--yellow);font-size:13px;background:#f5bb1618;padding:10px;display:none;margin-top:10px}
     .msg.show{display:block}
@@ -153,7 +157,7 @@
     </section>
 
     <section class="critical" id="criticalSection" style="display:none;">
-      <div class="head"><b>TREBA POTVRDIŤ</b></div>
+      <div class="head"><b>TREBA ZAVRIEŤ</b></div>
       <div class="chips" id="critChips"></div>
     </section>
 
@@ -166,9 +170,11 @@
       </div>
     </section>
 
-    <div class="bar"><h2>▣ Kalendár smien</h2></div>
+    <div class="bar"><h2>▣ Kalendár smien</h2>
+      <div class="topright"><button class="outline" id="exportBtn" style="display:none;background:var(--yellow);color:#141518;border-color:var(--yellow)">⬇ Stiahnuť do Excelu</button><button class="outline" id="prevMonths">‹ Skôr</button><button class="outline" id="todayMonths">Dnes</button><button class="outline" id="nextMonths">Ďalej ›</button></div>
+    </div>
     <div class="months" id="months"></div>
-    <footer><span class="dot">●</span> Voľné miesto · Zamestnanec sa môže prihlásiť a odhlásiť, kým vedúci smenu nepotvrdí. Potom už smeny a rezervácie mení iba vedúci.</footer>
+    <footer><span class="dot">●</span> Voľné miesto · Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.</footer>
   </main>
 
   <div class="modal" id="shiftModal">
@@ -177,7 +183,16 @@
       <h2 id="shiftTitle"></h2>
       <div class="sub" id="shiftNote">Smena v ChillPoint Laser Aréna</div>
 
-      <div class="section-title">Rezervácie / poznámky pre tento deň</div>
+      <div class="section-title" id="noteTitle">Poznámka na tento deň</div>
+      <div id="noteView"></div>
+      <div id="noteEditBox" class="add-box" hidden>
+        <div class="form">
+          <textarea id="noteInput" placeholder="napr. Začíname už o 15:00, treba pripraviť zbrane"></textarea>
+          <button class="primary small" id="noteSaveBtn">Uložiť poznámku</button>
+        </div>
+      </div>
+
+      <div class="section-title">Rezervácie / uzávery</div>
       <div id="resList"></div>
       <div id="resAddBox" class="add-box" hidden>
         <div class="form">
@@ -187,18 +202,8 @@
         </div>
       </div>
 
-      <div class="section-title">Zmeny</div>
+      <div class="section-title">Prihlásenie na smenu</div>
       <div id="shiftsList"></div>
-      <div id="shiftAddBox" class="add-box" hidden>
-        <div class="form">
-          <label>NÁZOV ZMENY</label><input id="newShiftLabel" placeholder="napr. Večerná zmena">
-          <div class="form-grid">
-            <div><label>OD</label><input id="newShiftStart" type="time" value="17:00"></div>
-            <div><label>DO</label><input id="newShiftEnd" type="time" value="24:00"></div>
-          </div>
-          <button class="primary small" id="addShiftBtn">Pridať zmenu</button>
-        </div>
-      </div>
 
       <div class="msg" id="msg"></div>
     </div>
@@ -234,34 +239,44 @@
   function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
   function randomCode(){ return String(Math.floor(1000+Math.random()*9000)); }
   function uid(prefix){ return prefix+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
-  function dayObj(key){ return (schedule.days && schedule.days[key]) || {shifts:[], reservations:[]}; }
+  function dayObj(key){ return (schedule.days && schedule.days[key]) || {reservations:[]}; }
   function showToast(msg){
     const host=$('toastHost'); const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
     host.appendChild(t); setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity='0'; setTimeout(()=>t.remove(),300); },2000);
   }
 
   function buildMonthDays(year,month){ const days=[]; const d=new Date(year,month,1); while(d.getMonth()===month){ days.push(new Date(d)); d.setDate(d.getDate()+1);} return days; }
-  function getVisibleMonths(){ const now=new Date(); const m1={year:now.getFullYear(),month:now.getMonth()}; let y2=now.getFullYear(),mo2=now.getMonth()+1; if(mo2>11){mo2=0;y2++;} return [m1,{year:y2,month:mo2}]; }
+  let viewOffset=0;
+  function getVisibleMonths(){
+    const now=new Date();
+    const base=new Date(now.getFullYear(), now.getMonth()+viewOffset, 1);
+    const nxt=new Date(base.getFullYear(), base.getMonth()+1, 1);
+    return [{year:base.getFullYear(),month:base.getMonth()},{year:nxt.getFullYear(),month:nxt.getMonth()}];
+  }
   function allNeededKeys(){ let keys=[]; getVisibleMonths().forEach(m=>buildMonthDays(m.year,m.month).forEach(d=>keys.push(iso(d)))); return keys; }
 
   function dayTotals(key){
     const d=dayObj(key);
-    const shifts=d.shifts||[];
-    let signed=0, confirmed=0;
-    shifts.forEach(s=>{ signed+=(s.employees||[]).length; if(s.confirmed) confirmed++; });
-    return { total:shifts.length, confirmed, open:shifts.length-confirmed, signed, hasRes:(d.reservations||[]).length>0 };
+    return { signed:(d.employees||[]).length, closed:!!d.closed, note:(d.note||'').trim(), hasRes:(d.reservations||[]).length>0 };
   }
 
   // ---------- migration ----------
   function needsMigration(daysObj){
-    return Object.values(daysObj||{}).some(d => d && !Array.isArray(d.shifts));
+    return Object.values(daysObj||{}).some(d => d && d.shifts!==undefined);
   }
+  // Starý formát (viac smien v jednom dni) -> nový formát (jeden deň = jedna smena)
   function migrateDays(daysObj){
     const out={};
     Object.entries(daysObj||{}).forEach(([k,d])=>{
-      if(d && Array.isArray(d.shifts)){ out[k] = { shifts:d.shifts, reservations: Array.isArray(d.reservations)?d.reservations:[] }; return; }
-      const req = d?.required||0, emps = d?.employees||[];
-      out[k] = { shifts: (req>0||emps.length>0) ? [{ id: uid('s'), label:'Zmena', start:'', end:'', required:req, employees:emps }] : [], reservations: [] };
+      if(!d) return;
+      if(d.shifts===undefined){ out[k]=d; return; }
+      const shifts=Array.isArray(d.shifts)?d.shifts:Object.values(d.shifts||{});
+      const emps=[]; shifts.forEach(sh=>(sh.employees||[]).forEach(n=>{ if(!emps.includes(n)) emps.push(n); }));
+      const day={};
+      if(emps.length) day.employees=emps;
+      if(shifts.length && shifts.every(sh=>sh.confirmed)) day.closed=true;
+      if(d.reservations) day.reservations=d.reservations;
+      out[k]=day;
     });
     return out;
   }
@@ -293,7 +308,7 @@
       let raw = snap.val() || {};
       if(needsMigration(raw)){ raw = migrateDays(raw); migrateWrite(raw); }
       schedule = { days: raw };
-      scheduleLoaded=true; ensureRange(); renderAll();
+      scheduleLoaded=true; renderAll();
     }, err=>{ dbAvailable=false; scheduleLoaded=true; renderAll(); });
     employeesRef.on('value', snap=>{
       const val = snap.val();
@@ -314,15 +329,6 @@
     const defaults=['Alex Kováč','Ema Horváthová','Jakub Tóth','Nina Vargová','Samuel Baláž'].map(n=>({name:n,code:randomCode()}));
     try{ const s=await employeesRef.once('value'); if(!s.exists()) await employeesRef.set(defaults); }catch(e){}
   }
-  async function ensureRange(){
-    if(!dbAvailable) return;
-    const needed=allNeededKeys(); const missing=needed.filter(k=>!schedule.days||!schedule.days[k]);
-    if(!missing.length) return;
-    try{
-      const patch={}; missing.forEach(k=>patch[k]={shifts:[],reservations:[]});
-      await scheduleRef.update(patch);
-    }catch(e){}
-  }
   async function writeDay(key, patch){
     try{ await scheduleRef.child(key).update(patch); return true; }catch(e){ return false; }
   }
@@ -331,71 +337,61 @@
   }
 
   // ---------- shift/reservation actions ----------
-  // Všetky zmeny smien idú cez transakciu, aby sa pri súčasnom prihlasovaní viacerých ľudí nikto neprepísal.
-  async function mutateShifts(key, fn){
+  // Zmeny dňa idú cez transakciu, aby sa pri súčasnom prihlasovaní viacerých ľudí nikto neprepísal.
+  async function mutateDay(key, fn){
     try{
-      const ref=scheduleRef.child(key).child('shifts');
+      const ref=scheduleRef.child(key);
       const res=await ref.transaction(cur=>{
-        const arr = Array.isArray(cur) ? cur : (cur ? Object.values(cur) : (dayObj(key).shifts||[]));
-        const out = fn(arr.map(x=>({...x})));
-        return out===null ? undefined : out;
+        const base = cur || dayObj(key) || {};
+        const day = {...base};
+        day.employees = Array.isArray(base.employees) ? base.employees.slice() : Object.values(base.employees||{});
+        const out = fn(day);
+        if(out===null) return undefined;
+        if(!out.employees.length) delete out.employees;
+        if(!out.closed) delete out.closed;
+        return out;
       });
       return res.committed;
     }catch(e){ return false; }
   }
-  async function addShift(key, label, start, end){
-    if(!manager||!dbAvailable) return;
-    const ok=await mutateShifts(key, shifts=>shifts.concat([{ id:uid('s'), label: label||'Zmena', start:start||'', end:end||'', confirmed:false, employees:[] }]));
-    if(ok){ message('msg','Zmena pridaná.'); showToast('Nová zmena pridaná'); }
+  async function signUpDay(key){
+    if(!myName||!dbAvailable) return;
+    if(key<todayKey()){ showToast('Tento deň už uplynul.'); return; }
+    let reason='';
+    const ok=await mutateDay(key, day=>{
+      if(day.closed){ reason='Tento deň je už zavretý, prihlásiť sa nedá.'; return null; }
+      if(day.employees.includes(myName)){ reason='Na tento deň už si prihlásený/á.'; return null; }
+      day.employees.push(myName); return day;
+    });
+    if(ok) showToast('Prihlásenie úspešné 🎉'); else showToast(reason||'Nepodarilo sa uložiť, skús znova.');
   }
-  async function removeShift(key, shiftId){
-    if(!manager||!dbAvailable) return;
-    if(await mutateShifts(key, shifts=>shifts.filter(s=>s.id!==shiftId))) showToast('Zmena odstránená');
-  }
-  async function setShiftConfirmed(key, shiftId, val){
-    if(!manager||!dbAvailable) return;
-    const ok=await mutateShifts(key, shifts=>{ const t=shifts.find(s=>s.id===shiftId); if(!t) return null; t.confirmed=!!val; return shifts; });
-    if(ok) showToast(val?'Smena potvrdená a uložená':'Prihlasovanie znovu otvorené');
-  }
-  async function signUpShift(key, shiftId){
+  async function leaveDay(key){
     if(!myName||!dbAvailable) return;
     let reason='';
-    const ok=await mutateShifts(key, shifts=>{
-      const t=shifts.find(s=>s.id===shiftId);
-      if(!t){ reason='Táto zmena už neexistuje.'; return null; }
-      if(t.confirmed){ reason='Táto smena je už potvrdená, prihlásiť sa nedá.'; return null; }
-      const emps=t.employees||[];
-      if(emps.includes(myName)){ reason='Na tejto zmene už si prihlásený/á.'; return null; }
-      t.employees=emps.concat([myName]); return shifts;
+    const ok=await mutateDay(key, day=>{
+      if(day.closed){ reason='Deň je už zavretý, odhlásiť ťa môže iba vedúci.'; return null; }
+      day.employees=day.employees.filter(n=>n!==myName); return day;
     });
-    if(ok) showToast('Prihlásenie úspešné 🎉'); else if(reason) showToast(reason);
+    if(ok) showToast('Odhlásený/á'); else showToast(reason||'Nepodarilo sa uložiť, skús znova.');
   }
-  async function leaveShift(key, shiftId){
-    if(!myName||!dbAvailable) return;
-    let reason='';
-    const ok=await mutateShifts(key, shifts=>{
-      const t=shifts.find(s=>s.id===shiftId);
-      if(!t){ reason='Táto zmena už neexistuje.'; return null; }
-      if(t.confirmed){ reason='Smena je už potvrdená, odhlásiť ťa môže iba vedúci.'; return null; }
-      t.employees=(t.employees||[]).filter(n=>n!==myName); return shifts;
-    });
-    if(ok) showToast('Odhlásený/á zo zmeny'); else if(reason) showToast(reason);
+  async function setDayClosed(key, val){
+    if(!manager||!dbAvailable) return;
+    const ok=await mutateDay(key, day=>{ day.closed=!!val; return day; });
+    if(ok) showToast(val?'Deň zavretý a uložený':'Prihlasovanie znovu otvorené');
   }
-  async function addEmployeeToShift(key, shiftId, name){
+  async function addEmployeeToDay(key, name){
     if(!manager||!dbAvailable||!name) return;
-    const ok=await mutateShifts(key, shifts=>{
-      const t=shifts.find(s=>s.id===shiftId); if(!t) return null;
-      const emps=t.employees||[]; if(emps.includes(name)) return null;
-      t.employees=emps.concat([name]); return shifts;
-    });
-    if(ok) showToast(`${name} pridaný/á na smenu`);
+    const ok=await mutateDay(key, day=>{ if(day.employees.includes(name)) return null; day.employees.push(name); return day; });
+    if(ok) showToast(`${name} pridaný/á`);
   }
-  async function removeEmployeeFromShift(key, shiftId, name){
+  async function removeEmployeeFromDay(key, name){
     if(!manager||!dbAvailable) return;
-    await mutateShifts(key, shifts=>{
-      const t=shifts.find(s=>s.id===shiftId); if(!t) return null;
-      t.employees=(t.employees||[]).filter(n=>n!==name); return shifts;
-    });
+    await mutateDay(key, day=>{ day.employees=day.employees.filter(n=>n!==name); return day; });
+  }
+  async function saveNote(key, text){
+    if(!manager||!dbAvailable) return;
+    text=(text||'').trim();
+    if(await writeDay(key,{note:text||null})) showToast(text?'Poznámka uložená':'Poznámka odstránená');
   }
   async function addReservation(key, title, note){
     if(!manager||!dbAvailable) return;
@@ -440,7 +436,6 @@
 
   // ---------- render ----------
   function message(id,text){ $(id).textContent=text; $(id).classList.add('show'); }
-  function timeLabel(s){ return (s.start||s.end) ? `${s.start||'?'}–${s.end||'?'}` : ''; }
 
   function renderTopRight(){
     let html='';
@@ -456,27 +451,26 @@
   function renderHero(){
     const h=$('hero');
     if(manager){
-      const needed=allNeededKeys();
-      let total=0,conf=0;
-      needed.forEach(k=>{ const t=dayTotals(k); total+=t.total; conf+=t.confirmed; });
+      const tk=todayKey(); let pending=0;
+      Object.keys(schedule.days||{}).forEach(k=>{ const t=dayTotals(k); if(k>=tk && !t.closed && t.signed>0) pending++; });
       h.innerHTML=`
-        <div><span class="tag">REŽIM VEDÚCEHO</span><h1>PREHĽAD<span>ZMIEN</span></h1><p class="lead">Sprava zmeny, rezervácie, tím a kódy zamestnancov v kalendári nižšie.</p></div>
+        <div><span class="tag">REŽIM VEDÚCEHO</span><h1>PREHĽAD<span>ZMIEN</span></h1><p class="lead">Správa smien, poznámok, rezervácií, tímu a kódov zamestnancov v kalendári nižšie.</p></div>
         <div class="who"><div class="stat-row">
-          <div class="stat"><span>Potvrdené smeny</span><b>${conf}/${total}</b></div>
+          <div class="stat"><span>Čaká na zavretie</span><b>${pending}</b></div>
           <div class="stat"><span>Zamestnancov</span><b>${employees.list.length}</b></div>
         </div></div>`;
       return;
     }
     if(myName){
       const tKey=todayKey();
-      const mineDates=Object.keys(schedule.days||{}).sort().filter(k=>(schedule.days[k].shifts||[]).some(s=>(s.employees||[]).includes(myName)));
+      const mineDates=Object.keys(schedule.days||{}).sort().filter(k=>((schedule.days[k]||{}).employees||[]).includes(myName));
       const next=mineDates.find(k=>k>=tKey);
       let nextHtml='<span>Zatiaľ nemáš naplánovanú smenu.</span>';
       if(next){
         const d=new Date(next+'T12:00'); const diff=Math.round((new Date(next+'T00:00')-new Date(tKey+'T00:00'))/86400000);
         const when= diff===0?'dnes':(diff===1?'zajtra':`o ${diff} dní`);
-        const s=(schedule.days[next].shifts||[]).find(s=>(s.employees||[]).includes(myName));
-        nextHtml=`<b style="font-size:24px;color:var(--yellow)">${d.getDate()}. ${MONTHS[d.getMonth()]}</b><br><span style="color:var(--muted)">${when}${s&&timeLabel(s)?' · '+timeLabel(s):''}${s?' · '+esc(s.label):''}${s&&!s.confirmed?' · čaká na potvrdenie':''}</span>`;
+        const nd=schedule.days[next]||{};
+        nextHtml=`<b style="font-size:24px;color:var(--yellow)">${d.getDate()}. ${MONTHS[d.getMonth()]}</b><br><span style="color:var(--muted)">${when} · ${nd.closed?'✓ potvrdené':'čaká na potvrdenie'}</span>${nd.note?`<div style="margin-top:8px;font-size:13px;color:#e9dca8;white-space:pre-wrap;">📝 ${esc(nd.note)}</div>`:''}`;
       }
       h.innerHTML=`
         <div><span class="tag">AHOJ</span><h1>${esc(myName.split(' ')[0]).toUpperCase()}<span>VITAJ SPÄŤ</span></h1><p class="lead">Skontroluj svoje smeny nižšie alebo si vyber voľný termín v kalendári.</p></div>
@@ -500,15 +494,13 @@
 
   function renderMine(){
     if(!myName || manager){ $('mine').style.display='none'; return; }
-    const entries=[];
-    Object.keys(schedule.days||{}).sort().forEach(k=>{
-      (schedule.days[k].shifts||[]).forEach(s=>{ if((s.employees||[]).includes(myName)) entries.push({date:k, s}); });
-    });
+    const entries=Object.keys(schedule.days||{}).sort().filter(k=>((schedule.days[k]||{}).employees||[]).includes(myName)).map(k=>({date:k, d:schedule.days[k]}));
     $('mine').style.display='block';
     $('myName').textContent=myName;
-    $('chips').innerHTML=entries.length? entries.map(({date,s})=>{
+    $('chips').innerHTML=entries.length? entries.map(({date,d})=>{
       const dt=new Date(date+'T12:00');
-      return `<button class="chip" data-my="${date}"><b>${dt.toLocaleDateString('sk-SK',{day:'numeric',month:'short'})}</b><span>${esc(s.label)}${timeLabel(s)?' · '+timeLabel(s):''}</span><span style="color:${s.confirmed?'var(--green)':'var(--yellow)'}">${s.confirmed?'✓ potvrdené':'čaká na potvrdenie'}</span></button>`;
+      const note=(d.note||'').trim();
+      return `<button class="chip" data-my="${date}"><b>${dt.toLocaleDateString('sk-SK',{day:'numeric',month:'short'})}</b><span style="color:${d.closed?'var(--green)':'var(--yellow)'}">${d.closed?'✓ potvrdené':'čaká na potvrdenie'}</span>${note?`<span>📝 ${esc(note.length>28?note.slice(0,28)+'…':note)}</span>`:''}</button>`;
     }).join('') : '<span class="sub">Zatiaľ nemáš žiadnu smenu.</span>';
     document.querySelectorAll('[data-my]').forEach(x=>x.onclick=()=>openShift(x.dataset.my));
   }
@@ -516,13 +508,13 @@
   function renderCritical(){
     if(!manager){ $('criticalSection').style.display='none'; return; }
     const tKey=todayKey();
-    const crit=allNeededKeys().filter(k=>k>=tKey && dayTotals(k).open>0)
-      .map(k=>({key:k, open:dayTotals(k).open, signed:dayTotals(k).signed})).sort((a,b)=>a.key.localeCompare(b.key));
+    const crit=Object.keys(schedule.days||{}).filter(k=>k>=tKey && !dayTotals(k).closed && dayTotals(k).signed>0)
+      .map(k=>({key:k, signed:dayTotals(k).signed})).sort((a,b)=>a.key.localeCompare(b.key));
     if(!crit.length){ $('criticalSection').style.display='none'; return; }
     $('criticalSection').style.display='block';
     $('critChips').innerHTML=crit.slice(0,10).map(c=>{
       const d=new Date(c.key+'T12:00');
-      return `<button class="chip crit-chip" data-my="${c.key}"><b>${d.getDate()}. ${MONTHS[d.getMonth()]}</b><span>prihlásených ${c.signed} · treba potvrdiť</span></button>`;
+      return `<button class="chip crit-chip" data-my="${c.key}"><b>${d.getDate()}. ${MONTHS[d.getMonth()]}</b><span>prihlásených ${c.signed} · treba zavrieť</span></button>`;
     }).join('');
     document.querySelectorAll('#critChips [data-my]').forEach(x=>x.onclick=()=>openShift(x.dataset.my));
   }
@@ -550,22 +542,21 @@
     const tKey=todayKey();
     let cells='<span></span>'.repeat(blanks);
     for(let day=1; day<=count; day++){
-      const dObj=new Date(y,m,day); const key=iso(dObj);
-      const t=dayTotals(key);
-      const isMine = myName && (dayObj(key).shifts||[]).some(s=>(s.employees||[]).includes(myName));
-      let cls='day'+(t.total?' active':'')+(key===tKey?' today':'')+(t.total>0&&t.open===0?' full':'')+(isMine?' mine':'');
+      const key=iso(new Date(y,m,day));
+      const d=dayObj(key); const t=dayTotals(key);
+      const past = key<tKey;
+      const isMine = !!myName && (d.employees||[]).includes(myName);
+      const idle = past && !t.closed && (!manager || t.signed===0);
+      const cls='day'+(idle?' past':' active')+(key===tKey?' today':'')+(t.closed?' full':'')+(isMine?' mine':'');
       let inner;
-      if(t.total>0){
-        inner = t.open===0 ? `<strong>Potvrdené</strong>` : (manager ? `<strong>${t.signed} prihl.</strong>` : `<strong>Otvorené</strong>`);
-        const shiftNames = (dayObj(key).shifts||[]).map(s=>s.label).join(', ');
-        inner += `<small>${esc(shiftNames)}</small>`;
-      } else if(t.hasRes){
-        const first=(dayObj(key).reservations||[])[0];
-        inner = `<strong style="color:var(--muted)">rezervácia</strong><small>${esc(first?first.title:'')}</small>`;
+      if(idle){
+        inner='<small class="closed">uplynulé</small>';
       } else {
-        inner = '<small class="closed">bez zmeny</small>';
+        inner = t.closed ? '<strong>Zavreté</strong>' : (manager ? `<strong>${t.signed} prihl.</strong>` : '<strong>Otvorené</strong>');
+        const line = t.note || (t.hasRes ? ((d.reservations||[])[0]||{}).title : '');
+        if(line) inner += `<small>${esc(line)}</small>`;
       }
-      cells += `<button class="${cls}" data-date="${key}"><span class="num">${day}${t.hasRes?' 🔒':''}</span>${inner}</button>`;
+      cells += `<button class="${cls}" data-date="${key}"><span class="num">${day}${t.hasRes?' 🔒':''}${t.note?' 📝':''}</span>${inner}</button>`;
     }
     return `<section class="month"><h3>${MONTHS[m]} ${y}</h3><div class="week">${DAYS.map(d=>`<span>${d}</span>`).join('')}</div><div class="grid">${cells}</div></section>`;
   }
@@ -578,9 +569,18 @@
 
   function openShift(date){
     selected=date; const d=dayObj(date);
+    const fresh=!$('shiftModal').classList.contains('open');
     $('shiftTitle').textContent=new Date(date+'T12:00').toLocaleDateString('sk-SK',{weekday:'long',day:'numeric',month:'long'});
 
-    // reservations
+    // poznámka
+    const noteText=(d.note||'').trim();
+    $('noteTitle').textContent = manager ? 'Poznámka na tento deň (vidia ju všetci)' : 'Poznámka vedúceho';
+    $('noteTitle').hidden = !manager && !noteText;
+    $('noteView').innerHTML = (!manager && noteText) ? `<div class="note-box">📝 ${esc(noteText)}</div>` : '';
+    $('noteEditBox').hidden = !manager;
+    if(manager && fresh) $('noteInput').value = d.note || '';
+
+    // rezervácie
     const resList=$('resList');
     resList.innerHTML=(d.reservations||[]).map(r=>`
       <div class="res-item"><div><b>🔒 ${esc(r.title)}</b>${r.note?`<span>${esc(r.note)}</span>`:''}</div>${manager?`<button data-res-remove="${r.id}">×</button>`:''}</div>
@@ -588,67 +588,92 @@
     document.querySelectorAll('[data-res-remove]').forEach(x=>x.onclick=()=>removeReservation(selected,x.dataset.resRemove).then(()=>openShift(selected)));
     $('resAddBox').hidden=!manager;
 
-    // shifts
-    const shiftsList=$('shiftsList');
-    const shifts=d.shifts||[];
-    if(!shifts.length){
-      shiftsList.innerHTML = `<p class="sub">${manager?'Zatiaľ žiadna zmena tento deň. Pridaj ju nižšie.':'Tento deň nie je naplánovaná žiadna zmena.'}</p>`;
+    // smena na celý deň
+    const emps=d.employees||[];
+    const closed=!!d.closed;
+    const already=!!myName && emps.includes(myName);
+    const past=date<todayKey();
+    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${manager?`<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
+    let statusHtml, teamHtml, actionHtml='';
+    if(manager){
+      statusHtml = closed ? '<div class="sfree ok">✓ Zavreté</div>' : `<div class="sfree pending">Otvorené · ${emps.length} prihl.</div>`;
+      teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Zatiaľ sa nikto neprihlásil.</p>';
+      const available=employees.list.filter(e=>!emps.includes(e.name));
+      actionHtml = `<div class="manage-row">
+          <select id="addEmpSelect"><option value="">Pridať zamestnanca…</option>${available.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('')}</select>
+          <button class="outline" id="addEmpToDay">Pridať</button>
+        </div>
+        <div class="manage-row">
+          ${closed
+            ? `<button class="outline" id="reopenDay">Znovu otvoriť prihlasovanie</button>`
+            : `<button class="primary small" id="closeDay">Zavrieť a uložiť</button>`}
+        </div>`;
+    } else if(closed){
+      statusHtml = '<div class="sfree ok">✓ Zavreté</div>';
+      teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Na smene nikto nie je.</p>';
+      actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">${already?'Si na tejto smene. ':''}Zmeny už robí iba vedúci.</p>`;
     } else {
-      shiftsList.innerHTML = shifts.map(s=>{
-        const emps=s.employees||[];
-        const already = !!myName && emps.includes(myName);
-        const confirmed = !!s.confirmed;
-        const memberHtml = n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${manager?`<button class="remove" data-emp-remove="${s.id}|${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
-        let statusHtml, teamHtml, actionHtml='';
-        if(manager){
-          statusHtml = confirmed ? '<div class="sfree ok">✓ Potvrdené</div>' : `<div class="sfree pending">Prihlásených: ${emps.length}</div>`;
-          teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Zatiaľ sa nikto neprihlásil.</p>';
-          const available=employees.list.filter(e=>!emps.includes(e.name));
-          actionHtml = `<div class="manage-row">
-              <select data-add-select="${s.id}"><option value="">Pridať zamestnanca…</option>${available.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('')}</select>
-              <button class="outline" data-add-emp="${s.id}">Pridať</button>
-            </div>
-            <div class="manage-row">
-              ${confirmed
-                ? `<button class="outline" data-unconfirm="${s.id}">Znovu otvoriť prihlasovanie</button>`
-                : `<button class="primary small" data-confirm="${s.id}">Potvrdiť a uložiť</button>`}
-              <button class="outline" data-remove-shift="${s.id}">Odstrániť zmenu</button>
-            </div>`;
-        } else if(confirmed){
-          statusHtml = '<div class="sfree ok">✓ Potvrdené</div>';
-          teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Na smene nikto nie je.</p>';
-          actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">${already?'Si na tejto smene. ':''}Zmeny už robí iba vedúci.</p>`;
-        } else {
-          statusHtml = `<div class="sfree pending">Prihlásených: ${emps.length}</div>`;
-          teamHtml = `<p class="sub" style="margin:6px 0 0;">${already?'✓ Si prihlásený/á. ':''}Zoznam ľudí sa zobrazí po potvrdení vedúcim.</p>`;
-          if(!myName) actionHtml = `<button class="primary small" disabled style="margin-top:10px;">Najprv sa prihlás hore</button>`;
-          else if(already) actionHtml = `<button class="outline" data-leave="${s.id}" style="margin-top:10px;width:100%;">Odhlásiť sa zo zmeny</button>`;
-          else actionHtml = `<button class="primary small" data-signup="${s.id}" style="margin-top:10px;">Prihlásiť sa</button>`;
-        }
-        return `<div class="shift-card">
-            <div class="shead"><div><div class="slabel">${esc(s.label)}</div><div class="stime">${timeLabel(s)}</div></div>${statusHtml}</div>
-            <div class="team">${teamHtml}</div>
-            ${actionHtml}
-          </div>`;
-      }).join('');
+      statusHtml = `<div class="sfree pending">Otvorené · ${emps.length} prihl.</div>`;
+      teamHtml = `<p class="sub" style="margin:6px 0 0;">${already?'✓ Si prihlásený/á. ':''}Zoznam ľudí sa zobrazí po potvrdení vedúcim.</p>`;
+      if(past) actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">Tento deň už uplynul.</p>`;
+      else if(!myName) actionHtml = `<button class="primary small" disabled style="margin-top:10px;">Najprv sa prihlás hore</button>`;
+      else if(already) actionHtml = `<button class="outline" id="leaveDay" style="margin-top:10px;width:100%;">Odhlásiť sa</button>`;
+      else actionHtml = `<button class="primary small" id="signUpDay" style="margin-top:10px;">Prihlásiť sa na tento deň</button>`;
     }
-    const again=()=>openShift(selected);
-    document.querySelectorAll('[data-signup]').forEach(x=>x.onclick=()=>signUpShift(selected,x.dataset.signup).then(again));
-    document.querySelectorAll('[data-leave]').forEach(x=>x.onclick=()=>leaveShift(selected,x.dataset.leave).then(again));
-    document.querySelectorAll('[data-confirm]').forEach(x=>x.onclick=()=>setShiftConfirmed(selected,x.dataset.confirm,true).then(again));
-    document.querySelectorAll('[data-unconfirm]').forEach(x=>x.onclick=()=>setShiftConfirmed(selected,x.dataset.unconfirm,false).then(again));
-    document.querySelectorAll('[data-add-emp]').forEach(x=>x.onclick=()=>{ const sel=document.querySelector(`[data-add-select="${x.dataset.addEmp}"]`); if(!sel||!sel.value) return showToast('Vyber zamestnanca'); addEmployeeToShift(selected,x.dataset.addEmp,sel.value).then(again); });
-    document.querySelectorAll('[data-remove-shift]').forEach(x=>x.onclick=()=>{ if(confirm('Odstrániť túto zmenu aj so všetkými prihlásenými?')) removeShift(selected,x.dataset.removeShift).then(again); });
-    document.querySelectorAll('[data-emp-remove]').forEach(x=>x.onclick=()=>{ const [sid,name]=x.dataset.empRemove.split('|'); removeEmployeeFromShift(selected,sid,name).then(again); });
+    $('shiftsList').innerHTML = `<div class="shift-card">
+        <div class="shead"><div class="slabel">Smena na celý deň</div>${statusHtml}</div>
+        <div class="team">${teamHtml}</div>
+        ${actionHtml}
+      </div>`;
 
-    $('shiftAddBox').hidden=!manager;
+    const again=()=>openShift(selected);
+    const on=(id,fn)=>{ const el=$(id); if(el) el.onclick=fn; };
+    on('signUpDay',()=>signUpDay(selected).then(again));
+    on('leaveDay',()=>leaveDay(selected).then(again));
+    on('closeDay',()=>setDayClosed(selected,true).then(again));
+    on('reopenDay',()=>setDayClosed(selected,false).then(again));
+    on('addEmpToDay',()=>{ const v=$('addEmpSelect').value; if(!v) return showToast('Vyber zamestnanca'); addEmployeeToDay(selected,v).then(again); });
+    document.querySelectorAll('[data-emp-remove]').forEach(x=>x.onclick=()=>removeEmployeeFromDay(selected,x.dataset.empRemove).then(again));
+
     $('msg').classList.remove('show');
     $('shiftModal').classList.add('open');
+  }
+
+  function exportExcel(){
+    if(!manager) return;
+    if(typeof XLSX==='undefined'){ showToast('Excel knižnica sa nenačítala, obnov stránku a skús znova.'); return; }
+    const fmt=k=>{ const [y,m,d]=k.split('-'); return `${d}.${m}.${y}`; };
+    const dayName=k=>new Date(k+'T12:00').toLocaleDateString('sk-SK',{weekday:'long'});
+    const keys=Object.keys(schedule.days||{}).sort().filter(k=>{ const t=dayTotals(k); return t.signed>0||t.closed||t.note||t.hasRes; });
+    if(!keys.length){ showToast('Zatiaľ nie sú žiadne dáta na export.'); return; }
+
+    const rows=[['Dátum','Deň','Stav','Počet ľudí','Ľudia na smene / prihlásení','Poznámka','Rezervácie / uzávery']];
+    keys.forEach(k=>{
+      const d=dayObj(k); const t=dayTotals(k);
+      rows.push([fmt(k), dayName(k), t.closed?'Zavreté (potvrdené)':'Otvorené', t.signed, (d.employees||[]).join(', '), t.note,
+        (d.reservations||[]).map(r=>r.title+(r.note?` (${r.note})`:'')).join('; ')]);
+    });
+
+    const per={};
+    keys.forEach(k=>{ const d=dayObj(k); (d.employees||[]).forEach(n=>{ const e=per[n]||(per[n]={conf:[],pend:[]}); (d.closed?e.conf:e.pend).push(fmt(k)); }); });
+    const rows2=[['Zamestnanec','Potvrdené smeny','Čakajúce prihlásenia','Dátumy potvrdených smien']];
+    Object.keys(per).sort((a,b)=>a.localeCompare(b,'sk')).forEach(n=>rows2.push([n, per[n].conf.length, per[n].pend.length, per[n].conf.join(', ')]));
+
+    const ws1=XLSX.utils.aoa_to_sheet(rows);
+    ws1['!cols']=[{wch:12},{wch:13},{wch:20},{wch:11},{wch:45},{wch:40},{wch:40}];
+    const ws2=XLSX.utils.aoa_to_sheet(rows2);
+    ws2['!cols']=[{wch:28},{wch:17},{wch:20},{wch:60}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws1, 'Kalendár smien');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Podľa zamestnanca');
+    XLSX.writeFile(wb, `smeny-${todayKey()}.xlsx`);
+    showToast('Excel stiahnutý');
   }
 
   function renderAll(){
     if(!scheduleLoaded||!employeesLoaded) return;
     renderTopRight();
+    $('exportBtn').style.display = manager ? '' : 'none';
     renderHero();
     renderMine();
     renderCritical();
@@ -657,7 +682,11 @@
   }
 
   $('resAddBtn').onclick=()=>{ addReservation(selected,$('resTitle').value,$('resNote').value).then(()=>{ $('resTitle').value=''; $('resNote').value=''; openShift(selected); }); };
-  $('addShiftBtn').onclick=()=>{ addShift(selected,$('newShiftLabel').value,$('newShiftStart').value,$('newShiftEnd').value).then(()=>{ $('newShiftLabel').value=''; openShift(selected); }); };
+  $('exportBtn').onclick=exportExcel;
+  $('prevMonths').onclick=()=>{ viewOffset--; renderMonths(); };
+  $('nextMonths').onclick=()=>{ viewOffset++; renderMonths(); };
+  $('todayMonths').onclick=()=>{ viewOffset=0; renderMonths(); };
+  $('noteSaveBtn').onclick=()=>{ saveNote(selected,$('noteInput').value).then(()=>openShift(selected)); };
   $('unlock').onclick=()=>{
     if($('pin').value!==MANAGER_PIN) return message('pinMsg','Nesprávny PIN.');
     manager=true; sessionStorage.setItem('cp_manager','1'); $('pin').value='';
