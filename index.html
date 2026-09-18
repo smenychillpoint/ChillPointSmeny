@@ -5,8 +5,17 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>ChillPoint smeny</title>
   <meta name="description" content="Kalendár smien pre ChillPoint Laser Aréna Trnava">
+  <meta name="theme-color" content="#0a0c0f">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Smeny">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <style>
     :root{--yellow:#f5bb16;--black:#0a0c0f;--panel:#17191d;--line:#34373c;--muted:#a7a9ad;--white:#fff;--red:#ff6c6c;--green:#5fd67a}
@@ -138,6 +147,16 @@
     .toast-host{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:8px;align-items:center}
     .toast{background:var(--yellow);color:#141518;font-weight:800;font-size:13px;padding:10px 18px;box-shadow:0 6px 18px #0008;white-space:nowrap}
 
+.day.limfull strong{color:var(--red)}
+    .day.limfull.active:after{background:var(--red)}
+    .switch-row{display:flex;gap:12px;align-items:flex-start;cursor:pointer}
+    .switch-row input{width:22px;height:22px;accent-color:var(--yellow);margin-top:2px;flex-shrink:0}
+    .check{display:flex;gap:9px;align-items:center;font-size:13px;margin:12px 0;color:#ddd;cursor:pointer}
+    .check input{width:18px;height:18px;accent-color:var(--yellow)}
+    .preset-row{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 6px}
+    .preset-row .outline{padding:8px 10px;font-size:13px}
+    .bulk-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+    .bulk-actions .primary{width:100%}
     @media(max-width:880px){.hero,.months{grid-template-columns:1fr}.who{box-shadow:7px 7px 0 #ffffff42}.day{min-height:76px}.day small{display:none}}
     @media(max-width:560px){.top{padding:10px 13px}.brand small{display:none}.wrap{width:calc(100% - 20px);padding-top:24px}.hero{padding:20px;gap:22px}.hero h1{font-size:44px}.month{padding:10px}.week,.grid{gap:3px}.day{min-height:58px;padding:6px}.num{margin-bottom:5px;font-size:13px}.day strong{font-size:9px}.stat-row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}}
   </style>
@@ -161,6 +180,15 @@
       <div class="chips" id="critChips"></div>
     </section>
 
+    <section class="roster" id="settingsSection" style="display:none;">
+      <h3>Nastavenia</h3>
+      <div class="rrow"><label class="switch-row"><input type="checkbox" id="limitToggle"><span><b>Limit ľudí na deň</b><br><small class="sub">Vypnutý = prihlásiť sa môže neobmedzený počet ľudí.</small></span></label></div>
+      <div class="addrow" id="limitRow" style="display:none;">
+        <input type="number" id="limitDefault" min="1" max="100" placeholder="Štandardný limit (napr. 4)">
+        <button class="outline" id="limitSave">Uložiť limit</button>
+      </div>
+    </section>
+
     <section class="roster" id="rosterSection" style="display:none;">
       <h3>Zoznam zamestnancov</h3>
       <div id="rosterList"></div>
@@ -171,7 +199,7 @@
     </section>
 
     <div class="bar"><h2>▣ Kalendár smien</h2>
-      <div class="topright"><button class="outline" id="exportBtn" style="display:none;background:var(--yellow);color:#141518;border-color:var(--yellow)">⬇ Stiahnuť do Excelu</button><button class="outline" id="prevMonths">‹ Skôr</button><button class="outline" id="todayMonths">Dnes</button><button class="outline" id="nextMonths">Ďalej ›</button></div>
+      <div class="topright"><button class="outline" id="exportBtn" style="display:none;background:var(--yellow);color:#141518;border-color:var(--yellow)">⬇ Stiahnuť do Excelu</button><button class="outline" id="bulkBtn" style="display:none">☰ Hromadné zatváranie</button><button class="outline" id="prevMonths">‹ Skôr</button><button class="outline" id="todayMonths">Dnes</button><button class="outline" id="nextMonths">Ďalej ›</button></div>
     </div>
     <div class="months" id="months"></div>
     <footer><span class="dot">●</span> Voľné miesto · Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.</footer>
@@ -203,6 +231,13 @@
       </div>
 
       <div class="section-title">Prihlásenie na smenu</div>
+      <div id="limitBox" class="add-box" hidden style="margin-bottom:10px;">
+        <div class="form">
+          <label>LIMIT PRE TENTO DEŇ <span id="limitInfo"></span></label>
+          <input id="dayLimitInput" type="number" min="0" max="100" placeholder="prázdne = štandardný limit, 0 = bez limitu">
+          <button class="primary small" id="dayLimitSave">Uložiť limit dňa</button>
+        </div>
+      </div>
       <div id="shiftsList"></div>
 
       <div class="msg" id="msg"></div>
@@ -213,9 +248,35 @@
     <div class="box">
       <button class="close" data-close>×</button>
       <h2>Režim vedúceho</h2>
-      <p class="sub">Zadaj PIN vedúceho zmeny.</p>
-      <div class="form"><input id="pin" type="password" inputmode="numeric" placeholder="PIN"><button class="primary" id="unlock">Otvoriť správu smien</button></div>
+      <p class="sub">Zadaj heslo vedúceho.</p>
+      <div class="form"><input id="pin" type="password" autocomplete="current-password" placeholder="Heslo vedúceho"><button class="primary" id="unlock">Otvoriť správu smien</button></div>
       <div class="msg" id="pinMsg"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="bulkModal">
+    <div class="box">
+      <button class="close" data-close>×</button>
+      <h2>Hromadné zatváranie</h2>
+      <p class="sub">Vyber obdobie a zavri (alebo znovu otvor) všetky dni naraz.</p>
+      <div class="preset-row">
+        <button class="outline" data-bulk-preset="week">Tento týždeň</button>
+        <button class="outline" data-bulk-preset="nextweek">Budúci týždeň</button>
+        <button class="outline" data-bulk-preset="month">Tento mesiac</button>
+        <button class="outline" data-bulk-preset="nextmonth">Budúci mesiac</button>
+      </div>
+      <div class="form">
+        <div class="form-grid">
+          <div><label>OD</label><input type="date" id="bulkFrom"></div>
+          <div><label>DO</label><input type="date" id="bulkTo"></div>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="bulkEmpty"> Zatvoriť aj dni, kde sa nikto neprihlásil</label>
+      <div class="sub" id="bulkInfo"></div>
+      <div class="bulk-actions">
+        <button class="primary" id="bulkClose">Zavrieť dni</button>
+        <button class="outline" id="bulkOpen">Znovu otvoriť dni</button>
+      </div>
     </div>
   </div>
 
@@ -224,15 +285,18 @@
 <script>
   const MONTHS=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
   const DAYS=['PO','UT','ST','ŠT','PI','SO','NE'];
-  const MANAGER_PIN = '2026';
+  // E-mail účtu vedúceho vo Firebase Authentication (heslo sa nastavuje vo Firebase, nie v kóde).
+  const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
   const $=id=>document.getElementById(id);
 
   let db=null, dbAvailable=false;
   let schedule={days:{}}, employees={list:[]};
   let scheduleLoaded=false, employeesLoaded=false;
   let myName = localStorage.getItem('cp_myname') || '';
-  let manager = sessionStorage.getItem('cp_manager') === '1';
+  let manager = false;
   let selected='';
+  let limitCfg={enabled:false,defaultLimit:0};
+  let settingsRef=null, auth=null, latestRaw=null, migrating=false, lastMigTry=0, loginFails=0;
 
   const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   function todayKey(){ return iso(new Date()); }
@@ -255,9 +319,16 @@
   }
   function allNeededKeys(){ let keys=[]; getVisibleMonths().forEach(m=>buildMonthDays(m.year,m.month).forEach(d=>keys.push(iso(d)))); return keys; }
 
+  function dayLimit(key){
+    if(!limitCfg.enabled) return 0;
+    const d=dayObj(key);
+    const v=(d.limit!==undefined && d.limit!==null && d.limit!=='') ? Number(d.limit) : limitCfg.defaultLimit;
+    return v>0 ? v : 0;
+  }
   function dayTotals(key){
     const d=dayObj(key);
-    return { signed:(d.employees||[]).length, closed:!!d.closed, note:(d.note||'').trim(), hasRes:(d.reservations||[]).length>0 };
+    const signed=(d.employees||[]).length, closed=!!d.closed, limit=dayLimit(key);
+    return { signed, closed, limit, full: !closed && limit>0 && signed>=limit, note:(d.note||'').trim(), hasRes:(d.reservations||[]).length>0 };
   }
 
   // ---------- migration ----------
@@ -271,10 +342,14 @@
       if(!d) return;
       if(d.shifts===undefined){ out[k]=d; return; }
       const shifts=Array.isArray(d.shifts)?d.shifts:Object.values(d.shifts||{});
-      const emps=[]; shifts.forEach(sh=>(sh.employees||[]).forEach(n=>{ if(!emps.includes(n)) emps.push(n); }));
+      const emps=[];
+      const add=n=>{ if(n && !emps.includes(n)) emps.push(n); };
+      shifts.forEach(sh=>(sh.employees||[]).forEach(add));
+      (Array.isArray(d.employees)?d.employees:Object.values(d.employees||{})).forEach(add);
       const day={};
       if(emps.length) day.employees=emps;
-      if(shifts.length && shifts.every(sh=>sh.confirmed)) day.closed=true;
+      if(d.closed || (shifts.length && shifts.every(sh=>sh.confirmed))) day.closed=true;
+      if(d.note) day.note=d.note;
       if(d.reservations) day.reservations=d.reservations;
       out[k]=day;
     });
@@ -300,13 +375,27 @@
       rtdb = firebase.database();
       scheduleRef = rtdb.ref('schedule/days');
       employeesRef = rtdb.ref('employees/list');
+      settingsRef = rtdb.ref('settings/limits');
       dbAvailable = true;
     }catch(e){
       dbAvailable = false; scheduleLoaded=true; employeesLoaded=true; renderAll(); return;
     }
+    // Prihlásenie vedúceho cez Firebase Authentication (e-mail + heslo)
+    try{
+      if(firebase.auth){
+        auth = firebase.auth();
+        try{ await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION); }catch(e){}
+        auth.onAuthStateChanged(u=>{
+          manager = !!u && (u.email||'').toLowerCase()===MANAGER_EMAIL.toLowerCase();
+          resetIdle();
+          if(manager && latestRaw) migrateWrite(latestRaw,true);
+          renderAll();
+        });
+      }
+    }catch(e){}
     scheduleRef.on('value', snap=>{
       let raw = snap.val() || {};
-      if(needsMigration(raw)){ raw = migrateDays(raw); migrateWrite(raw); }
+      if(needsMigration(raw)){ latestRaw=raw; migrateWrite(raw); raw = migrateDays(raw); } else latestRaw=null;
       schedule = { days: raw };
       scheduleLoaded=true; renderAll();
     }, err=>{ dbAvailable=false; scheduleLoaded=true; renderAll(); });
@@ -317,11 +406,23 @@
       else { employees = { list: [] }; seedEmployees(); }
       employeesLoaded=true; renderAll();
     }, err=>{ dbAvailable=false; employeesLoaded=true; renderAll(); });
+    // Limity: predvolene vypnuté, kým ich vedúci nezapne
+    settingsRef.on('value', snap=>{
+      const v=snap.val()||{};
+      limitCfg={ enabled: v.enabled===true, defaultLimit: Number(v.defaultLimit)||0 };
+      renderAll();
+    }, err=>{});
   }
-  let migrated=false;
-  async function migrateWrite(daysObj){
-    if(migrated || !dbAvailable) return; migrated=true;
-    try{ await scheduleRef.set(daysObj); }catch(e){}
+  async function migrateWrite(raw, force){
+    if(!dbAvailable || migrating) return;
+    if(!force && Date.now()-lastMigTry<30000) return;
+    migrating=true; lastMigTry=Date.now();
+    try{
+      const out=migrateDays(raw); const patch={};
+      Object.keys(raw).forEach(k=>{ if(raw[k] && raw[k].shifts!==undefined) patch[k]=(out[k] && Object.keys(out[k]).length)?out[k]:null; });
+      if(Object.keys(patch).length) await scheduleRef.update(patch);
+    }catch(e){}
+    migrating=false;
   }
   let seeded=false;
   async function seedEmployees(){
@@ -330,10 +431,10 @@
     try{ const s=await employeesRef.once('value'); if(!s.exists()) await employeesRef.set(defaults); }catch(e){}
   }
   async function writeDay(key, patch){
-    try{ await scheduleRef.child(key).update(patch); return true; }catch(e){ return false; }
+    try{ await scheduleRef.child(key).update(patch); return true; }catch(e){ showToast('Nepodarilo sa uložiť (chýba oprávnenie alebo si offline).'); return false; }
   }
   async function writeEmployees(list){
-    try{ await employeesRef.set(list); return true; }catch(e){ return false; }
+    try{ await employeesRef.set(list); return true; }catch(e){ showToast('Nepodarilo sa uložiť (chýba oprávnenie alebo si offline).'); return false; }
   }
 
   // ---------- shift/reservation actions ----------
@@ -354,25 +455,39 @@
       return res.committed;
     }catch(e){ return false; }
   }
+  // Zamestnanec upravuje iba zoznam mien daného dňa (Firebase pravidlá mu nedovolia nič iné).
+  async function mutateEmployees(key, fn){
+    try{
+      const ref=scheduleRef.child(key).child('employees');
+      const res=await ref.transaction(cur=>{
+        const arr=Array.isArray(cur)?cur.slice():Object.values(cur||{});
+        const out=fn(arr);
+        if(out===null) return undefined;
+        return out.length?out:null;
+      });
+      return res.committed;
+    }catch(e){ return false; }
+  }
   async function signUpDay(key){
     if(!myName||!dbAvailable) return;
     if(key<todayKey()){ showToast('Tento deň už uplynul.'); return; }
+    if(dayObj(key).closed){ showToast('Tento deň je už zavretý, prihlásiť sa nedá.'); return; }
+    const lim=dayLimit(key);
     let reason='';
-    const ok=await mutateDay(key, day=>{
-      if(day.closed){ reason='Tento deň je už zavretý, prihlásiť sa nedá.'; return null; }
-      if(day.employees.includes(myName)){ reason='Na tento deň už si prihlásený/á.'; return null; }
-      day.employees.push(myName); return day;
+    const ok=await mutateEmployees(key, arr=>{
+      if(arr.includes(myName)){ reason='Na tento deň už si prihlásený/á.'; return null; }
+      if(lim>0 && arr.length>=lim){ reason='Táto smena je už plná.'; return null; }
+      arr.push(myName); return arr;
     });
-    if(ok) showToast('Prihlásenie úspešné 🎉'); else showToast(reason||'Nepodarilo sa uložiť, skús znova.');
+    if(ok) showToast('Prihlásenie úspešné 🎉');
+    else showToast(reason || (dayObj(key).closed?'Tento deň je už zavretý, prihlásiť sa nedá.':'Nepodarilo sa uložiť, skús znova.'));
   }
   async function leaveDay(key){
     if(!myName||!dbAvailable) return;
-    let reason='';
-    const ok=await mutateDay(key, day=>{
-      if(day.closed){ reason='Deň je už zavretý, odhlásiť ťa môže iba vedúci.'; return null; }
-      day.employees=day.employees.filter(n=>n!==myName); return day;
-    });
-    if(ok) showToast('Odhlásený/á'); else showToast(reason||'Nepodarilo sa uložiť, skús znova.');
+    if(dayObj(key).closed){ showToast('Deň je už zavretý, odhlásiť ťa môže iba vedúci.'); return; }
+    const ok=await mutateEmployees(key, arr=>arr.filter(n=>n!==myName));
+    if(ok) showToast('Odhlásený/á');
+    else showToast(dayObj(key).closed?'Deň je už zavretý, odhlásiť ťa môže iba vedúci.':'Nepodarilo sa uložiť, skús znova.');
   }
   async function setDayClosed(key, val){
     if(!manager||!dbAvailable) return;
@@ -405,6 +520,67 @@
     await writeDay(key,{reservations});
   }
 
+  async function writeLimits(patch){
+    if(!manager||!dbAvailable) return false;
+    try{ await settingsRef.update(patch); return true; }
+    catch(e){ showToast('Nepodarilo sa uložiť nastavenie.'); renderSettings(); return false; }
+  }
+
+  // ---------- hromadné zatváranie ----------
+  function bulkKeys(){
+    const f=$('bulkFrom').value, t=$('bulkTo').value;
+    if(!f||!t||f>t) return [];
+    const keys=[]; const d=new Date(f+'T12:00');
+    for(let i=0;i<800 && iso(d)<=t;i++){ keys.push(iso(d)); d.setDate(d.getDate()+1); }
+    return keys;
+  }
+  function bulkTargets(mode){
+    const inclEmpty=$('bulkEmpty').checked;
+    return bulkKeys().filter(k=>{ const t=dayTotals(k); return mode==='close' ? (!t.closed && (inclEmpty||t.signed>0)) : t.closed; });
+  }
+  function updateBulkInfo(){
+    if(!bulkKeys().length){ $('bulkInfo').textContent='Vyber platné obdobie.'; return; }
+    $('bulkInfo').textContent=`Zavrie sa ${bulkTargets('close').length} dní · Znovu otvorí sa ${bulkTargets('open').length} dní`;
+  }
+  function bulkPreset(kind){
+    const now=new Date(); let f,t;
+    if(kind==='week'||kind==='nextweek'){
+      f=new Date(now.getFullYear(),now.getMonth(),now.getDate()); f.setDate(f.getDate()-((f.getDay()+6)%7));
+      if(kind==='nextweek') f.setDate(f.getDate()+7);
+      t=new Date(f); t.setDate(t.getDate()+6);
+    } else {
+      const off=kind==='nextmonth'?1:0;
+      f=new Date(now.getFullYear(),now.getMonth()+off,1); t=new Date(now.getFullYear(),now.getMonth()+off+1,0);
+    }
+    $('bulkFrom').value=iso(f); $('bulkTo').value=iso(t); updateBulkInfo();
+  }
+  async function bulkApply(mode){
+    if(!manager||!dbAvailable) return;
+    const targets=bulkTargets(mode);
+    if(!targets.length){ showToast(mode==='close'?'Nie je čo zavrieť.':'Nie je čo znovu otvoriť.'); return; }
+    const q = mode==='close'
+      ? `Zavrieť ${targets.length} dní? Zamestnanci sa potom nebudú môcť prihlásiť ani odhlásiť.`
+      : `Znovu otvoriť ${targets.length} dní na prihlasovanie?`;
+    if(!confirm(q)) return;
+    const patch={}; targets.forEach(k=>{ patch[k+'/closed']= mode==='close' ? true : null; });
+    try{ await scheduleRef.update(patch); showToast(mode==='close'?`Zavretých ${targets.length} dní`:`Otvorených ${targets.length} dní`); updateBulkInfo(); }
+    catch(e){ showToast('Nepodarilo sa uložiť (chýba oprávnenie alebo si offline).'); }
+  }
+
+  // ---------- odhlásenie vedúceho + automatické odhlásenie pri nečinnosti ----------
+  let idleTimer=null; const IDLE_MS=30*60*1000;
+  function resetIdle(){
+    clearTimeout(idleTimer);
+    if(!manager) return;
+    idleTimer=setTimeout(()=>{ doManagerLogout(); showToast('Režim vedúceho vypnutý (neaktivita).'); }, IDLE_MS);
+  }
+  ['click','keydown','touchstart'].forEach(ev=>document.addEventListener(ev,resetIdle,{passive:true}));
+  function doManagerLogout(){
+    manager=false; clearTimeout(idleTimer);
+    try{ if(auth) auth.signOut(); }catch(e){}
+    renderAll();
+  }
+
   async function addEmployee(name){
     name=(name||'').trim(); if(!name||!manager||!dbAvailable) return;
     if(employees.list.some(e=>e.name.toLowerCase()===name.toLowerCase())){ showToast('Toto meno už existuje'); return; }
@@ -423,10 +599,16 @@
     if(await writeEmployees(list)) showToast(`Nový kód pre ${name}: ${code}`);
   }
   function doEmployeeLogin(name,code){
+    const lockUntil=Number(localStorage.getItem('cp_lockuntil')||0);
+    if(Date.now()<lockUntil) return heroLoginError(`Príliš veľa pokusov. Skús to o ${Math.ceil((lockUntil-Date.now())/1000)} s.`);
     const entry=employees.list.find(e=>e.name===name);
     if(!entry) return heroLoginError('Vyber meno zo zoznamu.');
-    if(String(entry.code)!==String(code).trim()) return heroLoginError('Nesprávny kód.');
-    myName=name; localStorage.setItem('cp_myname',myName);
+    if(String(entry.code)!==String(code).trim()){
+      loginFails++;
+      if(loginFails>=5){ loginFails=0; localStorage.setItem('cp_lockuntil',String(Date.now()+60000)); return heroLoginError('Príliš veľa pokusov. Skús to o minútu.'); }
+      return heroLoginError('Nesprávny kód.');
+    }
+    loginFails=0; myName=name; localStorage.setItem('cp_myname',myName);
     showToast(`Vitaj, ${name.split(' ')[0]}!`);
     renderAll();
   }
@@ -439,13 +621,15 @@
 
   function renderTopRight(){
     let html='';
+    if(canShowInstall()) html+=`<button class="outline" id="installBtn">📲 Do mobilu</button>`;
     if(myName) html+=`<div class="who-badge"><span class="avatar">${esc(myName[0]||'?')}</span>${esc(myName)}<button class="link-btn" id="logoutBtn">odhlásiť</button></div>`;
     if(manager) html+=`<span class="badge-manager">⚡ VEDÚCI</span><button class="outline" id="lockBtn">Vypnúť</button>`;
     else html+=`<button class="outline" id="managerBtn">🔒 Vedúci</button>`;
     $('topright').innerHTML=html;
+    const ib=$('installBtn'); if(ib) ib.onclick=doInstall;
     const lb=$('logoutBtn'); if(lb) lb.onclick=doLogout;
-    const mb=$('managerBtn'); if(mb) mb.onclick=()=>$('managerModal').classList.add('open');
-    const kb=$('lockBtn'); if(kb) kb.onclick=()=>{ manager=false; sessionStorage.removeItem('cp_manager'); renderAll(); };
+    const mb=$('managerBtn'); if(mb) mb.onclick=()=>{ $('managerModal').classList.add('open'); setTimeout(()=>$('pin').focus(),50); };
+    const kb=$('lockBtn'); if(kb) kb.onclick=doManagerLogout;
   }
 
   function renderHero(){
@@ -547,12 +731,12 @@
       const past = key<tKey;
       const isMine = !!myName && (d.employees||[]).includes(myName);
       const idle = past && !t.closed && (!manager || t.signed===0);
-      const cls='day'+(idle?' past':' active')+(key===tKey?' today':'')+(t.closed?' full':'')+(isMine?' mine':'');
+      const cls='day'+(idle?' past':' active')+(key===tKey?' today':'')+(t.closed?' full':'')+(t.full?' limfull':'')+(isMine?' mine':'');
       let inner;
       if(idle){
         inner='<small class="closed">uplynulé</small>';
       } else {
-        inner = t.closed ? '<strong>Zavreté</strong>' : (manager ? `<strong>${t.signed} prihl.</strong>` : '<strong>Otvorené</strong>');
+        inner = t.closed ? '<strong>Zavreté</strong>' : (t.full ? (manager ? `<strong>${t.signed}/${t.limit} plné</strong>` : '<strong>Plné</strong>') : (manager ? `<strong>${t.signed}${t.limit?'/'+t.limit:''} prihl.</strong>` : '<strong>Otvorené</strong>'));
         const line = t.note || (t.hasRes ? ((d.reservations||[])[0]||{}).title : '');
         if(line) inner += `<small>${esc(line)}</small>`;
       }
@@ -580,6 +764,13 @@
     $('noteEditBox').hidden = !manager;
     if(manager && fresh) $('noteInput').value = d.note || '';
 
+    // limit pre deň (zobrazí sa iba keď je limit zapnutý)
+    $('limitBox').hidden = !(manager && limitCfg.enabled);
+    if(manager && limitCfg.enabled){
+      $('limitInfo').textContent = `(štandardný: ${limitCfg.defaultLimit||'žiadny'})`;
+      if(fresh) $('dayLimitInput').value = (d.limit===undefined||d.limit===null) ? '' : d.limit;
+    }
+
     // rezervácie
     const resList=$('resList');
     resList.innerHTML=(d.reservations||[]).map(r=>`
@@ -593,10 +784,11 @@
     const closed=!!d.closed;
     const already=!!myName && emps.includes(myName);
     const past=date<todayKey();
+    const lim=dayLimit(date), full=lim>0 && emps.length>=lim;
     const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${manager?`<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
     let statusHtml, teamHtml, actionHtml='';
     if(manager){
-      statusHtml = closed ? '<div class="sfree ok">✓ Zavreté</div>' : `<div class="sfree pending">Otvorené · ${emps.length} prihl.</div>`;
+      statusHtml = closed ? '<div class="sfree ok">✓ Zavreté</div>' : `<div class="sfree ${full?'full':'pending'}">Otvorené · ${emps.length}${lim?' z '+lim:''} prihl.${full?' (plné)':''}</div>`;
       teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Zatiaľ sa nikto neprihlásil.</p>';
       const available=employees.list.filter(e=>!emps.includes(e.name));
       actionHtml = `<div class="manage-row">
@@ -613,11 +805,12 @@
       teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Na smene nikto nie je.</p>';
       actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">${already?'Si na tejto smene. ':''}Zmeny už robí iba vedúci.</p>`;
     } else {
-      statusHtml = `<div class="sfree pending">Otvorené · ${emps.length} prihl.</div>`;
+      statusHtml = full ? `<div class="sfree full">Plné · ${emps.length} z ${lim}</div>` : `<div class="sfree pending">Otvorené · ${emps.length}${lim?' z '+lim:''} prihl.</div>`;
       teamHtml = `<p class="sub" style="margin:6px 0 0;">${already?'✓ Si prihlásený/á. ':''}Zoznam ľudí sa zobrazí po potvrdení vedúcim.</p>`;
       if(past) actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">Tento deň už uplynul.</p>`;
       else if(!myName) actionHtml = `<button class="primary small" disabled style="margin-top:10px;">Najprv sa prihlás hore</button>`;
       else if(already) actionHtml = `<button class="outline" id="leaveDay" style="margin-top:10px;width:100%;">Odhlásiť sa</button>`;
+      else if(full) actionHtml = `<button class="primary small" disabled style="margin-top:10px;">Smena je plná</button>`;
       else actionHtml = `<button class="primary small" id="signUpDay" style="margin-top:10px;">Prihlásiť sa na tento deň</button>`;
     }
     $('shiftsList').innerHTML = `<div class="shift-card">
@@ -670,10 +863,20 @@
     showToast('Excel stiahnutý');
   }
 
+  function renderSettings(){
+    $('settingsSection').style.display = manager ? 'block' : 'none';
+    if(!manager) return;
+    $('limitToggle').checked = limitCfg.enabled;
+    $('limitRow').style.display = limitCfg.enabled ? 'flex' : 'none';
+    if(document.activeElement!==$('limitDefault')) $('limitDefault').value = limitCfg.defaultLimit || '';
+  }
+
   function renderAll(){
     if(!scheduleLoaded||!employeesLoaded) return;
     renderTopRight();
     $('exportBtn').style.display = manager ? '' : 'none';
+    $('bulkBtn').style.display = manager ? '' : 'none';
+    renderSettings();
     renderHero();
     renderMine();
     renderCritical();
@@ -687,13 +890,67 @@
   $('nextMonths').onclick=()=>{ viewOffset++; renderMonths(); };
   $('todayMonths').onclick=()=>{ viewOffset=0; renderMonths(); };
   $('noteSaveBtn').onclick=()=>{ saveNote(selected,$('noteInput').value).then(()=>openShift(selected)); };
-  $('unlock').onclick=()=>{
-    if($('pin').value!==MANAGER_PIN) return message('pinMsg','Nesprávny PIN.');
-    manager=true; sessionStorage.setItem('cp_manager','1'); $('pin').value='';
-    $('managerModal').classList.remove('open'); renderAll();
+  $('unlock').onclick=async()=>{
+    const pw=$('pin').value;
+    if(!pw) return message('pinMsg','Zadaj heslo.');
+    if(!auth) return message('pinMsg','Prihlasovanie nie je dostupné (skús obnoviť stránku).');
+    try{
+      await auth.signInWithEmailAndPassword(MANAGER_EMAIL, pw);
+      $('pin').value=''; $('pinMsg').classList.remove('show');
+      $('managerModal').classList.remove('open');
+    }catch(e){
+      const c=(e&&e.code)||'';
+      if(c==='auth/too-many-requests') message('pinMsg','Príliš veľa pokusov. Skús to neskôr.');
+      else if(c==='auth/user-not-found') message('pinMsg','Účet vedúceho ešte nie je vytvorený vo Firebase.');
+      else if(c==='auth/operation-not-allowed') message('pinMsg','Vo Firebase nie je zapnuté prihlásenie e-mailom a heslom.');
+      else if(c==='auth/network-request-failed') message('pinMsg','Chyba siete, skús znova.');
+      else message('pinMsg','Nesprávne heslo.');
+    }
   };
+  $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') $('unlock').click(); });
   document.querySelectorAll('[data-close]').forEach(x=>x.onclick=()=>x.closest('.modal').classList.remove('open'));
   document.querySelectorAll('.modal').forEach(x=>x.onclick=e=>{ if(e.target===x) x.classList.remove('open'); });
+
+  // ---- nastavenia limitov ----
+  $('limitToggle').onchange=async e=>{
+    if(!manager) return;
+    const on=e.target.checked; const patch={enabled:on};
+    if(on && !limitCfg.defaultLimit) patch.defaultLimit=4;
+    if(await writeLimits(patch)) showToast(on?'Limit zapnutý':'Limit vypnutý');
+  };
+  $('limitSave').onclick=async()=>{
+    const v=Math.max(0,Math.min(100,parseInt($('limitDefault').value,10)||0));
+    if(await writeLimits({defaultLimit:v})) showToast('Štandardný limit uložený');
+  };
+  $('dayLimitSave').onclick=async()=>{
+    if(!manager||!selected) return;
+    const raw=$('dayLimitInput').value.trim();
+    const val = raw==='' ? null : Math.max(0,Math.min(100,parseInt(raw,10)||0));
+    if(await writeDay(selected,{limit:val})) showToast('Limit dňa uložený');
+    openShift(selected);
+  };
+
+  // ---- hromadné zatváranie ----
+  $('bulkBtn').onclick=()=>{ bulkPreset('week'); $('bulkModal').classList.add('open'); };
+  document.querySelectorAll('[data-bulk-preset]').forEach(x=>x.onclick=()=>bulkPreset(x.dataset.bulkPreset));
+  ['bulkFrom','bulkTo','bulkEmpty'].forEach(id=>$(id).addEventListener('change',updateBulkInfo));
+  $('bulkClose').onclick=()=>bulkApply('close');
+  $('bulkOpen').onclick=()=>bulkApply('open');
+
+  // ---- pridanie do mobilu (PWA) ----
+  let deferredPrompt=null;
+  const isStandalone=()=>window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+  const isIOS=()=>/iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+  function canShowInstall(){ return !isStandalone() && (!!deferredPrompt || isIOS()); }
+  window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); deferredPrompt=e; if(scheduleLoaded&&employeesLoaded) renderTopRight(); });
+  window.addEventListener('appinstalled',()=>{ deferredPrompt=null; if(scheduleLoaded&&employeesLoaded) renderTopRight(); showToast('Aplikácia pridaná 🎉'); });
+  async function doInstall(){
+    if(deferredPrompt){ deferredPrompt.prompt(); try{ await deferredPrompt.userChoice; }catch(e){} deferredPrompt=null; renderTopRight(); return; }
+    alert('Na iPhone / iPade: v Safari ťukni na tlačidlo Zdieľať (štvorec so šípkou nahor) a vyber „Pridať na plochu“.');
+  }
+  if('serviceWorker' in navigator && /^https?:$/.test(location.protocol)){
+    window.addEventListener('load',()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+  }
 
   renderAll();
   initDb();
