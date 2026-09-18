@@ -81,12 +81,12 @@
     .day:hover{border-color:var(--yellow)}
     .day.active{background:#232529;border-color:#55585d}
     .day.active:after{content:"";position:absolute;right:8px;top:8px;width:7px;height:7px;border-radius:50%;background:var(--yellow)}
-    .day.full.active:after{background:var(--red)}
+    .day.full.active:after{background:var(--green)}
     .day.today{outline:2px solid var(--yellow)}
     .day.mine{box-shadow:inset 0 0 0 2px var(--yellow)}
     .num{display:block;font-weight:800;margin-bottom:10px}
     .day strong{display:block;color:var(--yellow);font-size:12px}
-    .day.full strong{color:var(--red)}
+    .day.full strong{color:var(--green)}
     .day small{display:block;color:#8f9297;font-size:10px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .closed{color:#4d5054!important}
     footer{font-size:12px;color:#777;padding:17px 2px}
@@ -113,6 +113,9 @@
     .shift-card .sfree{font-size:12px;font-weight:800}
     .shift-card .sfree.full{color:var(--red)}
     .shift-card .sfree.ok{color:var(--green)}
+    .shift-card .sfree.pending{color:var(--yellow)}
+    .manage-row select{flex:1;min-width:150px;height:36px;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:0 8px}
+    .manage-row .primary{width:auto;padding:0 14px}
     .team{margin:10px 0 0}
     .member{display:flex;align-items:center;gap:9px;border-bottom:1px solid #303338;padding:7px 0;font-size:13px}
     .remove{margin-left:auto;border:0;background:transparent;color:var(--red);font-size:16px}
@@ -150,7 +153,7 @@
     </section>
 
     <section class="critical" id="criticalSection" style="display:none;">
-      <div class="head"><b>TREBA DOPLNIŤ</b></div>
+      <div class="head"><b>TREBA POTVRDIŤ</b></div>
       <div class="chips" id="critChips"></div>
     </section>
 
@@ -165,7 +168,7 @@
 
     <div class="bar"><h2>▣ Kalendár smien</h2></div>
     <div class="months" id="months"></div>
-    <footer><span class="dot">●</span> Voľné miesto · Zamestnanec sa môže prihlásiť, spravovať smeny a rezervácie môže iba vedúci.</footer>
+    <footer><span class="dot">●</span> Voľné miesto · Zamestnanec sa môže prihlásiť a odhlásiť, kým vedúci smenu nepotvrdí. Potom už smeny a rezervácie mení iba vedúci.</footer>
   </main>
 
   <div class="modal" id="shiftModal">
@@ -193,7 +196,6 @@
             <div><label>OD</label><input id="newShiftStart" type="time" value="17:00"></div>
             <div><label>DO</label><input id="newShiftEnd" type="time" value="24:00"></div>
           </div>
-          <label>POČET POTREBNÝCH ĽUDÍ</label><input id="newShiftReq" type="number" min="1" max="20" value="2">
           <button class="primary small" id="addShiftBtn">Pridať zmenu</button>
         </div>
       </div>
@@ -244,9 +246,10 @@
 
   function dayTotals(key){
     const d=dayObj(key);
-    let req=0, filled=0;
-    (d.shifts||[]).forEach(s=>{ req+=s.required||0; filled+=(s.employees||[]).length; });
-    return { req, filled, free: req-filled, hasRes: (d.reservations||[]).length>0 };
+    const shifts=d.shifts||[];
+    let signed=0, confirmed=0;
+    shifts.forEach(s=>{ signed+=(s.employees||[]).length; if(s.confirmed) confirmed++; });
+    return { total:shifts.length, confirmed, open:shifts.length-confirmed, signed, hasRes:(d.reservations||[]).length>0 };
   }
 
   // ---------- migration ----------
@@ -328,36 +331,71 @@
   }
 
   // ---------- shift/reservation actions ----------
-  async function addShift(key, label, start, end, required){
+  // Všetky zmeny smien idú cez transakciu, aby sa pri súčasnom prihlasovaní viacerých ľudí nikto neprepísal.
+  async function mutateShifts(key, fn){
+    try{
+      const ref=scheduleRef.child(key).child('shifts');
+      const res=await ref.transaction(cur=>{
+        const arr = Array.isArray(cur) ? cur : (cur ? Object.values(cur) : (dayObj(key).shifts||[]));
+        const out = fn(arr.map(x=>({...x})));
+        return out===null ? undefined : out;
+      });
+      return res.committed;
+    }catch(e){ return false; }
+  }
+  async function addShift(key, label, start, end){
     if(!manager||!dbAvailable) return;
-    const d=dayObj(key);
-    const shifts=(d.shifts||[]).concat([{ id:uid('s'), label: label||'Zmena', start:start||'', end:end||'', required: Math.max(1,Math.min(30,Number(required)||1)), employees:[] }]);
-    if(await writeDay(key,{shifts})){ message('msg','Zmena pridaná.'); showToast('Nová zmena pridaná'); }
+    const ok=await mutateShifts(key, shifts=>shifts.concat([{ id:uid('s'), label: label||'Zmena', start:start||'', end:end||'', confirmed:false, employees:[] }]));
+    if(ok){ message('msg','Zmena pridaná.'); showToast('Nová zmena pridaná'); }
   }
   async function removeShift(key, shiftId){
     if(!manager||!dbAvailable) return;
-    const d=dayObj(key); const shifts=(d.shifts||[]).filter(s=>s.id!==shiftId);
-    if(await writeDay(key,{shifts})) showToast('Zmena odstránená');
+    if(await mutateShifts(key, shifts=>shifts.filter(s=>s.id!==shiftId))) showToast('Zmena odstránená');
   }
-  async function setShiftRequired(key, shiftId, val){
+  async function setShiftConfirmed(key, shiftId, val){
     if(!manager||!dbAvailable) return;
-    const d=dayObj(key); const shifts=(d.shifts||[]).map(s=>s.id===shiftId?{...s, required:Math.max(0,Math.min(30,Number(val)||0))}:s);
-    await writeDay(key,{shifts});
+    const ok=await mutateShifts(key, shifts=>{ const t=shifts.find(s=>s.id===shiftId); if(!t) return null; t.confirmed=!!val; return shifts; });
+    if(ok) showToast(val?'Smena potvrdená a uložená':'Prihlasovanie znovu otvorené');
   }
   async function signUpShift(key, shiftId){
     if(!myName||!dbAvailable) return;
-    const d=dayObj(key); const target=(d.shifts||[]).find(s=>s.id===shiftId); if(!target) return;
-    const emps=(target.employees||[]).slice();
-    if(emps.includes(myName)) return message('msg','Na tejto zmene už si prihlásený/á.');
-    if(emps.length>=(target.required||0)) return message('msg','Táto zmena je už plná.');
-    emps.push(myName);
-    const shifts=(d.shifts||[]).map(s=>s.id===shiftId?{...s, employees:emps}:s);
-    if(await writeDay(key,{shifts})){ message('msg','Hotovo – zmena je tvoja.'); showToast('Prihlásenie úspešné 🎉'); }
+    let reason='';
+    const ok=await mutateShifts(key, shifts=>{
+      const t=shifts.find(s=>s.id===shiftId);
+      if(!t){ reason='Táto zmena už neexistuje.'; return null; }
+      if(t.confirmed){ reason='Táto smena je už potvrdená, prihlásiť sa nedá.'; return null; }
+      const emps=t.employees||[];
+      if(emps.includes(myName)){ reason='Na tejto zmene už si prihlásený/á.'; return null; }
+      t.employees=emps.concat([myName]); return shifts;
+    });
+    if(ok) showToast('Prihlásenie úspešné 🎉'); else if(reason) showToast(reason);
+  }
+  async function leaveShift(key, shiftId){
+    if(!myName||!dbAvailable) return;
+    let reason='';
+    const ok=await mutateShifts(key, shifts=>{
+      const t=shifts.find(s=>s.id===shiftId);
+      if(!t){ reason='Táto zmena už neexistuje.'; return null; }
+      if(t.confirmed){ reason='Smena je už potvrdená, odhlásiť ťa môže iba vedúci.'; return null; }
+      t.employees=(t.employees||[]).filter(n=>n!==myName); return shifts;
+    });
+    if(ok) showToast('Odhlásený/á zo zmeny'); else if(reason) showToast(reason);
+  }
+  async function addEmployeeToShift(key, shiftId, name){
+    if(!manager||!dbAvailable||!name) return;
+    const ok=await mutateShifts(key, shifts=>{
+      const t=shifts.find(s=>s.id===shiftId); if(!t) return null;
+      const emps=t.employees||[]; if(emps.includes(name)) return null;
+      t.employees=emps.concat([name]); return shifts;
+    });
+    if(ok) showToast(`${name} pridaný/á na smenu`);
   }
   async function removeEmployeeFromShift(key, shiftId, name){
     if(!manager||!dbAvailable) return;
-    const d=dayObj(key); const shifts=(d.shifts||[]).map(s=>s.id===shiftId?{...s, employees:(s.employees||[]).filter(n=>n!==name)}:s);
-    await writeDay(key,{shifts});
+    await mutateShifts(key, shifts=>{
+      const t=shifts.find(s=>s.id===shiftId); if(!t) return null;
+      t.employees=(t.employees||[]).filter(n=>n!==name); return shifts;
+    });
   }
   async function addReservation(key, title, note){
     if(!manager||!dbAvailable) return;
@@ -419,12 +457,12 @@
     const h=$('hero');
     if(manager){
       const needed=allNeededKeys();
-      let totalReq=0,totalFilled=0;
-      needed.forEach(k=>{ const t=dayTotals(k); totalReq+=t.req; totalFilled+=t.filled; });
+      let total=0,conf=0;
+      needed.forEach(k=>{ const t=dayTotals(k); total+=t.total; conf+=t.confirmed; });
       h.innerHTML=`
         <div><span class="tag">REŽIM VEDÚCEHO</span><h1>PREHĽAD<span>ZMIEN</span></h1><p class="lead">Sprava zmeny, rezervácie, tím a kódy zamestnancov v kalendári nižšie.</p></div>
         <div class="who"><div class="stat-row">
-          <div class="stat"><span>Obsadené pozície</span><b>${totalFilled}/${totalReq}</b></div>
+          <div class="stat"><span>Potvrdené smeny</span><b>${conf}/${total}</b></div>
           <div class="stat"><span>Zamestnancov</span><b>${employees.list.length}</b></div>
         </div></div>`;
       return;
@@ -438,7 +476,7 @@
         const d=new Date(next+'T12:00'); const diff=Math.round((new Date(next+'T00:00')-new Date(tKey+'T00:00'))/86400000);
         const when= diff===0?'dnes':(diff===1?'zajtra':`o ${diff} dní`);
         const s=(schedule.days[next].shifts||[]).find(s=>(s.employees||[]).includes(myName));
-        nextHtml=`<b style="font-size:24px;color:var(--yellow)">${d.getDate()}. ${MONTHS[d.getMonth()]}</b><br><span style="color:var(--muted)">${when}${s&&timeLabel(s)?' · '+timeLabel(s):''}${s?' · '+esc(s.label):''}</span>`;
+        nextHtml=`<b style="font-size:24px;color:var(--yellow)">${d.getDate()}. ${MONTHS[d.getMonth()]}</b><br><span style="color:var(--muted)">${when}${s&&timeLabel(s)?' · '+timeLabel(s):''}${s?' · '+esc(s.label):''}${s&&!s.confirmed?' · čaká na potvrdenie':''}</span>`;
       }
       h.innerHTML=`
         <div><span class="tag">AHOJ</span><h1>${esc(myName.split(' ')[0]).toUpperCase()}<span>VITAJ SPÄŤ</span></h1><p class="lead">Skontroluj svoje smeny nižšie alebo si vyber voľný termín v kalendári.</p></div>
@@ -470,7 +508,7 @@
     $('myName').textContent=myName;
     $('chips').innerHTML=entries.length? entries.map(({date,s})=>{
       const dt=new Date(date+'T12:00');
-      return `<button class="chip" data-my="${date}"><b>${dt.toLocaleDateString('sk-SK',{day:'numeric',month:'short'})}</b><span>${esc(s.label)}${timeLabel(s)?' · '+timeLabel(s):''}</span></button>`;
+      return `<button class="chip" data-my="${date}"><b>${dt.toLocaleDateString('sk-SK',{day:'numeric',month:'short'})}</b><span>${esc(s.label)}${timeLabel(s)?' · '+timeLabel(s):''}</span><span style="color:${s.confirmed?'var(--green)':'var(--yellow)'}">${s.confirmed?'✓ potvrdené':'čaká na potvrdenie'}</span></button>`;
     }).join('') : '<span class="sub">Zatiaľ nemáš žiadnu smenu.</span>';
     document.querySelectorAll('[data-my]').forEach(x=>x.onclick=()=>openShift(x.dataset.my));
   }
@@ -478,13 +516,13 @@
   function renderCritical(){
     if(!manager){ $('criticalSection').style.display='none'; return; }
     const tKey=todayKey();
-    const crit=allNeededKeys().filter(k=>k>=tKey && dayTotals(k).free>0 && dayTotals(k).req>0)
-      .map(k=>({key:k, free:dayTotals(k).free})).sort((a,b)=>a.key.localeCompare(b.key));
+    const crit=allNeededKeys().filter(k=>k>=tKey && dayTotals(k).open>0)
+      .map(k=>({key:k, open:dayTotals(k).open, signed:dayTotals(k).signed})).sort((a,b)=>a.key.localeCompare(b.key));
     if(!crit.length){ $('criticalSection').style.display='none'; return; }
     $('criticalSection').style.display='block';
     $('critChips').innerHTML=crit.slice(0,10).map(c=>{
       const d=new Date(c.key+'T12:00');
-      return `<button class="chip crit-chip" data-my="${c.key}"><b>${d.getDate()}. ${MONTHS[d.getMonth()]}</b><span>chýba ${c.free}</span></button>`;
+      return `<button class="chip crit-chip" data-my="${c.key}"><b>${d.getDate()}. ${MONTHS[d.getMonth()]}</b><span>prihlásených ${c.signed} · treba potvrdiť</span></button>`;
     }).join('');
     document.querySelectorAll('#critChips [data-my]').forEach(x=>x.onclick=()=>openShift(x.dataset.my));
   }
@@ -515,10 +553,10 @@
       const dObj=new Date(y,m,day); const key=iso(dObj);
       const t=dayTotals(key);
       const isMine = myName && (dayObj(key).shifts||[]).some(s=>(s.employees||[]).includes(myName));
-      let cls='day'+(t.req?' active':'')+(key===tKey?' today':'')+(t.req>0&&t.free<=0?' full':'')+(isMine?' mine':'');
+      let cls='day'+(t.total?' active':'')+(key===tKey?' today':'')+(t.total>0&&t.open===0?' full':'')+(isMine?' mine':'');
       let inner;
-      if(t.req>0){
-        inner = t.free<=0 ? `<strong>Obsadené</strong>` : `<strong>${t.free} voľné</strong>`;
+      if(t.total>0){
+        inner = t.open===0 ? `<strong>Potvrdené</strong>` : (manager ? `<strong>${t.signed} prihl.</strong>` : `<strong>Otvorené</strong>`);
         const shiftNames = (dayObj(key).shifts||[]).map(s=>s.label).join(', ');
         inner += `<small>${esc(shiftNames)}</small>`;
       } else if(t.hasRes){
@@ -557,31 +595,51 @@
       shiftsList.innerHTML = `<p class="sub">${manager?'Zatiaľ žiadna zmena tento deň. Pridaj ju nižšie.':'Tento deň nie je naplánovaná žiadna zmena.'}</p>`;
     } else {
       shiftsList.innerHTML = shifts.map(s=>{
-        const free=Math.max(0,(s.required||0)-(s.employees||[]).length);
-        const already = myName && (s.employees||[]).includes(myName);
-        const team=(s.employees||[]).map(n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${manager?`<button class="remove" data-emp-remove="${s.id}|${esc(n)}">×</button>`:''}</div>`).join('') || '<p class="sub" style="margin:6px 0 0;">Zatiaľ sa nikto neprihlásil.</p>';
-        let actionHtml='';
+        const emps=s.employees||[];
+        const already = !!myName && emps.includes(myName);
+        const confirmed = !!s.confirmed;
+        const memberHtml = n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${manager?`<button class="remove" data-emp-remove="${s.id}|${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
+        let statusHtml, teamHtml, actionHtml='';
         if(manager){
+          statusHtml = confirmed ? '<div class="sfree ok">✓ Potvrdené</div>' : `<div class="sfree pending">Prihlásených: ${emps.length}</div>`;
+          teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Zatiaľ sa nikto neprihlásil.</p>';
+          const available=employees.list.filter(e=>!emps.includes(e.name));
           actionHtml = `<div class="manage-row">
-              <span class="tiny sub">potrebných:</span>
-              <input type="number" min="0" max="30" value="${s.required||0}" data-req-input="${s.id}">
+              <select data-add-select="${s.id}"><option value="">Pridať zamestnanca…</option>${available.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('')}</select>
+              <button class="outline" data-add-emp="${s.id}">Pridať</button>
+            </div>
+            <div class="manage-row">
+              ${confirmed
+                ? `<button class="outline" data-unconfirm="${s.id}">Znovu otvoriť prihlasovanie</button>`
+                : `<button class="primary small" data-confirm="${s.id}">Potvrdiť a uložiť</button>`}
               <button class="outline" data-remove-shift="${s.id}">Odstrániť zmenu</button>
             </div>`;
+        } else if(confirmed){
+          statusHtml = '<div class="sfree ok">✓ Potvrdené</div>';
+          teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Na smene nikto nie je.</p>';
+          actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">${already?'Si na tejto smene. ':''}Zmeny už robí iba vedúci.</p>`;
         } else {
-          const label = !myName ? 'Najprv sa prihlás hore' : (already ? 'Už si prihlásený/á' : (free<=0?'Obsadené':'Prihlásiť sa'));
-          actionHtml = `<button class="primary small" data-signup="${s.id}" ${(!myName||already||free<=0)?'disabled':''} style="margin-top:10px;">${label}</button>`;
+          statusHtml = `<div class="sfree pending">Prihlásených: ${emps.length}</div>`;
+          teamHtml = `<p class="sub" style="margin:6px 0 0;">${already?'✓ Si prihlásený/á. ':''}Zoznam ľudí sa zobrazí po potvrdení vedúcim.</p>`;
+          if(!myName) actionHtml = `<button class="primary small" disabled style="margin-top:10px;">Najprv sa prihlás hore</button>`;
+          else if(already) actionHtml = `<button class="outline" data-leave="${s.id}" style="margin-top:10px;width:100%;">Odhlásiť sa zo zmeny</button>`;
+          else actionHtml = `<button class="primary small" data-signup="${s.id}" style="margin-top:10px;">Prihlásiť sa</button>`;
         }
         return `<div class="shift-card">
-            <div class="shead"><div><div class="slabel">${esc(s.label)}</div><div class="stime">${timeLabel(s)}</div></div><div class="sfree ${free<=0?'full':'ok'}">${free<=0?'Obsadené':free+' voľné z '+(s.required||0)}</div></div>
-            <div class="team">${team}</div>
+            <div class="shead"><div><div class="slabel">${esc(s.label)}</div><div class="stime">${timeLabel(s)}</div></div>${statusHtml}</div>
+            <div class="team">${teamHtml}</div>
             ${actionHtml}
           </div>`;
       }).join('');
     }
-    document.querySelectorAll('[data-signup]').forEach(x=>x.onclick=()=>signUpShift(selected,x.dataset.signup).then(()=>openShift(selected)));
-    document.querySelectorAll('[data-remove-shift]').forEach(x=>x.onclick=()=>{ if(confirm('Odstrániť túto zmenu aj so všetkými prihlásenými?')) removeShift(selected,x.dataset.removeShift).then(()=>openShift(selected)); });
-    document.querySelectorAll('[data-emp-remove]').forEach(x=>x.onclick=()=>{ const [sid,name]=x.dataset.empRemove.split('|'); removeEmployeeFromShift(selected,sid,name).then(()=>openShift(selected)); });
-    document.querySelectorAll('[data-req-input]').forEach(x=>x.addEventListener('change',()=>setShiftRequired(selected,x.dataset.reqInput,x.value).then(()=>openShift(selected))));
+    const again=()=>openShift(selected);
+    document.querySelectorAll('[data-signup]').forEach(x=>x.onclick=()=>signUpShift(selected,x.dataset.signup).then(again));
+    document.querySelectorAll('[data-leave]').forEach(x=>x.onclick=()=>leaveShift(selected,x.dataset.leave).then(again));
+    document.querySelectorAll('[data-confirm]').forEach(x=>x.onclick=()=>setShiftConfirmed(selected,x.dataset.confirm,true).then(again));
+    document.querySelectorAll('[data-unconfirm]').forEach(x=>x.onclick=()=>setShiftConfirmed(selected,x.dataset.unconfirm,false).then(again));
+    document.querySelectorAll('[data-add-emp]').forEach(x=>x.onclick=()=>{ const sel=document.querySelector(`[data-add-select="${x.dataset.addEmp}"]`); if(!sel||!sel.value) return showToast('Vyber zamestnanca'); addEmployeeToShift(selected,x.dataset.addEmp,sel.value).then(again); });
+    document.querySelectorAll('[data-remove-shift]').forEach(x=>x.onclick=()=>{ if(confirm('Odstrániť túto zmenu aj so všetkými prihlásenými?')) removeShift(selected,x.dataset.removeShift).then(again); });
+    document.querySelectorAll('[data-emp-remove]').forEach(x=>x.onclick=()=>{ const [sid,name]=x.dataset.empRemove.split('|'); removeEmployeeFromShift(selected,sid,name).then(again); });
 
     $('shiftAddBox').hidden=!manager;
     $('msg').classList.remove('show');
@@ -599,7 +657,7 @@
   }
 
   $('resAddBtn').onclick=()=>{ addReservation(selected,$('resTitle').value,$('resNote').value).then(()=>{ $('resTitle').value=''; $('resNote').value=''; openShift(selected); }); };
-  $('addShiftBtn').onclick=()=>{ addShift(selected,$('newShiftLabel').value,$('newShiftStart').value,$('newShiftEnd').value,$('newShiftReq').value).then(()=>{ $('newShiftLabel').value=''; openShift(selected); }); };
+  $('addShiftBtn').onclick=()=>{ addShift(selected,$('newShiftLabel').value,$('newShiftStart').value,$('newShiftEnd').value).then(()=>{ $('newShiftLabel').value=''; openShift(selected); }); };
   $('unlock').onclick=()=>{
     if($('pin').value!==MANAGER_PIN) return message('pinMsg','Nesprávny PIN.');
     manager=true; sessionStorage.setItem('cp_manager','1'); $('pin').value='';
