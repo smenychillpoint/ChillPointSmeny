@@ -69,7 +69,7 @@
     .roster{margin-top:22px;background:var(--panel);border:1px solid var(--line);padding:20px}
     .roster h3{margin:0 0 14px;font-size:16px;text-transform:uppercase}
     .roster h3:after{content:"";display:block;width:68px;height:5px;background:var(--yellow);margin-top:9px}
-    .rrow{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid #2c2f33}
+    .rrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 0;border-bottom:1px solid #2c2f33}
     .rrow:last-child{border-bottom:none}
     .rname{display:flex;align-items:center;gap:10px}
     .rcode{font-weight:900;color:var(--yellow);letter-spacing:.15em}
@@ -93,7 +93,7 @@
     .day.active:after{content:"";position:absolute;right:8px;top:8px;width:7px;height:7px;border-radius:50%;background:var(--yellow)}
     .day.full.active:after{background:var(--green)}
     .day.today{outline:2px solid var(--yellow)}
-    .day.mine{box-shadow:inset 0 0 0 2px var(--yellow)}
+    .day.me{box-shadow:inset 0 0 0 2px var(--yellow)}
     .num{display:block;font-weight:800;margin-bottom:10px}
     .day strong{display:block;color:var(--yellow);font-size:12px}
     .day.full strong{color:var(--green)}
@@ -170,7 +170,52 @@
     .lg-me{box-shadow:inset 0 0 0 2px var(--yellow)}
     .lg-today{outline:2px solid var(--yellow);border-color:transparent}
     .lg-past{opacity:.5}
-    @media(max-width:560px){.day .cnt{font-size:10px;margin-top:2px}}
+.rdots{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px}
+    .rd{display:inline-block;width:9px;height:9px;border-radius:50%}
+    .rd.green{background:#3fdc6a}.rd.yellow{background:#ffd11a}.rd.red{background:#ff4d4d}
+    .rd.none{background:transparent;border:1px solid #6b6f75}
+    .rdots em{font-style:normal;font-size:10px;color:#8f9297;line-height:9px}
+    .chip .rdots{display:flex;margin-top:6px}
+    .lrow .rd{width:11px;height:11px}
+    .rate{display:inline-flex;gap:6px;align-items:center}
+    .rb{width:20px;height:20px;border-radius:50%;border:2px solid transparent;padding:0;opacity:.35}
+    .rb:hover{opacity:.8}
+    .rb.on{opacity:1;border-color:#fff}
+    .rb.green{background:#3fdc6a}.rb.yellow{background:#ffd11a}.rb.red{background:#ff4d4d}
+    .member .rate{margin-left:auto}
+    .member .rate+.remove{margin-left:8px}
+    .day.sel{background:#3a3213;border-color:var(--yellow)}
+    .day.nosel{opacity:.35}
+    .lrows{display:flex;flex-direction:column;gap:5px}
+    .lrow{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#232529;border:1px solid #55585d;color:#eee;padding:10px 12px}
+    .lrow:hover{border-color:var(--yellow)}
+    .lrow.we{background:#2a2c31}
+    .lrow.today{outline:2px solid var(--yellow)}
+    .lrow.past{opacity:.55}
+    .lrow.me{box-shadow:inset 0 0 0 2px var(--yellow)}
+    .lrow.sel{background:#3a3213;border-color:var(--yellow)}
+    .lrow.nosel{opacity:.35}
+    .lrow .ldate{flex:0 0 46px;text-align:center;line-height:1.1}
+    .lrow .ldate b{display:block;font-size:20px}
+    .lrow .ldate small{display:block;font-size:11px;color:#8f9297;text-transform:uppercase}
+    .lrow .lmain{flex:1;min-width:0}
+    .lrow .lmain strong{display:block;font-size:14px;color:var(--yellow)}
+    .lrow.closed .lmain strong{color:var(--green)}
+    .lrow.limfull .lmain strong{color:var(--red)}
+    .lrow .lsub{display:block;font-size:12px;color:#c9ccd0;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .lrow .lmark{flex:0 0 auto;font-size:12px;color:var(--yellow);font-weight:800}
+    .multibar{position:fixed;left:0;right:0;bottom:0;z-index:25;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:12px 16px calc(12px + env(safe-area-inset-bottom));background:#111316;border-top:2px solid var(--yellow)}
+    .multibar[hidden]{display:none}
+    .multibar span{font-size:14px;font-weight:700}
+    .crit-open{cursor:pointer}
+    .more-box{margin-top:22px;border:1px solid var(--line);background:var(--panel)}
+    .more-box>summary,.more-day>summary{cursor:pointer;padding:14px 18px;font-weight:800;color:var(--yellow);font-size:14px}
+    .more-box .roster{margin-top:0;border-width:1px 0 0 0}
+    .more-box+.more-box{margin-top:10px}
+    .more-day{margin:12px 0;border:1px solid #33363b;background:#0d0f11}
+    .more-day>summary{padding:10px 12px;font-size:13px}
+    .more-day .add-box{margin:0 12px 12px}
+    @media(max-width:560px){.day .cnt{font-size:10px;margin-top:2px}.rd{width:7px;height:7px}.rdots{gap:2px}.lrow .rd{width:10px;height:10px}}
     @media(max-width:880px){.hero,.months{grid-template-columns:1fr}.who{box-shadow:7px 7px 0 #ffffff42}.day{min-height:76px}.day small{display:none}}
     @media(max-width:560px){.top{padding:10px 13px}.brand small{display:none}.wrap{width:calc(100% - 20px);padding-top:24px}.hero{padding:20px;gap:22px}.hero h1{font-size:44px}.month{padding:10px}.week,.grid{gap:3px}.day{min-height:58px;padding:6px}.num{margin-bottom:5px;font-size:13px}.day strong{font-size:9px}.stat-row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}}
   </style>
@@ -195,8 +240,9 @@
       <div class="chips" id="critChips"></div>
     </section>
 
+    <details class="more-box" id="moreBox" style="display:none;">
+      <summary>⚙ Nastavenia (limit ľudí na deň)</summary>
     <section class="roster" id="settingsSection" style="display:none;">
-      <h3>Nastavenia</h3>
       <div class="rrow"><label class="switch-row"><input type="checkbox" id="limitToggle"><span><b>Limit ľudí na deň</b><br><small class="sub">Vypnutý = prihlásiť sa môže neobmedzený počet ľudí.</small></span></label></div>
       <div class="addrow" id="limitRow" style="display:none;">
         <input type="number" id="limitDefault" min="1" max="100" placeholder="Štandardný limit (napr. 4)">
@@ -204,8 +250,12 @@
       </div>
     </section>
 
+    </details>
+
+    <details class="more-box" id="rosterBox" style="display:none;">
+      <summary id="rosterSummary">👥 Zoznam zamestnancov</summary>
     <section class="roster" id="rosterSection" style="display:none;">
-      <h3>Zoznam zamestnancov</h3>
+      <p class="sub" style="margin:0 0 10px;">Hodnotenie (zelená = výborný, žltá = priemerný, červená = slabý) vidíš iba ty. Ťuknutím na farbu ju nastavíš, opätovným ťuknutím zrušíš.</p>
       <div id="rosterList"></div>
       <div class="addrow">
         <input type="text" id="newEmpInput" placeholder="Meno a priezvisko">
@@ -213,8 +263,10 @@
       </div>
     </section>
 
+    </details>
+
     <div class="bar"><h2>▣ Kalendár smien</h2>
-      <div class="topright"><button class="outline" id="exportBtn" style="display:none;background:var(--yellow);color:#141518;border-color:var(--yellow)">⬇ Stiahnuť do Excelu</button><button class="outline" id="bulkBtn" style="display:none">☰ Hromadné zatváranie</button><button class="outline" id="prevMonths">‹ Skôr</button><button class="outline" id="todayMonths">Dnes</button><button class="outline" id="nextMonths">Ďalej ›</button></div>
+      <div class="topright"><button class="outline" id="exportBtn" style="display:none;background:var(--yellow);color:#141518;border-color:var(--yellow)">⬇ Stiahnuť do Excelu</button><button class="outline" id="bulkBtn" style="display:none">☰ Hromadné zatváranie</button><button class="outline" id="multiBtn" style="display:none">☑ Prihlásiť sa na viac dní</button><button class="outline" id="viewBtn">☰ Zoznam</button><button class="outline" id="prevMonths">‹ Skôr</button><button class="outline" id="todayMonths">Dnes</button><button class="outline" id="nextMonths">Ďalej ›</button></div>
     </div>
     <div class="months" id="months"></div>
     <div class="legend" id="legend"></div>
@@ -236,24 +288,30 @@
         </div>
       </div>
 
-      <div class="section-title">Rezervácie / uzávery</div>
-      <div id="resList"></div>
-      <div id="resAddBox" class="add-box" hidden>
-        <div class="form">
-          <label>NÁZOV (napr. Uzavretá spoločnosť)</label><input id="resTitle" placeholder="napr. Firma XY – súkromná akcia">
-          <label>ČAS / POZNÁMKA</label><input id="resNote" placeholder="napr. 18:00–22:00 alebo celý deň">
-          <button class="primary small" id="resAddBtn">Pridať rezerváciu</button>
-        </div>
+      <div id="resPublic" hidden>
+        <div class="section-title">Rezervácie / uzávery</div>
+        <div id="resList"></div>
       </div>
 
-      <div class="section-title">Prihlásenie na smenu</div>
-      <div id="limitBox" class="add-box" hidden style="margin-bottom:10px;">
-        <div class="form">
-          <label>LIMIT PRE TENTO DEŇ <span id="limitInfo"></span></label>
-          <input id="dayLimitInput" type="number" min="0" max="100" placeholder="prázdne = štandardný limit, 0 = bez limitu">
-          <button class="primary small" id="dayLimitSave">Uložiť limit dňa</button>
+      <details class="more-day" id="moreDay" hidden>
+        <summary id="moreDaySummary">⚙ Viac – pridať rezerváciu</summary>
+        <div id="resAddBox" class="add-box">
+          <div class="form">
+            <label>NÁZOV (napr. Uzavretá spoločnosť)</label><input id="resTitle" placeholder="napr. Firma XY – súkromná akcia">
+            <label>ČAS / POZNÁMKA</label><input id="resNote" placeholder="napr. 18:00–22:00 alebo celý deň">
+            <button class="primary small" id="resAddBtn">Pridať rezerváciu</button>
+          </div>
         </div>
-      </div>
+        <div id="limitBox" class="add-box" hidden>
+          <div class="form">
+            <label>LIMIT PRE TENTO DEŇ <span id="limitInfo"></span></label>
+            <input id="dayLimitInput" type="number" min="0" max="100" placeholder="prázdne = štandardný limit, 0 = bez limitu">
+            <button class="primary small" id="dayLimitSave">Uložiť limit dňa</button>
+          </div>
+        </div>
+      </details>
+
+      <div class="section-title">Prihlásenie na smenu</div>
       <div id="shiftsList"></div>
 
       <div class="msg" id="msg"></div>
@@ -306,6 +364,14 @@
     </div>
   </div>
 
+  <div class="multibar" id="multiBar" hidden>
+    <span id="multiCount"></span>
+    <div style="display:flex;gap:8px;">
+      <button class="primary small" id="multiGo" style="width:auto;padding:0 16px;">Prihlásiť sa</button>
+      <button class="outline" id="multiCancel">Zrušiť</button>
+    </div>
+  </div>
+
   <div class="toast-host" id="toastHost"></div>
 
 <script>
@@ -322,7 +388,11 @@
   let manager = false;
   let selected='';
   let limitCfg={enabled:false,defaultLimit:0};
+  let viewMode=(function(){ try{ const v=localStorage.getItem('cp_view'); if(v) return v; }catch(e){} return (window.innerWidth&&window.innerWidth<=560)?'list':'grid'; })();
+  let multiMode=false; const multiSel=new Set();
   let settingsRef=null, auth=null, latestRaw=null, migrating=false, lastMigTry=0, loginFails=0;
+  let ratings={}, ratingsRef=null, ratingsAttached=false;
+  const RATING_LABEL={green:'Výborný', yellow:'Priemerný', red:'Slabý'};
 
   const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   function todayKey(){ return iso(new Date()); }
@@ -330,9 +400,9 @@
   function randomCode(){ return String(Math.floor(1000+Math.random()*9000)); }
   function uid(prefix){ return prefix+'_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
   function dayObj(key){ return (schedule.days && schedule.days[key]) || {reservations:[]}; }
-  function showToast(msg){
+  function showToast(msg,ms){
     const host=$('toastHost'); const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
-    host.appendChild(t); setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity='0'; setTimeout(()=>t.remove(),300); },2000);
+    host.appendChild(t); setTimeout(()=>{ t.style.transition='opacity .3s'; t.style.opacity='0'; setTimeout(()=>t.remove(),300); },ms||2000);
   }
 
   function buildMonthDays(year,month){ const days=[]; const d=new Date(year,month,1); while(d.getMonth()===month){ days.push(new Date(d)); d.setDate(d.getDate()+1);} return days; }
@@ -402,6 +472,7 @@
       scheduleRef = rtdb.ref('schedule/days');
       employeesRef = rtdb.ref('employees/list');
       settingsRef = rtdb.ref('settings/limits');
+      ratingsRef = rtdb.ref('ratings');
       dbAvailable = true;
     }catch(e){
       dbAvailable = false; scheduleLoaded=true; employeesLoaded=true; renderAll(); return;
@@ -414,7 +485,7 @@
         auth.onAuthStateChanged(u=>{
           manager = !!u && (u.email||'').toLowerCase()===MANAGER_EMAIL.toLowerCase();
           resetIdle();
-          if(manager && latestRaw) migrateWrite(latestRaw,true);
+          if(manager){ attachRatings(); if(latestRaw) migrateWrite(latestRaw,true); } else detachRatings();
           renderAll();
         });
       }
@@ -494,10 +565,10 @@
       return res.committed;
     }catch(e){ return false; }
   }
-  async function signUpDay(key){
-    if(!myName||!dbAvailable) return;
-    if(key<todayKey()){ showToast('Tento deň už uplynul.'); return; }
-    if(dayObj(key).closed){ showToast('Tento deň je už zavretý, prihlásiť sa nedá.'); return; }
+  async function trySignUp(key){
+    if(!myName||!dbAvailable) return {ok:false, reason:'Najprv sa prihlás.'};
+    if(key<todayKey()) return {ok:false, reason:'Tento deň už uplynul.'};
+    if(dayObj(key).closed) return {ok:false, reason:'Tento deň je už zavretý, prihlásiť sa nedá.'};
     const lim=dayLimit(key);
     let reason='';
     const ok=await mutateEmployees(key, arr=>{
@@ -505,9 +576,55 @@
       if(lim>0 && arr.length>=lim){ reason='Táto smena je už plná.'; return null; }
       arr.push(myName); return arr;
     });
-    if(ok) showToast('Prihlásenie úspešné 🎉');
-    else showToast(reason || (dayObj(key).closed?'Tento deň je už zavretý, prihlásiť sa nedá.':'Nepodarilo sa uložiť, skús znova.'));
+    if(ok) return {ok:true, reason:''};
+    return {ok:false, reason: reason || (dayObj(key).closed ? 'Tento deň je už zavretý, prihlásiť sa nedá.' : 'Nepodarilo sa uložiť, skús znova.')};
   }
+  async function signUpDay(key){
+    const r=await trySignUp(key);
+    showToast(r.ok ? 'Prihlásenie úspešné 🎉' : r.reason);
+  }
+
+  // ---------- prihlásenie na viac dní naraz ----------
+  function signupBlock(key){
+    const d=dayObj(key), t=dayTotals(key);
+    if(key<todayKey()) return 'Tento deň už uplynul.';
+    if(d.closed) return 'Tento deň je už zavretý.';
+    if(myName && (d.employees||[]).includes(myName)) return 'Na tento deň už si prihlásený/á.';
+    if(t.full) return 'Táto smena je už plná.';
+    return '';
+  }
+  function toggleMultiDay(key){
+    if(multiSel.has(key)) multiSel.delete(key);
+    else { const r=signupBlock(key); if(r){ showToast(r); return; } multiSel.add(key); }
+    renderMonths();
+  }
+  function renderMultiBar(){
+    const canMulti = !!myName && !manager;
+    $('multiBtn').style.display = canMulti ? '' : 'none';
+    $('multiBtn').textContent = multiMode ? '✕ Ukončiť výber' : '☑ Prihlásiť sa na viac dní';
+    $('multiBar').hidden = !multiMode;
+    $('toastHost').style.bottom = multiMode ? '84px' : '20px';
+    if(multiMode){
+      const n=multiSel.size;
+      $('multiCount').textContent = n ? `Vybraných dní: ${n}` : 'Ťukaj na dni, na ktoré sa chceš prihlásiť';
+      $('multiGo').disabled = n===0;
+      $('multiGo').textContent = n ? `Prihlásiť sa (${n})` : 'Prihlásiť sa';
+    }
+  }
+  async function multiSignUp(){
+    if(!myName||!multiSel.size) return;
+    const keys=Array.from(multiSel).sort();
+    $('multiGo').disabled=true;
+    let ok=0, failed=0;
+    for(const k of keys){ const r=await trySignUp(k); if(r.ok) ok++; else failed++; }
+    multiSel.clear(); multiMode=false;
+    renderMonths();
+    const word = ok===1 ? 'deň' : (ok>=2&&ok<=4 ? 'dni' : 'dní');
+    showToast(ok
+      ? `Prihlásený/á na ${ok} ${word} 🎉` + (failed ? ` · ${failed} sa nepodarilo (plné alebo zavreté)` : '')
+      : 'Nepodarilo sa prihlásiť (dni sú plné alebo zavreté).', 3500);
+  }
+
   async function leaveDay(key){
     if(!myName||!dbAvailable) return;
     if(dayObj(key).closed){ showToast('Deň je už zavretý, odhlásiť ťa môže iba vedúci.'); return; }
@@ -613,10 +730,70 @@
     const code=randomCode(); const list=employees.list.concat([{name,code}]);
     if(await writeEmployees(list)) showToast(`Pridané. Kód pre ${name}: ${code}`);
   }
+  // ---------- hodnotenie zamestnancov (vidí iba vedúci) ----------
+  // Uložené v samostatnej vetve „ratings“, ktorú podľa pravidiel vie čítať a písať iba vedúci.
+  const ratingKey=name=>encodeURIComponent(name).replace(/\./g,'%2E');
+  function getRating(name){ const v=ratings[ratingKey(name)]; return (v==='green'||v==='yellow'||v==='red') ? v : ''; }
+  function attachRatings(){
+    if(!ratingsRef || ratingsAttached) return;
+    ratingsAttached=true;
+    ratingsRef.on('value', snap=>{ ratings=snap.val()||{}; renderAll(); },
+      err=>{ ratingsAttached=false; ratings={}; showToast('Hodnotenie sa nenačítalo. Nastav nové pravidlá vo Firebase (súbor firebase-rules.json).', 4500); renderAll(); });
+  }
+  function detachRatings(){
+    try{ if(ratingsRef) ratingsRef.off(); }catch(e){}
+    ratingsAttached=false; ratings={};
+  }
+  async function setRating(name, color){
+    if(!manager||!dbAvailable) return;
+    try{ await ratingsRef.child(ratingKey(name)).set(color||null); }
+    catch(e){ showToast('Nepodarilo sa uložiť hodnotenie (nastav nové pravidlá vo Firebase).', 4000); }
+  }
+  function rateBtns(name){
+    if(!manager) return '';
+    const cur=getRating(name);
+    return `<span class="rate">${['green','yellow','red'].map(c=>`<button class="rb ${c}${cur===c?' on':''}" data-rate="${esc(name)}" data-color="${c}" title="${RATING_LABEL[c]}"></button>`).join('')}</span>`;
+  }
+  function bindRating(){
+    document.querySelectorAll('[data-rate]').forEach(x=>x.onclick=e=>{
+      if(e&&e.stopPropagation) e.stopPropagation();
+      const n=x.dataset.rate, c=x.dataset.color;
+      setRating(n, getRating(n)===c ? '' : c);
+    });
+  }
+  // Farebné bodky: jedna bodka na každého prihláseného (zelené, žlté, červené, potom nehodnotení)
+  function ratingDots(names, max){
+    if(!manager || !names || !names.length) return '';
+    max=max||12;
+    const order={green:0,yellow:1,red:2,'':3};
+    const arr=names.map(getRating).sort((a,b)=>order[a]-order[b]);
+    return `<span class="rdots">${arr.slice(0,max).map(c=>`<i class="rd ${c||'none'}"></i>`).join('')}${arr.length>max?`<em>+${arr.length-max}</em>`:''}</span>`;
+  }
+
+  async function renameEmployee(oldName, newName){
+    newName=(newName||'').trim().replace(/\s+/g,' ');
+    if(!manager||!dbAvailable||!newName||newName===oldName) return;
+    if(newName.length>60){ showToast('Meno je príliš dlhé (max. 60 znakov).'); return; }
+    if(employees.list.some(e=>e.name!==oldName && e.name.toLowerCase()===newName.toLowerCase())){ showToast('Toto meno už existuje'); return; }
+    const list=employees.list.map(e=>e.name===oldName ? {...e, name:newName} : e);
+    const patch={ 'employees/list': list };
+    const oldR=getRating(oldName);
+    if(oldR){ patch['ratings/'+ratingKey(newName)]=oldR; patch['ratings/'+ratingKey(oldName)]=null; }
+    let days=0;
+    Object.keys(schedule.days||{}).forEach(k=>{
+      const arr=(schedule.days[k]||{}).employees||[];
+      if(arr.includes(oldName)){ patch[`schedule/days/${k}/employees`]=arr.map(n=>n===oldName?newName:n); days++; }
+    });
+    try{
+      await rtdb.ref().update(patch);   // zoznam aj všetky smeny sa zmenia naraz
+      showToast(`Premenované na ${newName}` + (days?` (upravených dní: ${days})`:''), 3000);
+    }catch(e){ showToast('Nepodarilo sa uložiť (chýba oprávnenie alebo si offline).'); }
+  }
   async function removeEmployeeName(name){
     if(!manager||!dbAvailable) return;
     const list=employees.list.filter(e=>e.name!==name);
     await writeEmployees(list);
+    if(getRating(name)){ try{ await ratingsRef.child(ratingKey(name)).remove(); }catch(e){} }
     if(myName===name){ myName=''; localStorage.removeItem('cp_myname'); }
   }
   async function regenCode(name){
@@ -751,7 +928,7 @@
   }
 
   function renderCritical(){
-    if(!manager){ $('criticalSection').style.display='none'; return; }
+    if(!manager){ $('criticalSection').style.display='none'; $('critChips').innerHTML=''; return; }
     const tKey=todayKey();
     const crit=Object.keys(schedule.days||{}).filter(k=>k>=tKey && !dayTotals(k).closed && dayTotals(k).signed>0)
       .map(k=>({key:k, signed:dayTotals(k).signed})).sort((a,b)=>a.key.localeCompare(b.key));
@@ -759,22 +936,28 @@
     $('criticalSection').style.display='block';
     $('critChips').innerHTML=crit.slice(0,10).map(c=>{
       const d=new Date(c.key+'T12:00');
-      return `<button class="chip crit-chip" data-my="${c.key}"><b>${d.getDate()}. ${MONTHS[d.getMonth()]}</b><span>prihlásených ${c.signed} · treba zavrieť</span></button>`;
+      return `<div class="chip crit-chip"><div class="crit-open" data-my="${c.key}"><b>${d.getDate()}. ${MONTHS[d.getMonth()]}</b><span>prihlásených ${c.signed} · treba zavrieť</span>${ratingDots((dayObj(c.key).employees||[]))}</div><button class="primary small" data-crit-close="${c.key}" style="margin-top:8px;">Zavrieť</button></div>`;
     }).join('');
     document.querySelectorAll('#critChips [data-my]').forEach(x=>x.onclick=()=>openShift(x.dataset.my));
+    document.querySelectorAll('[data-crit-close]').forEach(x=>x.onclick=()=>setDayClosed(x.dataset.critClose,true));
   }
 
   function renderRoster(){
-    if(!manager){ $('rosterSection').style.display='none'; return; }
+    if(!manager){ $('rosterSection').style.display='none'; $('rosterList').innerHTML=''; return; }
     $('rosterSection').style.display='block';
+    $('rosterSummary').textContent=`👥 Zoznam zamestnancov (${employees.list.length})`;
     $('rosterList').innerHTML=employees.list.map(e=>`
       <div class="rrow">
         <div class="rname"><span class="avatar">${esc(e.name[0]||'?')}</span>${esc(e.name)}</div>
+        ${rateBtns(e.name)}
         <div class="rbtns"><span class="rcode">${esc(e.code)}</span>
+          <button class="icon-btn" data-rename="${esc(e.name)}" title="Premenovať">✎</button>
           <button class="icon-btn" data-regen="${esc(e.name)}" title="Nový kód">↻</button>
           <button class="icon-btn danger" data-remove-emp="${esc(e.name)}" title="Odstrániť">×</button>
         </div>
       </div>`).join('');
+    bindRating();
+    document.querySelectorAll('[data-rename]').forEach(x=>x.onclick=()=>{ const old=x.dataset.rename; const nw=prompt(`Nové meno pre „${old}“:`, old); if(nw!==null) renameEmployee(old,nw); });
     document.querySelectorAll('[data-regen]').forEach(x=>x.onclick=()=>regenCode(x.dataset.regen));
     document.querySelectorAll('[data-remove-emp]').forEach(x=>x.onclick=()=>{ if(confirm(`Odstrániť "${x.dataset.removeEmp}" zo zoznamu?`)) removeEmployeeName(x.dataset.removeEmp); });
     $('addEmpBtn').onclick=()=>{ addEmployee($('newEmpInput').value); $('newEmpInput').value=''; };
@@ -792,25 +975,62 @@
       const past = key<tKey;
       const isMine = !!myName && (d.employees||[]).includes(myName);
       const idle = past && !t.closed && (!manager || t.signed===0);
-      const cls='day'+(idle?' past':' active')+(key===tKey?' today':'')+(t.closed?' full':'')+(t.full?' limfull':'')+(isMine?' mine':'');
+      const cls='day'+(idle?' past':' active')+(key===tKey?' today':'')+(t.closed?' full':'')+(t.full?' limfull':'')+(isMine?' me':'')+multiClass(key);
       let inner;
       if(idle){
         inner='<small class="closed">uplynulé</small>';
       } else {
         inner = t.closed ? '<strong>Zavreté</strong>' : (t.full ? '<strong>Plné</strong>' : '<strong>Otvorené</strong>');
         if(t.signed>0 || t.limit>0) inner += `<span class="cnt">👤 ${t.signed}${t.limit?'/'+t.limit:''}</span>`;
+        inner += ratingDots(d.employees);
         const line = t.note || (t.hasRes ? ((d.reservations||[])[0]||{}).title : '');
         if(line) inner += `<small>${esc(line)}</small>`;
       }
-      cells += `<button class="${cls}" data-date="${key}"><span class="num">${day}${t.hasRes?' 🔒':''}${t.note?' 📝':''}</span>${inner}</button>`;
+      cells += `<button class="${cls}" data-date="${key}"><span class="num">${day}${t.hasRes?' 🔒':''}${t.note?' 📝':''}${multiSel.has(key)?' ☑':''}</span>${inner}</button>`;
     }
     return `<section class="month"><h3>${MONTHS[m]} ${y}</h3><div class="week">${DAYS.map(d=>`<span>${d}</span>`).join('')}</div><div class="grid">${cells}</div></section>`;
   }
 
+  function multiClass(key){
+    if(!multiMode) return '';
+    return multiSel.has(key) ? ' sel' : (signupBlock(key) ? ' nosel' : '');
+  }
+
+  function monthListHTML(date){
+    const y=date.getFullYear(), m=date.getMonth();
+    const count=new Date(y,m+1,0).getDate();
+    const tKey=todayKey();
+    let rows='';
+    for(let day=1; day<=count; day++){
+      const dt=new Date(y,m,day); const key=iso(dt);
+      const d=dayObj(key); const t=dayTotals(key);
+      const past=key<tKey;
+      const isMine=!!myName && (d.employees||[]).includes(myName);
+      const idle=past && !t.closed && (!manager || t.signed===0);
+      if(idle) continue;
+      const we=(dt.getDay()===0||dt.getDay()===6);
+      const status=t.closed?'Zavreté':(t.full?'Plné':'Otvorené');
+      const parts=[];
+      if(t.signed>0||t.limit>0) parts.push(`👤 ${t.signed}${t.limit?'/'+t.limit:''}`);
+      if(t.note) parts.push(`📝 ${esc(t.note)}`);
+      if(t.hasRes) parts.push(`🔒 ${esc(((d.reservations||[])[0]||{}).title||'rezervácia')}`);
+      const mark = multiSel.has(key) ? '☑ vybraté' : (isMine ? '✓ Ty' : '');
+      const cls='lrow'+(key===tKey?' today':'')+(t.closed?' closed':'')+(t.full?' limfull':'')+(isMine?' me':'')+(past?' past':'')+(we?' we':'')+multiClass(key);
+      rows+=`<button class="${cls}" data-date="${key}"><span class="ldate"><b>${day}</b><small>${dt.toLocaleDateString('sk-SK',{weekday:'short'})}</small></span><span class="lmain"><strong>${status}</strong>${parts.length?`<span class="lsub">${parts.join(' · ')}</span>`:''}${ratingDots(d.employees,20)}</span>${mark?`<span class="lmark">${mark}</span>`:''}</button>`;
+    }
+    if(!rows) rows='<p class="sub">V tomto mesiaci už nie sú žiadne dni.</p>';
+    return `<section class="month"><h3>${MONTHS[m]} ${y}</h3><div class="lrows">${rows}</div></section>`;
+  }
+
   function renderMonths(){
+    if(multiMode && (!myName||manager)){ multiMode=false; multiSel.clear(); }
+    Array.from(multiSel).forEach(k=>{ if(signupBlock(k)) multiSel.delete(k); });
     const [a,b]=getVisibleMonths();
-    $('months').innerHTML = monthHTML(new Date(a.year,a.month,1)) + monthHTML(new Date(b.year,b.month,1));
-    document.querySelectorAll('[data-date]').forEach(x=>x.onclick=()=>openShift(x.dataset.date));
+    const render = viewMode==='list' ? monthListHTML : monthHTML;
+    $('months').innerHTML = render(new Date(a.year,a.month,1)) + render(new Date(b.year,b.month,1));
+    document.querySelectorAll('[data-date]').forEach(x=>x.onclick=()=>{ if(multiMode) toggleMultiDay(x.dataset.date); else openShift(x.dataset.date); });
+    $('viewBtn').textContent = viewMode==='list' ? '▦ Mriežka' : '☰ Zoznam';
+    renderMultiBar();
   }
 
   function openShift(date, keep){
@@ -833,13 +1053,18 @@
       if(fresh) $('dayLimitInput').value = (d.limit===undefined||d.limit===null) ? '' : d.limit;
     }
 
-    // rezervácie
-    const resList=$('resList');
-    resList.innerHTML=(d.reservations||[]).map(r=>`
+    // rezervácie (zamestnanci ich vidia len keď nejaké sú; pridávanie je pod „Viac“ iba pre vedúceho)
+    const resArr=d.reservations||[];
+    $('resPublic').hidden = !resArr.length;
+    $('resList').innerHTML = resArr.map(r=>`
       <div class="res-item"><div><b>🔒 ${esc(r.title)}</b>${r.note?`<span>${esc(r.note)}</span>`:''}</div>${manager?`<button data-res-remove="${r.id}">×</button>`:''}</div>
-    `).join('') || `<p class="sub">${manager?'Žiadne rezervácie pre tento deň.':'Žiadne rezervácie ani uzávery pre tento deň.'}</p>`;
+    `).join('');
     document.querySelectorAll('[data-res-remove]').forEach(x=>x.onclick=()=>removeReservation(selected,x.dataset.resRemove).then(()=>openShift(selected)));
-    $('resAddBox').hidden=!manager;
+    $('moreDay').hidden = !manager;
+    if(manager){
+      $('moreDaySummary').textContent = '⚙ Viac – pridať rezerváciu' + (limitCfg.enabled ? ' a limit dňa' : '') + ((limitCfg.enabled && d.limit!==undefined && d.limit!==null) ? ` (limit teraz: ${d.limit})` : '');
+      if(fresh) $('moreDay').open=false;
+    }
 
     // smena na celý deň
     const emps=d.employees||[];
@@ -847,7 +1072,7 @@
     const already=!!myName && emps.includes(myName);
     const past=date<todayKey();
     const lim=dayLimit(date), full=lim>0 && emps.length>=lim;
-    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${manager?`<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
+    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
     let statusHtml, teamHtml, actionHtml='';
     if(manager){
       statusHtml = closed ? '<div class="sfree ok">✓ Zavreté</div>' : `<div class="sfree ${full?'full':'pending'}">Otvorené · ${emps.length}${lim?' z '+lim:''} prihl.${full?' (plné)':''}</div>`;
@@ -891,6 +1116,7 @@
     on('reopenDay',()=>setDayClosed(selected,false).then(again));
     on('addEmpToDay',()=>{ const v=$('addEmpSelect').value; if(!v) return showToast('Vyber zamestnanca'); addEmployeeToDay(selected,v).then(again); });
     document.querySelectorAll('[data-emp-remove]').forEach(x=>x.onclick=()=>removeEmployeeFromDay(selected,x.dataset.empRemove).then(again));
+    bindRating();
 
     if(!keep) $('msg').classList.remove('show');
     $('shiftModal').classList.add('open');
@@ -955,9 +1181,10 @@
       [dot('green'),'<b>Zavreté</b> – potvrdené vedúcim, zmeny už robí iba vedúci.'],
       limitCfg.enabled ? [dot('red'),'<b>Plné</b> – dosiahnutý limit ľudí na deň.'] : null,
       ['<b>👤 3</b>', limitCfg.enabled ? '<b>Počet prihlásených ľudí</b> (napr. 3/4 = prihlásení / limit). Vidieť ho aj pri zavretom dni.' : '<b>Počet prihlásených ľudí</b>. Vidieť ho aj pri zavretom dni.'],
+      manager ? ['<span class="rdots" style="margin:0;justify-content:center;"><i class="rd green"></i><i class="rd yellow"></i><i class="rd red"></i></span>','<b>Farebné bodky</b> – ľudia prihlásení na deň podľa tvojho hodnotenia (zelená výborný, žltá priemerný, červená slabý, prázdna bez hodnotenia). Vidíš ich iba ty.'] : null,
       ['📝','<b>Poznámka vedúceho</b> k tomu dňu – otvor deň a prečítaj si ju.'],
       ['🔒','<b>Rezervácia alebo uzávera</b> v ten deň.'],
-      !manager ? ['<i class="lg-box lg-me"></i>','Žltý rám vnútri dňa = <b>si prihlásený/á</b>.'] : null,
+      !manager ? ['<i class="lg-box lg-me"></i>','Žltý rám (v zozname ✓ Ty) = <b>si prihlásený/á</b>.'] : null,
       ['<i class="lg-box lg-today"></i>','Žltý obrys = <b>dnešný deň</b>.'],
       ['<i class="lg-box lg-past"></i>','Zoslabený deň = <b>už uplynul</b>.']
     ].filter(Boolean);
@@ -966,9 +1193,15 @@
 
   function renderAll(){
     if(!scheduleLoaded||!employeesLoaded) return;
+    if(myName && dbAvailable && employees.list.length && !employees.list.some(e=>e.name===myName)){
+      myName=''; localStorage.removeItem('cp_myname');
+      showToast('Tvoje meno sa zmenilo alebo bolo odstránené. Prihlás sa znova.', 3500);
+    }
     renderTopRight();
     $('exportBtn').style.display = manager ? '' : 'none';
     $('bulkBtn').style.display = manager ? '' : 'none';
+    $('moreBox').style.display = manager ? 'block' : 'none';
+    $('rosterBox').style.display = manager ? 'block' : 'none';
     renderSettings();
     renderHero();
     renderMine();
@@ -982,6 +1215,10 @@
 
   $('resAddBtn').onclick=()=>{ addReservation(selected,$('resTitle').value,$('resNote').value).then(()=>{ $('resTitle').value=''; $('resNote').value=''; openShift(selected); }); };
   $('exportBtn').onclick=openExport;
+  $('viewBtn').onclick=()=>{ viewMode = viewMode==='list' ? 'grid' : 'list'; try{ localStorage.setItem('cp_view',viewMode); }catch(e){} renderMonths(); };
+  $('multiBtn').onclick=()=>{ multiMode=!multiMode; multiSel.clear(); renderMonths(); };
+  $('multiGo').onclick=multiSignUp;
+  $('multiCancel').onclick=()=>{ multiMode=false; multiSel.clear(); renderMonths(); };
   $('icsBtn').onclick=exportMyIcs;
   $('exportGo').onclick=()=>{ const m=$('exportMonth').value; $('exportModal').classList.remove('open'); exportExcel(m); };
   $('prevMonths').onclick=()=>{ viewOffset--; renderMonths(); };
