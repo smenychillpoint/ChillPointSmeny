@@ -261,6 +261,9 @@
       body.print-plan #planModal *{color:#000 !important;background:transparent !important;border-color:#999 !important}
       body.print-plan #planModal .plan-title{font-size:16px}
     }
+    .day .can{display:block;color:#7fdc9b;font-size:11px;font-weight:700;margin-top:3px}
+    .canbox{margin-top:10px;padding:10px 12px;background:#0f2016;border:1px solid #1f5a34;color:#9be8b4;font-size:13px}
+    @media(max-width:560px){.day .can{font-size:10px}}
     .dayrule{margin:12px 0;padding:10px 12px;border:1px solid #4a3a10;background:#15120a}
     .dayrule label{display:block;font-size:11px;letter-spacing:.06em;color:#a9acb1;margin-bottom:6px}
     .dayrule input{flex:1;min-width:0;height:38px;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:0 10px}
@@ -300,8 +303,8 @@
       <div class="chips" id="chips"></div>
       <button class="outline" id="icsBtn" style="margin-top:12px;display:none;">📅 Pridať smeny do kalendára v telefóne</button>
       <button class="outline" id="pastMineBtn" style="margin:12px 0 0 8px;display:none;"></button>
-      <button class="outline" id="recBtn" style="margin:12px 0 0 8px;">🔁 Pravidelné „nemôžem“</button>
-      <p class="sub" id="recInfo" style="margin:10px 0 0;font-size:12px;"></p>
+      <button class="outline" id="recBtn" style="margin:12px 0 0 8px;">🔁 Pravidelne nemôžem / stále môžem</button>
+      <p class="sub" id="recInfo" style="margin:10px 0 0;font-size:12px;white-space:pre-line;"></p>
     </section>
 
     <section class="critical" id="swapSection" style="display:none;">
@@ -358,7 +361,7 @@
         <button class="outline" id="rmPrev">‹</button><b id="rmLabel"></b><button class="outline" id="rmNext">›</button>
         <label class="check" style="margin:0 0 0 auto;"><input type="checkbox" id="rmClosed"> iba zavreté dni</label>
       </div>
-      <p class="sub" style="margin:0 0 6px;font-size:12px;">Víkend = piatok, sobota, nedeľa. Týždeň = pondelok až štvrtok. Počíta sa každý víkend alebo týždeň, v ktorom je zamestnanec aspoň na jednom dni. Bez zaškrtnutia sa rátajú aj čakajúce prihlásenia.</p>
+      <p class="sub" style="margin:0 0 6px;font-size:12px;">Počítajú sa dni: cez víkend (piatok, sobota, nedeľa) a cez týždeň (pondelok až štvrtok). Každý deň sa rátá zvlášť: jeden deň cez víkend = 1, dva dni cez víkend = 2, rovnako cez týždeň. Bez zaškrtnutia sa rátajú aj čakajúce prihlásenia.</p>
       <div id="rosterList"></div>
       <div class="addrow">
         <input type="text" id="newEmpInput" placeholder="Meno a priezvisko">
@@ -375,7 +378,7 @@
           <button class="outline" id="smPrev">‹</button><b id="smLabel"></b><button class="outline" id="smNext">›</button>
           <label class="check" style="margin:0 0 0 auto;"><input type="checkbox" id="smClosed"> iba zavreté dni</label>
         </div>
-        <p class="sub" style="margin:0 0 8px;font-size:12px;">Ťuknutím na hlavičku stĺpca tabuľku zoradíš. Víkend = pi–ne, týždeň = po–št.</p>
+        <p class="sub" style="margin:0 0 8px;font-size:12px;">Ťuknutím na hlavičku stĺpca tabuľku zoradíš. Čísla sú počty dní: cez víkend (pi–ne) a cez týždeň (po–št).</p>
         <div style="overflow-x:auto;"><div id="statsTable"></div></div>
       </section>
     </details>
@@ -446,6 +449,7 @@
       <div class="section-title">Prihlásenie na smenu</div>
       <div id="shiftsList"></div>
       <div id="naBox"></div>
+      <div id="canBox"></div>
 
       <div id="dayRules" class="dayrule" hidden>
         <div id="minBox" hidden>
@@ -495,10 +499,13 @@
   <div class="modal" id="recModal">
     <div class="box">
       <button class="close" data-close>×</button>
-      <h2>Pravidelné „nemôžem“</h2>
-      <p class="sub">Označ dni v týždni, keď pravidelne nemôžeš (napríklad škola). Vedúci to uvidí pri plánovaní a ty sa na tieto dni nemusíš označovať zvlášť. Ak môžeš len raz, na daný deň sa jednoducho prihlás.</p>
+      <h2>Pravidelne nemôžem / stále môžem</h2>
+      <p class="sub" style="margin:0 0 6px;"><b style="color:#ff9a9a;">✗ Pravidelne NEMÔŽEM</b> – dni v týždni, keď pravidelne nemôžeš (napríklad škola). Vedúci to uvidí pri plánovaní a ty sa na tieto dni nemusíš označovať zvlášť. Ak môžeš len raz, na daný deň sa jednoducho prihlás.</p>
       <div class="rec-days" id="recDays"></div>
       <div class="form"><label>PLATÍ DO (NEPOVINNÉ)</label><input type="date" id="recUntil"></div>
+      <p class="sub" style="margin:18px 0 6px;"><b style="color:#7fdc9b;">✓ STÁLE MÔŽEM</b> – dni v týždni, keď môžeš vždy (napríklad každú sobotu). Vedúci ťa uvidí medzi ľuďmi, ktorí môžu, a môže ťa osloviť, keď niekoho chýba. Neprihlasuje ťa to automaticky, na smenu sa prihlasuješ sám.</p>
+      <div class="rec-days" id="canDays"></div>
+      <div class="form"><label>PLATÍ DO (NEPOVINNÉ)</label><input type="date" id="canUntil"></div>
       <div class="manage-row" style="margin-top:14px;">
         <button class="primary small" id="recSave" style="width:auto;padding:0 16px;">Uložiť</button>
         <button class="outline" id="recClear">Zrušiť pravidlo</button>
@@ -594,7 +601,7 @@
   let swaps={}, swapsRef=null, swapDate='', swapsPruned=false;
   let history=[], historyRef=null, historyQuery=null, historyAttached=false;
   let showPastMine=false;
-  let statsSort={key:'weekends',dir:-1};
+  let statsSort={key:'wkndDays',dir:-1};
   let weekCfg={summerFrom:5,summerTo:9,summer:{},winter:{}}, weekRef=null, weekDirty=false;
   let sugState={key:'',n:0,res:null};
   let recurring={}, recurringRef=null;
@@ -659,7 +666,8 @@
     // „chýbajú ľudia“: nezavretý deň od dnes, kde je menej ľudí ako minimum (do 14 dní dopredu alebo ak už niekto je prihlásený)
     const short = !off && !closed && min>0 && signed<min && key>=todayKey() && (signed>0 || key<=minHorizonKey());
     return { off, signed, closed, limit, full: !off && !closed && limit>0 && signed>=limit, min, short, need: short ? min-signed : 0,
-             na: cantInfo(key).length, note:(d.note||'').trim(), hasRes:(d.reservations||[]).length>0 };
+             na: cantInfo(key).length, can: (off||closed||key<todayKey()) ? 0 : canInfo(key).length,
+             note:(d.note||'').trim(), hasRes:(d.reservations||[]).length>0 };
   }
 
   // ---------- migration ----------
@@ -1116,12 +1124,12 @@
     const rows=employees.list.map(e=>({name:e.name, rating:getRating(e.name), ...empStats(e.name, ym, rosterOnlyClosed)}));
     const {key,dir}=statsSort;
     rows.sort((a,b)=> key==='name' ? dir*a.name.localeCompare(b.name,'sk') : ((dir*(a[key]-b[key])) || a.name.localeCompare(b.name,'sk')));
-    const tot=rows.reduce((t,r)=>({weekends:t.weekends+r.weekends, weeks:t.weeks+r.weeks, days:t.days+r.days}),{weekends:0,weeks:0,days:0});
+    const tot=rows.reduce((t,r)=>({wkndDays:t.wkndDays+r.wkndDays, weekDays:t.weekDays+r.weekDays, days:t.days+r.days}),{wkndDays:0,weekDays:0,days:0});
     const arrow=k=> statsSort.key===k ? (statsSort.dir<0?' ▼':' ▲') : '';
     const th=(k,t)=>`<th data-sort="${k}">${t}${arrow(k)}</th>`;
-    $('statsTable').innerHTML=`<table class="stbl"><thead><tr>${th('name','ZAMESTNANEC')}${th('weekends','VÍKENDY')}${th('weeks','TÝŽDNE')}${th('days','DNI')}</tr></thead><tbody>${
-      rows.map(r=>`<tr class="${r.days?'':'zero'}"><td>${r.rating?`<i class="rd ${r.rating}" style="margin-right:6px"></i>`:''}${esc(r.name)}</td><td>${r.weekends}</td><td>${r.weeks}</td><td>${r.days}</td></tr>`).join('')
-    }</tbody><tfoot><tr><td>Spolu</td><td>${tot.weekends}</td><td>${tot.weeks}</td><td>${tot.days}</td></tr></tfoot></table>`;
+    $('statsTable').innerHTML=`<table class="stbl"><thead><tr>${th('name','ZAMESTNANEC')}${th('wkndDays','DNI VÍKEND')}${th('weekDays','DNI TÝŽDEŇ')}${th('days','SPOLU')}</tr></thead><tbody>${
+      rows.map(r=>`<tr class="${r.days?'':'zero'}"><td>${r.rating?`<i class="rd ${r.rating}" style="margin-right:6px"></i>`:''}${esc(r.name)}</td><td>${r.wkndDays}</td><td>${r.weekDays}</td><td>${r.days}</td></tr>`).join('')
+    }</tbody><tfoot><tr><td>Spolu</td><td>${tot.wkndDays}</td><td>${tot.weekDays}</td><td>${tot.days}</td></tr></tfoot></table>`;
     document.querySelectorAll('#statsTable [data-sort]').forEach(x=>x.onclick=()=>{
       const k=x.dataset.sort;
       statsSort = statsSort.key===k ? {key:k, dir:-statsSort.dir} : {key:k, dir:(k==='name'?1:-1)};
@@ -1189,7 +1197,7 @@
     $('shortTitle').textContent = manager ? 'CHÝBAJÚ ĽUDIA' : 'TIETO DNI POTREBUJÚ ĽUDÍ';
     $('shortChips').innerHTML=list.slice(0,10).map(({key,t})=>{
       const d=new Date(key+'T12:00');
-      return `<button class="chip short-chip" data-my="${key}"><b>${d.getDate()}. ${MONTHS[d.getMonth()]}</b><span>prihlásených ${t.signed} z ${t.min} · chýba ${t.need}</span></button>`;
+      return `<button class="chip short-chip" data-my="${key}"><b>${d.getDate()}. ${MONTHS[d.getMonth()]}</b><span>prihlásených ${t.signed} z ${t.min} · chýba ${t.need}${(manager&&t.can)?` · ✓ môžu ${t.can}`:''}</span></button>`;
     }).join('');
     document.querySelectorAll('#shortChips [data-my]').forEach(x=>x.onclick=()=>openShift(x.dataset.my));
   }
@@ -1248,31 +1256,69 @@
   }
   const cantNamesFor=key=>cantInfo(key).map(x=>x.name);
   function isCantMe(key){ return !!myName && ((dayObj(key).na||[]).includes(myName) || recMatches(recFor(myName),key)); }
+  const DOW_PL={0:'nedele',1:'pondelky',2:'utorky',3:'stredy',4:'štvrtky',5:'piatky',6:'soboty'};
+  const ordDays=a=>DOW_ORDER.filter(x=>a.includes(x));
+  // „stále môžem“: dni v týždni, keď je človek pravidelne k dispozícii (polia can + canUntil v tom istom dokumente)
+  function canDaysOf(r){ if(!r) return []; const a=Array.isArray(r.can)?r.can:Object.values(r.can||{}); return a.map(Number).filter(n=>n>=0&&n<=6); }
+  function canMatches(r, key){
+    const days=canDaysOf(r);
+    if(!days.length) return false;
+    if(r.canUntil && key>r.canUntil) return false;
+    return days.includes(new Date(key+'T12:00').getDay());
+  }
+  // kto ten deň pravidelne môže, ešte nie je prihlásený a nenahlásil, že nemôže
+  function canInfo(key){
+    const signed=new Set(dayObj(key).employees||[]); const cant=new Set(cantNamesFor(key));
+    return (employees.list||[]).map(e=>e.name).filter(n=>!signed.has(n) && !cant.has(n) && canMatches(recFor(n),key));
+  }
   function recSummary(name){
     const r=recFor(name); const days=recDays(r);
     if(!days.length) return '';
-    return DOW_ORDER.filter(x=>days.includes(x)).map(x=>DOW_SHORT[x]).join(', ') + (r.until ? ` (do ${fmtDayNum(r.until)})` : '');
+    return ordDays(days).map(x=>DOW_SHORT[x]).join(', ') + (r.until ? ` (do ${fmtDayNum(r.until)})` : '');
+  }
+  function canSummary(name){
+    const r=recFor(name); const days=canDaysOf(r);
+    if(!days.length) return '';
+    return ordDays(days).map(x=>DOW_SHORT[x]).join(', ') + (r.canUntil ? ` (do ${fmtDayNum(r.canUntil)})` : '');
+  }
+  function buildRecDoc(name, o){
+    const cant=ordDays(o.cant||[]), can=ordDays(o.can||[]);
+    if(!cant.length && !can.length) return null;
+    const doc={ name };
+    if(cant.length){ doc.days=cant; if(o.until) doc.until=o.until; }
+    if(can.length){ doc.can=can; if(o.canUntil) doc.canUntil=o.canUntil; }
+    return doc;
+  }
+  async function writeRecDoc(doc){
+    const ref=recurringRef.child(ratingKey(myName));
+    if(doc) await ref.set(doc); else await ref.remove();
   }
   function openRecModal(){
     if(!myName) return;
-    const days=recDays(recFor(myName));
-    $('recDays').innerHTML=DOW_ORDER.map(dow=>`<label class="check"><input type="checkbox" id="rec_${dow}"${days.includes(dow)?' checked':''}> ${DOW_LABEL[dow]}</label>`).join('');
-    $('recUntil').value=(recFor(myName)||{}).until||'';
+    const r=recFor(myName)||{};
+    const cant=recDays(r), can=canDaysOf(r);
+    $('recDays').innerHTML=DOW_ORDER.map(dow=>`<label class="check"><input type="checkbox" id="rec_${dow}"${cant.includes(dow)?' checked':''}> ${DOW_LABEL[dow]}</label>`).join('');
+    $('canDays').innerHTML=DOW_ORDER.map(dow=>`<label class="check"><input type="checkbox" id="can_${dow}"${can.includes(dow)?' checked':''}> ${DOW_LABEL[dow]}</label>`).join('');
+    $('recUntil').value=r.until||'';
+    $('canUntil').value=r.canUntil||'';
     $('recModal').classList.add('open');
   }
   async function saveRec(){
     if(!myName||!dbAvailable) return;
-    const days=DOW_ORDER.filter(dow=>{ const el=$('rec_'+dow); return el && el.checked; });
-    if(!days.length){ await clearRec(); return; }
-    const until=String($('recUntil').value||'').trim();
-    if(until && (!/^\d{4}-\d{2}-\d{2}$/.test(until) || until<todayKey())){ showToast('Dátum „platí do“ musí byť dnes alebo neskôr.', 3500); return; }
-    const doc={ name:myName, days };
-    if(until) doc.until=until;
+    const cant=DOW_ORDER.filter(dow=>{ const el=$('rec_'+dow); return el && el.checked; });
+    const can=DOW_ORDER.filter(dow=>{ const el=$('can_'+dow); return el && el.checked; });
+    if(!cant.length && !can.length){ await clearRec(); return; }
+    const both=cant.filter(x=>can.includes(x));
+    if(both.length){ showToast(`${DOW_LABEL[both[0]]} nemôže byť zároveň „nemôžem“ aj „môžem“.`, 3500); return; }
+    const until=String($('recUntil').value||'').trim(), canUntil=String($('canUntil').value||'').trim();
+    const badDate=v=>v && (!/^\d{4}-\d{2}-\d{2}$/.test(v) || v<todayKey());
+    if((cant.length && badDate(until)) || (can.length && badDate(canUntil))){ showToast('Dátum „platí do“ musí byť dnes alebo neskôr.', 3500); return; }
+    const doc=buildRecDoc(myName,{cant,until,can,canUntil});
     try{
-      await recurringRef.child(ratingKey(myName)).set(doc);
+      await writeRecDoc(doc);
       $('recModal').classList.remove('open');
-      showToast('Pravidelné „nemôžem“ uložené');
-      logEvent('', `${myName} nastavil/a pravidelné „nemôžem“: ${days.map(x=>DOW_SHORT[x]).join(', ')}${until?' do '+fmtDayNum(until):''}`, myName);
+      showToast('Uložené');
+      logEvent('', `${myName} upravil/a pravidelnú dostupnosť:${cant.length?` nemôže ${cant.map(x=>DOW_SHORT[x]).join(', ')}${until?' do '+fmtDayNum(until):''}`:''}${can.length?` stále môže ${can.map(x=>DOW_SHORT[x]).join(', ')}${canUntil?' do '+fmtDayNum(canUntil):''}`:''}`, myName);
     }catch(e){ showToast('Nepodarilo sa uložiť (nastav nové pravidlá vo Firebase).', 4000); }
   }
   async function clearRec(){
@@ -1280,9 +1326,26 @@
     try{
       await recurringRef.child(ratingKey(myName)).remove();
       $('recModal').classList.remove('open');
-      showToast('Pravidelné „nemôžem“ zrušené');
-      logEvent('', `${myName} zrušil/a pravidelné „nemôžem“`, myName);
+      showToast('Pravidelné nastavenie zrušené');
+      logEvent('', `${myName} zrušil/a pravidelné „nemôžem“ / „môžem“`, myName);
     }catch(e){ showToast('Nepodarilo sa uložiť.'); }
+  }
+  // rýchle „stále môžem v [utorky]“ priamo z okna dňa
+  async function setAlwaysCan(key, val){
+    if(!myName||!dbAvailable) return;
+    const dow=new Date(key+'T12:00').getDay();
+    const r=recFor(myName)||{};
+    let can=canDaysOf(r).filter(x=>x!==dow), cant=recDays(r), note='';
+    if(val){
+      can.push(dow);
+      if(cant.includes(dow)){ cant=cant.filter(x=>x!==dow); note=` Pravidelné „nemôžem“ pre ${DOW_PL[dow]} sa zrušilo.`; }
+    }
+    const doc=buildRecDoc(myName,{cant, until:r.until, can, canUntil:r.canUntil});
+    try{
+      await writeRecDoc(doc);
+      showToast(val ? `Stále môžeš v ${DOW_PL[dow]} ✓${note}` : `Zrušené: stále môžem v ${DOW_PL[dow]}`, note?4000:2000);
+      logEvent('', val ? `${myName} označil/a, že stále môže v ${DOW_PL[dow]}` : `${myName} zrušil/a „stále môžem“ v ${DOW_PL[dow]}`, myName);
+    }catch(e){ showToast('Nepodarilo sa uložiť (nastav nové pravidlá vo Firebase).', 4000); }
   }
 
   // ---------- týždenný plán (na zdieľanie a tlač) ----------
@@ -1523,18 +1586,24 @@
     const d=dayObj(key); const signed=(d.employees||[]).slice(); const na=cantNamesFor(key);
     const ym=key.slice(0,7); const dow=new Date(key+'T12:00').getDay(); const wk=(dow===5||dow===6||dow===0);
     const pts={green:3, yellow:2, '':1.5, red:0};
-    // skóre: hodnotenie (zelená > žltá > bez > červená) − spravodlivosť (zavreté víkendy/týždne a dni v mesiaci bez tohto dňa) − „nemôžem“
+    // skóre: hodnotenie (zelená > žltá > bez > červená) − spravodlivosť podľa dní − „nemôžem“.
+    // Spravodlivosť: zavreté dni v mesiaci (bez tohto dňa). Deň rovnakého typu (víkend/týždeň) ako navrhovaný sa rátá za 6 bodov, deň druhého typu za 3,
+    // takže sa počíta aj to, či má človek smeny cez týždeň.
     const info=name=>{
-      const st=empStats(name, ym, true, key); const rating=getRating(name); const load=wk?st.weekends:st.weeks;
+      const st=empStats(name, ym, true, key); const rating=getRating(name);
+      const same = wk ? st.wkndDays : st.weekDays, other = wk ? st.weekDays : st.wkndDays;
       const cant=na.includes(name);
-      return { name, rating, load, days:st.days, cant, score: pts[rating]*10 - load*6 - st.days - (cant?100:0) };
+      return { name, rating, load:same, other, wkndDays:st.wkndDays, weekDays:st.weekDays, days:st.days, cant, score: pts[rating]*10 - same*6 - other*3 - (cant?100:0) };
     };
     const byScore=(a,b)=>(b.score-a.score) || a.name.localeCompare(b.name,'sk');
+    const canSet=canInfo(key);   // pravidelne „stále môžem“ v tento deň (ešte neprihlásení)
+    const withCan=x=>({...x, canRec:canSet.includes(x.name)});
     const cand=signed.map(info).sort(byScore);
     const keep=cand.slice(0,n), drop=cand.slice(n);
     let add=[];
     if(keep.length<n){
-      add=employees.list.map(e=>e.name).filter(nm=>!signed.includes(nm) && !na.includes(nm)).map(info).sort(byScore).slice(0,n-keep.length);
+      const bonus=x=>x.score+(x.canRec?15:0);   // kto pravidelne „stále môže“, má pri doplnení prednosť
+      add=employees.list.map(e=>e.name).filter(nm=>!signed.includes(nm) && !na.includes(nm)).map(nm=>withCan(info(nm))).sort((a,b)=>(bonus(b)-bonus(a)) || a.name.localeCompare(b.name,'sk')).slice(0,n-keep.length);
     }
     const cantNames=employees.list.map(e=>e.name).filter(nm=>na.includes(nm) && !signed.includes(nm));
     return { key, n, wk, keep, drop, add, cantNames };
@@ -1548,7 +1617,7 @@
     const defN = dayLimit(selected) || dayMin(selected) || (d.employees||[]).length || 3;
     const n = sugState.n || defN;
     const r = (sugState.res && sugState.res.key===selected) ? sugState.res : null;
-    const line=q=>`<div class="sug-line"><i class="rd ${q.rating||'none'}"></i><div><b>${esc(q.name)}</b><br><span>${q.rating?RATING_LABEL[q.rating]:'bez hodnotenia'} · v mesiaci: ${q.load} ${r.wk?plural(q.load,'víkend','víkendy','víkendov'):plural(q.load,'týždeň','týždne','týždňov')}, ${q.days} ${plural(q.days,'deň','dni','dní')}${q.cant?' · ⚠ nahlásil/a, že nemôže':''}</span></div></div>`;
+    const line=q=>`<div class="sug-line"><i class="rd ${q.rating||'none'}"></i><div><b>${esc(q.name)}</b><br><span>${q.rating?RATING_LABEL[q.rating]:'bez hodnotenia'} · v mesiaci: ${q.wkndDays} ${plural(q.wkndDays,'deň','dni','dní')} cez víkend, ${q.weekDays} ${plural(q.weekDays,'deň','dni','dní')} cez týždeň${q.canRec?' · ✓ stále môže':''}${q.cant?' · ⚠ nahlásil/a, že nemôže':''}</span></div></div>`;
     let html=`<div class="sug"><div class="sug-head"><b>✨ Návrh zostavy</b></div><div class="manage-row"><span>Koľko ľudí:</span><input id="sugN" type="number" min="1" max="100" value="${n}"><button class="outline" id="sugBtn">Navrhnúť</button></div>`;
     if(r){
       html+=`<h5>NAVRHOVANÁ ZOSTAVA (${r.keep.length+r.add.length} z ${r.n})</h5>`+r.keep.map(line).join('');
@@ -1561,7 +1630,7 @@
         ? `<div class="manage-row" style="margin-top:10px;"><button class="primary small" id="sugApply" style="width:auto;padding:0 14px;">Použiť návrh</button><button class="outline" id="sugApplyClose">Použiť a zavrieť deň</button></div>`
         : `<p class="sug-note">Zostava na dni už zodpovedá návrhu.</p>`;
     }
-    html+=`<p class="sug-note">Poradie: zelená, žltá, bez hodnotenia, červená. Potom spravodlivosť (menej zavretých víkendov/týždňov a dní v mesiaci = vyššie). Kto nahlásil „nemôžem“, je až na konci. Je to iba návrh, rozhoduješ ty.</p></div>`;
+    html+=`<p class="sug-note">Poradie: zelená, žltá, bez hodnotenia, červená. Potom spravodlivosť podľa dní: koľko zavretých dní už človek v mesiaci má cez víkend a cez týždeň (každý deň = 1; dni rovnakého typu ako navrhovaný deň sa rátajú viac). Kto pravidelne „stále môže“ v ten deň, má pri dopĺňaní prednosť. Kto nahlásil „nemôžem“, je až na konci. Je to iba návrh, rozhoduješ ty.</p></div>`;
     box.innerHTML=html;
     const on=(id,fn)=>{ const el=$(id); if(el) el.onclick=fn; };
     const inp=$('sugN'); if(inp) inp.addEventListener('input',()=>{ sugState.n=parseInt(inp.value,10)||0; });
@@ -1819,7 +1888,7 @@
     const shown=showPastMine ? all : all.filter(e=>e.date>=tk);
     $('mine').style.display='block';
     $('myName').textContent=myName;
-    $('recInfo').textContent = recSummary(myName) ? `🔁 Pravidelne nemôžeš: ${recSummary(myName)}` : '';
+    $('recInfo').textContent = [recSummary(myName)?`🔁 Pravidelne nemôžeš: ${recSummary(myName)}`:'', canSummary(myName)?`✓ Stále môžeš: ${canSummary(myName)}`:''].filter(Boolean).join('\n');
     $('icsBtn').style.display = all.some(e=>e.date>=tk) ? '' : 'none';
     $('pastMineBtn').style.display = past.length ? '' : 'none';
     $('pastMineBtn').textContent = showPastMine ? 'Skryť staré smeny' : `Zobraziť staré smeny (${past.length})`;
@@ -1848,25 +1917,24 @@
 
   const plural=(n,one,few,many)=> n===1 ? one : (n>=2&&n<=4 ? few : many);
   // Víkend = pi–ne (jeden víkend = jeden blok piatok–nedeľa), týždeň = po–št. Počíta sa v mesiaci ym = 'RRRR-MM'.
+  // Počíta sa každý deň zvlášť: cez víkend (pi, so, ne) a cez týždeň (po–št). Jeden deň cez víkend = 1, dva dni = 2, rovnako cez týždeň.
   function empStats(name, ym, onlyClosed, excludeKey){
-    const wknd=new Set(), wk=new Set(); let days=0;
+    let wkndDays=0, weekDays=0;
     Object.keys(schedule.days||{}).forEach(k=>{
       if(ym && !k.startsWith(ym+'-')) return;
       if(excludeKey && k===excludeKey) return;
       const d=schedule.days[k]||{};
       if(!(d.employees||[]).includes(name)) return;
       if(onlyClosed && !d.closed) return;
-      days++;
-      const dt=new Date(k+'T12:00'); const dow=dt.getDay();          // 0 = nedeľa
-      if(dow>=1 && dow<=4){ const mon=new Date(dt); mon.setDate(dt.getDate()-(dow-1)); wk.add(iso(mon)); }
-      else { const back = dow===5 ? 0 : (dow===6 ? 1 : 2); const fri=new Date(dt); fri.setDate(dt.getDate()-back); wknd.add(iso(fri)); }
+      const dow=new Date(k+'T12:00').getDay();          // 0 = nedeľa
+      if(dow>=1 && dow<=4) weekDays++; else wkndDays++;
     });
-    return { weekends:wknd.size, weeks:wk.size, days };
+    return { wkndDays, weekDays, days: wkndDays+weekDays };
   }
   function statsHTML(name, ym){
     const st=empStats(name, ym, rosterOnlyClosed);
     if(!st.days) return 'V tomto mesiaci bez smien';
-    return `<b>${st.weekends}</b> ${plural(st.weekends,'víkend','víkendy','víkendov')} · <b>${st.weeks}</b> ${plural(st.weeks,'týždeň','týždne','týždňov')} · <b>${st.days}</b> ${plural(st.days,'deň','dni','dní')}`;
+    return `<b>${st.wkndDays}</b> ${plural(st.wkndDays,'deň','dni','dní')} cez víkend · <b>${st.weekDays}</b> ${plural(st.weekDays,'deň','dni','dní')} cez týždeň · <b>${st.days}</b> spolu`;
   }
 
   function renderRoster(){
@@ -1889,6 +1957,7 @@
         </div>
         <div class="rstats">${statsHTML(e.name, ym)}</div>
         ${recSummary(e.name)?`<div class="rstats">🔁 pravidelne nemôže: ${esc(recSummary(e.name))}</div>`:''}
+        ${canSummary(e.name)?`<div class="rstats">✓ stále môže: ${esc(canSummary(e.name))}</div>`:''}
       </div>`).join('');
     bindRating();
     document.querySelectorAll('[data-rename]').forEach(x=>x.onclick=()=>{ const old=x.dataset.rename; const nw=prompt(`Nové meno pre „${old}“:`, old); if(nw!==null) renameEmployee(old,nw); });
@@ -1920,6 +1989,7 @@
         if(!t.off) inner += ratingDots(d.employees);
         if(t.short) inner += `<span class="need">⚠ chýba ${t.need}</span>`;
         if(!t.off && manager && t.na>0) inner += `<span class="na">✗ ${t.na}</span>`;
+        if(!t.off && manager && t.can>0) inner += `<span class="can">✓ ${t.can}</span>`;
         if(!t.off && isCant) inner += `<span class="na">✗ nemôžem</span>`;
         const line = t.note || (t.hasRes ? ((d.reservations||[])[0]||{}).title : '');
         if(line) inner += `<small>${esc(line)}</small>`;
@@ -1953,6 +2023,7 @@
       if(!t.off && (t.signed>0||t.limit>0)) parts.push(`👤 ${t.signed}${t.limit?'/'+t.limit:''}`);
       if(t.short) parts.push(`⚠ chýba ${t.need}`);
       if(manager && t.na>0) parts.push(`✗ ${t.na} nemôže`);
+      if(!t.off && manager && t.can>0) parts.push(`✓ ${t.can} môže`);
       if(t.note) parts.push(`📝 ${esc(t.note)}`);
       if(t.hasRes) parts.push(`🔒 ${esc(((d.reservations||[])[0]||{}).title||'rezervácia')}`);
       const mark = multiSel.has(key) ? '☑ vybraté' : (isMine ? '✓ Ty' : (isCant ? '✗ Nemôžem' : ''));
@@ -2022,6 +2093,7 @@
     const emps=d.employees||[];
     const na=d.na||[];
     const cantList=cantInfo(date), cantSet=cantList.map(x=>x.name);
+    const canSet=canInfo(date);
     const isOff=!!d.off;
     const closed=!!d.closed;
     const already=!!myName && emps.includes(myName);
@@ -2036,9 +2108,10 @@
     } else if(manager){
       statusHtml = closed ? '<div class="sfree ok">✓ Zavreté</div>' : `<div class="sfree ${full?'full':'pending'}">Otvorené · ${emps.length}${lim?' z '+lim:''} prihl.${full?' (plné)':''}</div>`;
       teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Zatiaľ sa nikto neprihlásil.</p>';
-      const available=employees.list.filter(e=>!emps.includes(e.name)).sort((a,b)=>(cantSet.includes(a.name)?1:0)-(cantSet.includes(b.name)?1:0));
+      const rk=n=>canSet.includes(n) ? -1 : (cantSet.includes(n) ? 1 : 0);
+      const available=employees.list.filter(e=>!emps.includes(e.name)).sort((a,b)=>rk(a.name)-rk(b.name));
       actionHtml = `<div class="manage-row">
-          <select id="addEmpSelect"><option value="">Pridať zamestnanca…</option>${available.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}${cantSet.includes(e.name)?' (nemôže)':''}</option>`).join('')}</select>
+          <select id="addEmpSelect"><option value="">Pridať zamestnanca…</option>${available.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}${canSet.includes(e.name)?' (môže)':''}${cantSet.includes(e.name)?' (nemôže)':''}</option>`).join('')}</select>
           <button class="outline" id="addEmpToDay">Pridať</button>
         </div>
         <div class="manage-row">
@@ -2064,6 +2137,12 @@
       if(!past && myName && !already) actionHtml += na.includes(myName)
         ? `<button class="outline" id="canDay" style="margin-top:8px;width:100%;">✓ Nemôžeš tento deň – zrušiť (už môžem)</button>`
         : `<button class="outline" id="cantDay" style="margin-top:8px;width:100%;">✗ Nemôžem tento deň</button>`;
+      if(!past && myName && !already){
+        const dw=new Date(date+'T12:00').getDay(), hasCan=canDaysOf(recFor(myName)).includes(dw);
+        actionHtml += hasCan
+          ? `<button class="outline" id="unAlwaysCan" style="margin-top:8px;width:100%;">✓ Stále môžeš v ${DOW_PL[dw]} – zrušiť</button>`
+          : `<button class="outline" id="alwaysCan" style="margin-top:8px;width:100%;">🔁 Stále môžem v ${DOW_PL[dw]}</button>`;
+      }
       if(!past && myName && !already && !na.includes(myName) && recMatches(recFor(myName),date)) actionHtml += `<p class="sub" style="margin:8px 0 0;font-size:12px;">🔁 Tento deň patrí do tvojho pravidelného „nemôžem“. Ak môžeš, jednoducho sa prihlás.</p>`;
     }
     const keepSel = $('addEmpSelect') ? $('addEmpSelect').value : '';
@@ -2073,6 +2152,7 @@
         ${actionHtml}
       </div>`;
 
+    $('canBox').innerHTML = (manager && canSet.length && !isOff && !closed && !past) ? `<div class="canbox">✓ Môžu (pravidelne): ${canSet.map(esc).join(', ')}</div>` : '';
     $('naBox').innerHTML = (manager && cantList.length && !isOff) ? `<div class="nabox">✗ Nemôžu: ${cantList.map(x=>esc(x.name)+(x.rec?' (pravidelne)':'')).join(', ')}</div>` : '';
     if(keepSel && $('addEmpSelect') && Array.from($('addEmpSelect').options).some(o=>o.value===keepSel)) $('addEmpSelect').value=keepSel;
     const again=()=>openShift(selected);
@@ -2083,6 +2163,8 @@
     on('swapBtn',()=>openSwapModal(selected));
     on('cantDay',()=>cantDay(selected,true).then(again));
     on('canDay',()=>cantDay(selected,false).then(again));
+    on('alwaysCan',()=>setAlwaysCan(selected,true).then(again));
+    on('unAlwaysCan',()=>setAlwaysCan(selected,false).then(again));
     on('offDay',()=>setDayOff(selected,true).then(again));
     on('unOffDay',()=>setDayOff(selected,false).then(again));
     on('closeDay',()=>setDayClosed(selected,true).then(again));
@@ -2117,20 +2199,20 @@
     const keys=Object.keys(schedule.days||{}).sort().filter(k=>{ if(month!=='all' && !k.startsWith(month)) return false; const t=dayTotals(k); return t.signed>0||t.closed||t.off||t.note||t.hasRes||t.na>0; });
     if(!keys.length){ showToast('V tomto období nie sú žiadne dáta na export.'); return; }
 
-    const rows=[['Dátum','Deň','Stav','Počet ľudí','Ľudia na smene / prihlásení','Poznámka','Rezervácie / uzávery','Nemôžu (nahlásili)']];
+    const rows=[['Dátum','Deň','Stav','Počet ľudí','Ľudia na smene / prihlásení','Poznámka','Rezervácie / uzávery','Nemôžu (nahlásili)','Môžu (pravidelne)']];
     keys.forEach(k=>{
       const d=dayObj(k); const t=dayTotals(k);
       rows.push([fmt(k), dayName(k), t.off?'Bez prevádzky':(t.closed?'Zavreté (potvrdené)':'Otvorené'), t.signed, (d.employees||[]).join(', '), t.note,
-        (d.reservations||[]).map(r=>r.title+(r.note?` (${r.note})`:'')).join('; '), cantNamesFor(k).join(', ')]);
+        (d.reservations||[]).map(r=>r.title+(r.note?` (${r.note})`:'')).join('; '), cantNamesFor(k).join(', '), canInfo(k).join(', ')]);
     });
 
     const per={};
     keys.forEach(k=>{ const d=dayObj(k); (d.employees||[]).forEach(n=>{ const e=per[n]||(per[n]={conf:[],pend:[]}); (d.closed?e.conf:e.pend).push(fmt(k)); }); });
-    const rows2=[['Zamestnanec','Potvrdené smeny','Čakajúce prihlásenia','Dátumy potvrdených smien','Víkendy (pi–ne)','Týždne (po–št)','Dni spolu']];
-    Object.keys(per).sort((a,b)=>a.localeCompare(b,'sk')).forEach(n=>{ const st=empStats(n, month==='all'?null:month, false); rows2.push([n, per[n].conf.length, per[n].pend.length, per[n].conf.join(', '), st.weekends, st.weeks, st.days]); });
+    const rows2=[['Zamestnanec','Potvrdené smeny','Čakajúce prihlásenia','Dátumy potvrdených smien','Dni cez víkend (pi–ne)','Dni cez týždeň (po–št)','Dni spolu']];
+    Object.keys(per).sort((a,b)=>a.localeCompare(b,'sk')).forEach(n=>{ const st=empStats(n, month==='all'?null:month, false); rows2.push([n, per[n].conf.length, per[n].pend.length, per[n].conf.join(', '), st.wkndDays, st.weekDays, st.days]); });
 
     const ws1=XLSX.utils.aoa_to_sheet(rows);
-    ws1['!cols']=[{wch:12},{wch:13},{wch:20},{wch:11},{wch:45},{wch:40},{wch:40},{wch:30}];
+    ws1['!cols']=[{wch:12},{wch:13},{wch:20},{wch:11},{wch:45},{wch:40},{wch:40},{wch:30},{wch:30}];
     const ws2=XLSX.utils.aoa_to_sheet(rows2);
     ws2['!cols']=[{wch:28},{wch:17},{wch:20},{wch:60},{wch:16},{wch:16},{wch:11}];
     const wb=XLSX.utils.book_new();
@@ -2168,6 +2250,7 @@
       minCfg.enabled ? ['⚠','<b>Chýba N</b> – na deň chýba ešte N ľudí do minima (prerušovaný rám).'] : null,
       (!manager && myName) ? ['✗','<b>Nemôžem</b> – deň, ktorý si označil/a, že nemôžeš (šrafovaný). Vidí to iba vedúci.'] : null,
       manager ? ['✗ 2','<b>Nemôžu</b> – koľko ľudí nahlásilo, že ten deň nemôžu (mená v okne dňa).'] : null,
+      manager ? ['✓ 3','<b>Môžu</b> – koľko ľudí má pre ten deň pravidelné „stále môžem“ a ešte nie je prihlásených.'] : null,
       !manager ? ['<i class="lg-box lg-me"></i>','Žltý rám (v zozname ✓ Ty) = <b>si prihlásený/á</b>.'] : null,
       ['<i class="lg-box lg-today"></i>','Žltý obrys = <b>dnešný deň</b>.'],
       ['<i class="lg-box lg-past"></i>','Zoslabený deň = <b>už uplynul</b>.']
