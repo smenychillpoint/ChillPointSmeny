@@ -212,10 +212,38 @@
     .more-box>summary,.more-day>summary{cursor:pointer;padding:14px 18px;font-weight:800;color:var(--yellow);font-size:14px}
     .more-box .roster{margin-top:0;border-width:1px 0 0 0}
     .more-box+.more-box{margin-top:10px}
+    .rstats{flex:0 0 100%;font-size:12px;color:#8f9297;margin-top:-2px}
+    .rstats b{color:#fff}
+    .rmonth{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 12px}
+    .rmonth .outline{padding:6px 12px}
+    .rmonth b{min-width:130px;text-align:center}
     .more-day{margin:12px 0;border:1px solid #33363b;background:#0d0f11}
     .more-day>summary{padding:10px 12px;font-size:13px}
     .more-day .add-box{margin:0 12px 12px}
-    @media(max-width:560px){.day .cnt{font-size:10px;margin-top:2px}.rd{width:7px;height:7px}.rdots{gap:2px}.lrow .rd{width:10px;height:10px}}
+.day .need{display:block;color:#ffb347;font-size:11px;font-weight:700;margin-top:3px}
+    .day .na{display:block;color:#ff9a9a;font-size:11px;font-weight:700;margin-top:3px}
+    .day.short,.lrow.short{border-style:dashed;border-color:#d6912a}
+    .day.cant,.lrow.cant{background:repeating-linear-gradient(45deg,#232529,#232529 8px,#2b2224 8px,#2b2224 16px)}
+    .short-chip{min-width:auto;border-color:#6b4a12;background:#1c160a}
+    .short-chip span{color:#ffb347}
+    .stbl{width:100%;border-collapse:collapse;font-size:13px}
+    .stbl th,.stbl td{padding:8px 6px;border-bottom:1px solid #2c2f33;text-align:center;white-space:nowrap}
+    .stbl th:first-child,.stbl td:first-child{text-align:left}
+    .stbl th{color:var(--yellow);font-size:11px;letter-spacing:.06em;cursor:pointer;user-select:none}
+    .stbl tr.zero td{opacity:.45}
+    .stbl tfoot td{font-weight:800;border-top:2px solid #4b4e53;border-bottom:none}
+    .swap-item{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;background:#0f1113;border:1px solid #3c3f44;padding:10px 12px;margin-bottom:8px}
+    .swap-text{font-size:13px;line-height:1.45}
+    .swap-text span{color:var(--muted);font-size:12px}
+    .swap-btns{display:flex;gap:8px}
+    .swap-btns .primary{width:auto;padding:0 14px}
+    .hrow{display:flex;gap:10px;padding:7px 0;border-bottom:1px solid #2c2f33;font-size:13px;flex-wrap:wrap}
+    .hrow .ht{flex:0 0 96px;color:#8f9297}
+    .hrow .hw{flex:0 0 auto;font-weight:700;color:var(--yellow)}
+    .hrow .hx{flex:1;min-width:160px}
+    .hrow em{color:#8f9297;font-style:normal}
+    .nabox{margin-top:10px;padding:10px 12px;background:#241416;border:1px solid #5a2a2a;color:#ffb0b0;font-size:13px}
+    @media(max-width:560px){.day .cnt{font-size:10px;margin-top:2px}.day .need,.day .na{font-size:10px}.rd{width:7px;height:7px}.rdots{gap:2px}.lrow .rd{width:10px;height:10px}}
     @media(max-width:880px){.hero,.months{grid-template-columns:1fr}.who{box-shadow:7px 7px 0 #ffffff42}.day{min-height:76px}.day small{display:none}}
     @media(max-width:560px){.top{padding:10px 13px}.brand small{display:none}.wrap{width:calc(100% - 20px);padding-top:24px}.hero{padding:20px;gap:22px}.hero h1{font-size:44px}.month{padding:10px}.week,.grid{gap:3px}.day{min-height:58px;padding:6px}.num{margin-bottom:5px;font-size:13px}.day strong{font-size:9px}.stat-row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}}
   </style>
@@ -233,11 +261,22 @@
       <div><small>MOJE SMENY</small><h3 id="myName"></h3></div>
       <div class="chips" id="chips"></div>
       <button class="outline" id="icsBtn" style="margin-top:12px;display:none;">📅 Pridať smeny do kalendára v telefóne</button>
+      <button class="outline" id="pastMineBtn" style="margin:12px 0 0 8px;display:none;"></button>
+    </section>
+
+    <section class="critical" id="swapSection" style="display:none;">
+      <div class="head"><b id="swapTitle">VÝMENY SMIEN</b></div>
+      <div id="swapList"></div>
     </section>
 
     <section class="critical" id="criticalSection" style="display:none;">
       <div class="head"><b>TREBA ZAVRIEŤ</b></div>
       <div class="chips" id="critChips"></div>
+    </section>
+
+    <section class="critical" id="shortSection" style="display:none;">
+      <div class="head"><b id="shortTitle">CHÝBAJÚ ĽUDIA</b></div>
+      <div class="chips" id="shortChips"></div>
     </section>
 
     <details class="more-box" id="moreBox" style="display:none;">
@@ -248,6 +287,11 @@
         <input type="number" id="limitDefault" min="1" max="100" placeholder="Štandardný limit (napr. 4)">
         <button class="outline" id="limitSave">Uložiť limit</button>
       </div>
+      <div class="rrow" style="margin-top:12px;"><label class="switch-row"><input type="checkbox" id="minToggle"><span><b>Minimálny počet ľudí na deň</b><br><small class="sub">Vypnutý = nič sa nezvýrazňuje. Zapnutý = dni, kde chýbajú ľudia, sa označia (dni do 14 dní dopredu a dni, kde už niekto je prihlásený).</small></span></label></div>
+      <div class="addrow" id="minRow" style="display:none;">
+        <input type="number" id="minDefault" min="1" max="100" placeholder="Štandardné minimum (napr. 3)">
+        <button class="outline" id="minSave">Uložiť minimum</button>
+      </div>
     </section>
 
     </details>
@@ -256,6 +300,11 @@
       <summary id="rosterSummary">👥 Zoznam zamestnancov</summary>
     <section class="roster" id="rosterSection" style="display:none;">
       <p class="sub" style="margin:0 0 10px;">Hodnotenie (zelená = výborný, žltá = priemerný, červená = slabý) vidíš iba ty. Ťuknutím na farbu ju nastavíš, opätovným ťuknutím zrušíš.</p>
+      <div class="rmonth">
+        <button class="outline" id="rmPrev">‹</button><b id="rmLabel"></b><button class="outline" id="rmNext">›</button>
+        <label class="check" style="margin:0 0 0 auto;"><input type="checkbox" id="rmClosed"> iba zavreté dni</label>
+      </div>
+      <p class="sub" style="margin:0 0 6px;font-size:12px;">Víkend = piatok, sobota, nedeľa. Týždeň = pondelok až štvrtok. Počíta sa každý víkend alebo týždeň, v ktorom je zamestnanec aspoň na jednom dni. Bez zaškrtnutia sa rátajú aj čakajúce prihlásenia.</p>
       <div id="rosterList"></div>
       <div class="addrow">
         <input type="text" id="newEmpInput" placeholder="Meno a priezvisko">
@@ -263,6 +312,29 @@
       </div>
     </section>
 
+    </details>
+
+    <details class="more-box" id="statsBox" style="display:none;">
+      <summary id="statsSummary">📊 Prehľad za mesiac</summary>
+      <section class="roster" id="statsSection">
+        <div class="rmonth">
+          <button class="outline" id="smPrev">‹</button><b id="smLabel"></b><button class="outline" id="smNext">›</button>
+          <label class="check" style="margin:0 0 0 auto;"><input type="checkbox" id="smClosed"> iba zavreté dni</label>
+        </div>
+        <p class="sub" style="margin:0 0 8px;font-size:12px;">Ťuknutím na hlavičku stĺpca tabuľku zoradíš. Víkend = pi–ne, týždeň = po–št.</p>
+        <div style="overflow-x:auto;"><div id="statsTable"></div></div>
+      </section>
+    </details>
+
+    <details class="more-box" id="historyBox" style="display:none;">
+      <summary id="historySummary">📜 História zmien</summary>
+      <section class="roster" id="historySection">
+        <div class="addrow" style="margin-top:0;margin-bottom:10px;">
+          <input type="text" id="histFilter" placeholder="Hľadať (meno, dátum, slovo)…">
+          <button class="outline" id="histClear">Vymazať históriu</button>
+        </div>
+        <div id="historyList"></div>
+      </section>
     </details>
 
     <div class="bar"><h2>▣ Kalendár smien</h2>
@@ -309,10 +381,18 @@
             <button class="primary small" id="dayLimitSave">Uložiť limit dňa</button>
           </div>
         </div>
+        <div id="minBox" class="add-box" hidden>
+          <div class="form">
+            <label>MINIMUM PRE TENTO DEŇ <span id="minInfo"></span></label>
+            <input id="dayMinInput" type="number" min="0" max="100" placeholder="prázdne = štandardné minimum, 0 = netreba">
+            <button class="primary small" id="dayMinSave">Uložiť minimum dňa</button>
+          </div>
+        </div>
       </details>
 
       <div class="section-title">Prihlásenie na smenu</div>
       <div id="shiftsList"></div>
+      <div id="naBox"></div>
 
       <div class="msg" id="msg"></div>
     </div>
@@ -325,6 +405,20 @@
       <p class="sub">Zadaj heslo vedúceho.</p>
       <div class="form"><input id="pin" type="password" autocomplete="current-password" placeholder="Heslo vedúceho"><button class="primary" id="unlock">Otvoriť správu smien</button></div>
       <div class="msg" id="pinMsg"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="swapModal">
+    <div class="box">
+      <button class="close" data-close>×</button>
+      <h2>Výmena smeny</h2>
+      <p class="sub" id="swapInfo"></p>
+      <div class="form">
+        <label>KOMU SMENU ODOVZDÁŠ</label><select id="swapTo"></select>
+        <label>ČO ZA TO (NEPOVINNÉ)</label><select id="swapDayChoice"></select>
+      </div>
+      <p class="sub" style="font-size:12px;margin:12px 0;">Kolega musí súhlasiť a potom výmenu schváli vedúci. Kým to neurobí, ostávaš na smene ty.</p>
+      <button class="primary" id="swapSend">Poslať žiadosť</button>
     </div>
   </div>
 
@@ -368,6 +462,7 @@
     <span id="multiCount"></span>
     <div style="display:flex;gap:8px;">
       <button class="primary small" id="multiGo" style="width:auto;padding:0 16px;">Prihlásiť sa</button>
+      <button class="outline" id="multiCant">Nemôžem</button>
       <button class="outline" id="multiCancel">Zrušiť</button>
     </div>
   </div>
@@ -392,6 +487,12 @@
   let multiMode=false; const multiSel=new Set();
   let settingsRef=null, auth=null, latestRaw=null, migrating=false, lastMigTry=0, loginFails=0;
   let ratings={}, ratingsRef=null, ratingsAttached=false;
+  let rosterOffset=0, rosterOnlyClosed=false;
+  let minCfg={enabled:false,people:0}, minRef=null;
+  let swaps={}, swapsRef=null, swapDate='', swapsPruned=false;
+  let history=[], historyRef=null, historyQuery=null, historyAttached=false;
+  let showPastMine=false;
+  let statsSort={key:'weekends',dir:-1};
   const RATING_LABEL={green:'Výborný', yellow:'Priemerný', red:'Slabý'};
 
   const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -421,10 +522,21 @@
     const v=(d.limit!==undefined && d.limit!==null && d.limit!=='') ? Number(d.limit) : limitCfg.defaultLimit;
     return v>0 ? v : 0;
   }
+  const MIN_HORIZON_DAYS=14;
+  function dayMin(key){
+    if(!minCfg.enabled) return 0;
+    const d=dayObj(key);
+    const v=(d.min!==undefined && d.min!==null && d.min!=='') ? Number(d.min) : minCfg.people;
+    return v>0 ? v : 0;
+  }
+  function minHorizonKey(){ const d=new Date(); d.setDate(d.getDate()+MIN_HORIZON_DAYS); return iso(d); }
   function dayTotals(key){
     const d=dayObj(key);
-    const signed=(d.employees||[]).length, closed=!!d.closed, limit=dayLimit(key);
-    return { signed, closed, limit, full: !closed && limit>0 && signed>=limit, note:(d.note||'').trim(), hasRes:(d.reservations||[]).length>0 };
+    const signed=(d.employees||[]).length, closed=!!d.closed, limit=dayLimit(key), min=dayMin(key);
+    // „chýbajú ľudia“: nezavretý deň od dnes, kde je menej ľudí ako minimum (do 14 dní dopredu alebo ak už niekto je prihlásený)
+    const short = !closed && min>0 && signed<min && key>=todayKey() && (signed>0 || key<=minHorizonKey());
+    return { signed, closed, limit, full: !closed && limit>0 && signed>=limit, min, short, need: short ? min-signed : 0,
+             na:(d.na||[]).length, note:(d.note||'').trim(), hasRes:(d.reservations||[]).length>0 };
   }
 
   // ---------- migration ----------
@@ -473,6 +585,9 @@
       employeesRef = rtdb.ref('employees/list');
       settingsRef = rtdb.ref('settings/limits');
       ratingsRef = rtdb.ref('ratings');
+      minRef = rtdb.ref('settings/min');
+      swapsRef = rtdb.ref('swaps');
+      historyRef = rtdb.ref('history');
       dbAvailable = true;
     }catch(e){
       dbAvailable = false; scheduleLoaded=true; employeesLoaded=true; renderAll(); return;
@@ -485,7 +600,7 @@
         auth.onAuthStateChanged(u=>{
           manager = !!u && (u.email||'').toLowerCase()===MANAGER_EMAIL.toLowerCase();
           resetIdle();
-          if(manager){ attachRatings(); if(latestRaw) migrateWrite(latestRaw,true); } else detachRatings();
+          if(manager){ attachRatings(); attachHistory(); if(latestRaw) migrateWrite(latestRaw,true); } else { detachRatings(); detachHistory(); }
           renderAll();
         });
       }
@@ -509,6 +624,14 @@
       limitCfg={ enabled: v.enabled===true, defaultLimit: Number(v.defaultLimit)||0 };
       renderAll();
     }, err=>{});
+    // Minimum ľudí na deň: predvolene vypnuté, kým ho vedúci nezapne
+    minRef.on('value', snap=>{
+      const v=snap.val()||{};
+      minCfg={ enabled: v.enabled===true, people: Number(v.people)||0 };
+      renderAll();
+    }, err=>{});
+    // Žiadosti o výmenu smien
+    swapsRef.on('value', snap=>{ swaps=snap.val()||{}; renderAll(); }, err=>{ swaps={}; });
   }
   async function migrateWrite(raw, force){
     if(!dbAvailable || migrating) return;
@@ -576,7 +699,11 @@
       if(lim>0 && arr.length>=lim){ reason='Táto smena je už plná.'; return null; }
       arr.push(myName); return arr;
     });
-    if(ok) return {ok:true, reason:''};
+    if(ok){
+      logEvent(key, `${myName} sa prihlásil/a`, myName);
+      if((dayObj(key).na||[]).includes(myName)) mutateNa(key, arr=>arr.filter(n=>n!==myName));   // prihlásený už nie je „nemôžem“
+      return {ok:true, reason:''};
+    }
     return {ok:false, reason: reason || (dayObj(key).closed ? 'Tento deň je už zavretý, prihlásiť sa nedá.' : 'Nepodarilo sa uložiť, skús znova.')};
   }
   async function signUpDay(key){
@@ -609,6 +736,8 @@
       $('multiCount').textContent = n ? `Vybraných dní: ${n}` : 'Ťukaj na dni, na ktoré sa chceš prihlásiť';
       $('multiGo').disabled = n===0;
       $('multiGo').textContent = n ? `Prihlásiť sa (${n})` : 'Prihlásiť sa';
+      $('multiCant').disabled = n===0;
+      $('multiCant').textContent = n ? `Nemôžem (${n})` : 'Nemôžem';
     }
   }
   async function multiSignUp(){
@@ -629,27 +758,28 @@
     if(!myName||!dbAvailable) return;
     if(dayObj(key).closed){ showToast('Deň je už zavretý, odhlásiť ťa môže iba vedúci.'); return; }
     const ok=await mutateEmployees(key, arr=>arr.filter(n=>n!==myName));
-    if(ok) showToast('Odhlásený/á');
+    if(ok){ showToast('Odhlásený/á'); logEvent(key, `${myName} sa odhlásil/a`, myName); }
     else showToast(dayObj(key).closed?'Deň je už zavretý, odhlásiť ťa môže iba vedúci.':'Nepodarilo sa uložiť, skús znova.');
   }
   async function setDayClosed(key, val){
     if(!manager||!dbAvailable) return;
     const ok=await mutateDay(key, day=>{ day.closed=!!val; return day; });
-    if(ok) showToast(val?'Deň zavretý a uložený':'Prihlasovanie znovu otvorené');
+    if(ok){ showToast(val?'Deň zavretý a uložený':'Prihlasovanie znovu otvorené'); logEvent(key, val?'Vedúci zavrel/a deň':'Vedúci znovu otvoril/a deň'); }
   }
   async function addEmployeeToDay(key, name){
     if(!manager||!dbAvailable||!name) return;
     const ok=await mutateDay(key, day=>{ if(day.employees.includes(name)) return null; day.employees.push(name); return day; });
-    if(ok) showToast(`${name} pridaný/á`);
+    if(ok){ showToast(`${name} pridaný/á`); logEvent(key, `Vedúci pridal/a ${name} na smenu`); }
   }
   async function removeEmployeeFromDay(key, name){
     if(!manager||!dbAvailable) return;
-    await mutateDay(key, day=>{ day.employees=day.employees.filter(n=>n!==name); return day; });
+    const ok=await mutateDay(key, day=>{ day.employees=day.employees.filter(n=>n!==name); return day; });
+    if(ok) logEvent(key, `Vedúci odstránil/a ${name} zo smeny`);
   }
   async function saveNote(key, text){
     if(!manager||!dbAvailable) return;
     text=(text||'').trim();
-    if(await writeDay(key,{note:text||null})) showToast(text?'Poznámka uložená':'Poznámka odstránená');
+    if(await writeDay(key,{note:text||null})){ showToast(text?'Poznámka uložená':'Poznámka odstránená'); logEvent(key, text?('Vedúci upravil/a poznámku: '+text.slice(0,120)):'Vedúci odstránil/a poznámku'); }
   }
   async function addReservation(key, title, note){
     if(!manager||!dbAvailable) return;
@@ -706,7 +836,7 @@
       : `Znovu otvoriť ${targets.length} dní na prihlasovanie?`;
     if(!confirm(q)) return;
     const patch={}; targets.forEach(k=>{ patch[k+'/closed']= mode==='close' ? true : null; });
-    try{ await scheduleRef.update(patch); showToast(mode==='close'?`Zavretých ${targets.length} dní`:`Otvorených ${targets.length} dní`); updateBulkInfo(); }
+    try{ await scheduleRef.update(patch); showToast(mode==='close'?`Zavretých ${targets.length} dní`:`Otvorených ${targets.length} dní`); logEvent('', `Hromadne ${mode==='close'?'zavreté':'znovu otvorené'}: ${targets.length} dní (${fmtDayNum($('bulkFrom').value)} – ${fmtDayNum($('bulkTo').value)})`); updateBulkInfo(); }
     catch(e){ showToast('Nepodarilo sa uložiť (chýba oprávnenie alebo si offline).'); }
   }
 
@@ -728,7 +858,7 @@
     name=(name||'').trim(); if(!name||!manager||!dbAvailable) return;
     if(employees.list.some(e=>e.name.toLowerCase()===name.toLowerCase())){ showToast('Toto meno už existuje'); return; }
     const code=randomCode(); const list=employees.list.concat([{name,code}]);
-    if(await writeEmployees(list)) showToast(`Pridané. Kód pre ${name}: ${code}`);
+    if(await writeEmployees(list)){ showToast(`Pridané. Kód pre ${name}: ${code}`); logEvent('', `Pridaný zamestnanec: ${name}`); }
   }
   // ---------- hodnotenie zamestnancov (vidí iba vedúci) ----------
   // Uložené v samostatnej vetve „ratings“, ktorú podľa pravidiel vie čítať a písať iba vedúci.
@@ -770,6 +900,286 @@
     return `<span class="rdots">${arr.slice(0,max).map(c=>`<i class="rd ${c||'none'}"></i>`).join('')}${arr.length>max?`<em>+${arr.length-max}</em>`:''}</span>`;
   }
 
+  // ---------- pomocné formáty ----------
+  const fmtTs=t=>{ if(!t) return ''; return new Date(t).toLocaleString('sk-SK',{day:'numeric',month:'numeric',hour:'2-digit',minute:'2-digit'}); };
+  const fmtDayNum=k=>{ if(!k) return ''; const [y,m,d]=String(k).split('-'); return `${parseInt(d,10)}. ${parseInt(m,10)}.`; };
+  function fmtDay(k){ return new Date(k+'T12:00').toLocaleDateString('sk-SK',{weekday:'short',day:'numeric',month:'numeric'}); }
+
+  // ---------- história zmien (vidí iba vedúci) ----------
+  function serverTs(){ return (typeof firebase!=='undefined' && firebase.database && firebase.database.ServerValue) ? firebase.database.ServerValue.TIMESTAMP : Date.now(); }
+  function logEvent(day, text, who){
+    if(!dbAvailable || !historyRef) return;
+    const entry={ t:serverTs(), who:(who || (manager ? 'Vedúci' : (myName||'?'))), text:String(text).slice(0,240) };
+    if(day) entry.day=day;
+    try{ const p=historyRef.push(entry); if(p && p.catch) p.catch(()=>{}); }catch(e){}
+  }
+  function attachHistory(){
+    if(!historyRef || historyAttached) return;
+    historyAttached=true;
+    historyQuery=historyRef.orderByChild('t').limitToLast(300);
+    historyQuery.on('value', snap=>{
+      const arr=[]; snap.forEach(c=>{ const v=c.val(); if(v) arr.push({id:c.key, ...v}); });
+      history=arr.sort((a,b)=>(b.t||0)-(a.t||0)); renderHistory();
+    }, err=>{ historyAttached=false; history=[]; showToast('História sa nenačítala. Nastav nové pravidlá vo Firebase (súbor firebase-rules.json).', 4500); renderHistory(); });
+  }
+  function detachHistory(){ try{ if(historyQuery) historyQuery.off(); }catch(e){} historyQuery=null; historyAttached=false; history=[]; }
+  function renderHistory(){
+    if(!manager){ $('historyList').innerHTML=''; return; }
+    const q=($('histFilter').value||'').trim().toLowerCase();
+    const rows=history.filter(h=>!q || `${h.who||''} ${h.text||''} ${h.day||''} ${fmtDayNum(h.day)}`.toLowerCase().includes(q));
+    $('historySummary').textContent=`📜 História zmien (${history.length})`;
+    $('historyList').innerHTML = rows.length
+      ? rows.slice(0,150).map(h=>`<div class="hrow"><span class="ht">${esc(fmtTs(h.t))}</span><span class="hw">${esc(h.who||'')}</span><span class="hx">${esc(h.text||'')}${h.day?` <em>(${esc(fmtDayNum(h.day))})</em>`:''}</span></div>`).join('') + (rows.length>150?`<p class="sub">Zobrazených 150 z ${rows.length}.</p>`:'')
+      : '<p class="sub">Zatiaľ žiadne záznamy.</p>';
+  }
+  async function clearHistory(){
+    if(!manager||!dbAvailable||!historyRef) return;
+    if(!confirm('Naozaj vymazať celú históriu zmien? Túto akciu nemožno vrátiť.')) return;
+    try{ await historyRef.remove(); showToast('História vymazaná'); }catch(e){ showToast('Nepodarilo sa vymazať (chýba oprávnenie).'); }
+  }
+
+  // ---------- prehľad za mesiac (tabuľka pre všetkých) ----------
+  function rosterYM(){
+    const now=new Date(); const rd=new Date(now.getFullYear(), now.getMonth()+rosterOffset, 1);
+    const mn=MONTHS[rd.getMonth()];
+    return { ym:`${rd.getFullYear()}-${String(rd.getMonth()+1).padStart(2,'0')}`, label: mn.charAt(0).toUpperCase()+mn.slice(1)+' '+rd.getFullYear() };
+  }
+  function refreshRosterViews(){ renderRoster(); renderStats(); }
+  function renderStats(){
+    if(!manager){ $('statsTable').innerHTML=''; return; }
+    const {ym,label}=rosterYM();
+    $('smLabel').textContent=label; $('smClosed').checked=rosterOnlyClosed;
+    $('statsSummary').textContent=`📊 Prehľad za mesiac (${label})`;
+    const rows=employees.list.map(e=>({name:e.name, rating:getRating(e.name), ...empStats(e.name, ym, rosterOnlyClosed)}));
+    const {key,dir}=statsSort;
+    rows.sort((a,b)=> key==='name' ? dir*a.name.localeCompare(b.name,'sk') : ((dir*(a[key]-b[key])) || a.name.localeCompare(b.name,'sk')));
+    const tot=rows.reduce((t,r)=>({weekends:t.weekends+r.weekends, weeks:t.weeks+r.weeks, days:t.days+r.days}),{weekends:0,weeks:0,days:0});
+    const arrow=k=> statsSort.key===k ? (statsSort.dir<0?' ▼':' ▲') : '';
+    const th=(k,t)=>`<th data-sort="${k}">${t}${arrow(k)}</th>`;
+    $('statsTable').innerHTML=`<table class="stbl"><thead><tr>${th('name','ZAMESTNANEC')}${th('weekends','VÍKENDY')}${th('weeks','TÝŽDNE')}${th('days','DNI')}</tr></thead><tbody>${
+      rows.map(r=>`<tr class="${r.days?'':'zero'}"><td>${r.rating?`<i class="rd ${r.rating}" style="margin-right:6px"></i>`:''}${esc(r.name)}</td><td>${r.weekends}</td><td>${r.weeks}</td><td>${r.days}</td></tr>`).join('')
+    }</tbody><tfoot><tr><td>Spolu</td><td>${tot.weekends}</td><td>${tot.weeks}</td><td>${tot.days}</td></tr></tfoot></table>`;
+    document.querySelectorAll('#statsTable [data-sort]').forEach(x=>x.onclick=()=>{
+      const k=x.dataset.sort;
+      statsSort = statsSort.key===k ? {key:k, dir:-statsSort.dir} : {key:k, dir:(k==='name'?1:-1)};
+      renderStats();
+    });
+  }
+
+  // ---------- „nemôžem“ ----------
+  async function mutateNa(key, fn){
+    try{
+      const ref=scheduleRef.child(key).child('na');
+      const res=await ref.transaction(cur=>{
+        const arr=Array.isArray(cur)?cur.slice():Object.values(cur||{});
+        const out=fn(arr);
+        if(out===null) return undefined;
+        return out.length?out:null;
+      });
+      return res.committed;
+    }catch(e){ return false; }
+  }
+  async function setCant(key, val){
+    if(!myName||!dbAvailable) return {ok:false, reason:'Najprv sa prihlás.'};
+    if(key<todayKey()) return {ok:false, reason:'Tento deň už uplynul.'};
+    const d=dayObj(key);
+    if(d.closed) return {ok:false, reason:'Tento deň je už zavretý.'};
+    if(val && (d.employees||[]).includes(myName)) return {ok:false, reason:'Najprv sa odhlás z tejto smeny.'};
+    if((d.na||[]).includes(myName)===!!val) return {ok:true, reason:''};
+    const ok=await mutateNa(key, arr=>{
+      if(val){ if(arr.includes(myName)) return null; arr.push(myName); return arr; }
+      return arr.filter(n=>n!==myName);
+    });
+    return ok ? {ok:true, reason:''} : {ok:false, reason:'Nepodarilo sa uložiť, skús znova.'};
+  }
+  async function cantDay(key, val){
+    const r=await setCant(key,val);
+    showToast(r.ok ? (val ? 'Označené: nemôžeš ✗' : 'Označenie zrušené') : r.reason);
+  }
+  async function multiCant(){
+    if(!myName||!multiSel.size) return;
+    const keys=Array.from(multiSel).sort();
+    $('multiCant').disabled=true;
+    let ok=0, failed=0;
+    for(const k of keys){ const r=await setCant(k,true); if(r.ok) ok++; else failed++; }
+    multiSel.clear(); multiMode=false;
+    renderMonths();
+    showToast(ok ? `Označené: nemôžeš ${ok} ${plural(ok,'deň','dni','dní')}` + (failed?` · ${failed} sa nepodarilo`:'') : 'Nepodarilo sa označiť.', 3500);
+  }
+
+  // ---------- minimum ľudí ----------
+  async function writeMin(patch){
+    if(!manager||!dbAvailable) return false;
+    try{ await minRef.update(patch); return true; }
+    catch(e){ showToast('Nepodarilo sa uložiť nastavenie.'); renderSettings(); return false; }
+  }
+  function renderShort(){
+    const sec=$('shortSection');
+    if(!minCfg.enabled){ sec.style.display='none'; $('shortChips').innerHTML=''; return; }
+    const tk=todayKey();
+    const set=new Set(Object.keys(schedule.days||{}).filter(k=>k>=tk));
+    for(let i=0;i<=MIN_HORIZON_DAYS;i++){ const d=new Date(); d.setDate(d.getDate()+i); set.add(iso(d)); }
+    const list=Array.from(set).sort().map(k=>({key:k, t:dayTotals(k)})).filter(x=>x.t.short);
+    if(!list.length){ sec.style.display='none'; $('shortChips').innerHTML=''; return; }
+    sec.style.display='block';
+    $('shortTitle').textContent = manager ? 'CHÝBAJÚ ĽUDIA' : 'TIETO DNI POTREBUJÚ ĽUDÍ';
+    $('shortChips').innerHTML=list.slice(0,10).map(({key,t})=>{
+      const d=new Date(key+'T12:00');
+      return `<button class="chip short-chip" data-my="${key}"><b>${d.getDate()}. ${MONTHS[d.getMonth()]}</b><span>prihlásených ${t.signed} z ${t.min} · chýba ${t.need}</span></button>`;
+    }).join('');
+    document.querySelectorAll('#shortChips [data-my]').forEach(x=>x.onclick=()=>openShift(x.dataset.my));
+  }
+
+  // ---------- kopírovanie zoznamu dňa ----------
+  function dayListText(date){
+    const d=dayObj(date); const emps=d.employees||[];
+    const title=new Date(date+'T12:00').toLocaleDateString('sk-SK',{weekday:'long',day:'numeric',month:'long'});
+    let t=`${title.charAt(0).toUpperCase()+title.slice(1)} – ChillPoint smena\n`+emps.map((n,i)=>`${i+1}. ${n}`).join('\n');
+    const note=(d.note||'').trim(); if(note) t+=`\n\nPoznámka: ${note}`;
+    return t;
+  }
+  async function copyDayList(date){
+    const text=dayListText(date);
+    try{ if(navigator.clipboard && navigator.clipboard.writeText){ await navigator.clipboard.writeText(text); showToast('Zoznam skopírovaný 📋'); return; } }catch(e){}
+    let ok=false;
+    try{
+      const ta=document.createElement('textarea'); ta.value=text; ta.style.position='fixed'; ta.style.opacity='0';
+      document.body.appendChild(ta); ta.select(); ok=document.execCommand('copy'); ta.remove();
+    }catch(e){}
+    showToast(ok ? 'Zoznam skopírovaný 📋' : 'Kopírovanie sa nepodarilo.');
+  }
+
+  // ---------- výmena smien ----------
+  function swapStatusText(sw){
+    switch(sw.status){
+      case 'pending_peer': return `čaká na súhlas: ${sw.to}`;
+      case 'pending_manager': return 'čaká na schválenie vedúcim';
+      case 'approved': return '✓ schválené vedúcim';
+      case 'declined': return '✗ zamietnuté vedúcim';
+      case 'declined_peer': return `✗ ${sw.to} odmietol/a`;
+      case 'cancelled': return 'zrušené';
+      default: return '';
+    }
+  }
+  function pruneSwaps(all){
+    if(swapsPruned || !manager || !all.length || !swapsRef) return;
+    swapsPruned=true;
+    all.filter(x=>['approved','declined','declined_peer','cancelled'].includes(x.status) && x.ts && Date.now()-x.ts>30*86400000)
+       .forEach(x=>{ try{ swapsRef.child(x.id).remove(); }catch(e){} });
+  }
+  function renderSwaps(){
+    const sec=$('swapSection'), list=$('swapList');
+    const all=Object.keys(swaps||{}).map(id=>({id, ...swaps[id]})).filter(x=>x && x.from && x.to && x.day);
+    const byTs=(a,b)=>(a.ts||0)-(b.ts||0);
+    const what=x=>`smena <b>${esc(fmtDay(x.day))}</b>${x.toDay?` za <b>${esc(fmtDay(x.toDay))}</b>`:' (bez protismeny)'}`;
+    let html='';
+    if(manager){
+      const pend=all.filter(x=>x.status==='pending_manager').sort(byTs);
+      const wait=all.filter(x=>x.status==='pending_peer').length;
+      pruneSwaps(all);
+      if(!pend.length && !wait){ sec.style.display='none'; list.innerHTML=''; return; }
+      $('swapTitle').textContent='VÝMENY NA SCHVÁLENIE';
+      html=pend.map(x=>`<div class="swap-item"><div class="swap-text"><b>${esc(x.from)}</b> → <b>${esc(x.to)}</b><br><span>${what(x)}</span></div><div class="swap-btns"><button class="primary small" data-swap-approve="${x.id}">Schváliť</button><button class="outline" data-swap-reject="${x.id}">Zamietnuť</button></div></div>`).join('');
+      if(wait) html+=`<p class="sub" style="margin:4px 0 0;">Ďalších ${wait} ${plural(wait,'žiadosť čaká','žiadosti čakajú','žiadostí čaká')} na súhlas kolegu.</p>`;
+    } else if(myName){
+      const recent=x=>!x.ts || (Date.now()-x.ts)<14*86400000;
+      const incoming=all.filter(x=>x.to===myName && x.status==='pending_peer').sort(byTs);
+      const outgoing=all.filter(x=>x.from===myName && (x.status==='pending_peer'||x.status==='pending_manager')).sort(byTs);
+      const done=all.filter(x=>(x.from===myName||x.to===myName) && ['approved','declined','declined_peer','cancelled'].includes(x.status) && recent(x)).sort((a,b)=>byTs(b,a)).slice(0,5);
+      if(!incoming.length && !outgoing.length && !done.length){ sec.style.display='none'; list.innerHTML=''; return; }
+      $('swapTitle').textContent='VÝMENY SMIEN';
+      html=incoming.map(x=>`<div class="swap-item"><div class="swap-text"><b>${esc(x.from)}</b> ti ponúka svoju smenu <b>${esc(fmtDay(x.day))}</b>${x.toDay?` a chce od teba smenu <b>${esc(fmtDay(x.toDay))}</b>`:''}.<br><span>Ak súhlasíš, výmenu ešte musí schváliť vedúci.</span></div><div class="swap-btns"><button class="primary small" data-swap-yes="${x.id}">Súhlasím</button><button class="outline" data-swap-no="${x.id}">Odmietnuť</button></div></div>`).join('')
+         + outgoing.map(x=>`<div class="swap-item"><div class="swap-text">Tvoja žiadosť pre <b>${esc(x.to)}</b>: ${what(x)}<br><span>${esc(swapStatusText(x))}</span></div><div class="swap-btns"><button class="outline" data-swap-cancel="${x.id}">Zrušiť</button></div></div>`).join('')
+         + done.map(x=>`<div class="swap-item" style="opacity:.75"><div class="swap-text"><b>${esc(x.from)}</b> → <b>${esc(x.to)}</b>: ${what(x)}<br><span>${esc(swapStatusText(x))}</span></div></div>`).join('');
+    } else { sec.style.display='none'; list.innerHTML=''; return; }
+    sec.style.display='block'; list.innerHTML=html;
+    document.querySelectorAll('[data-swap-yes]').forEach(x=>x.onclick=()=>swapRespond(x.dataset.swapYes,true));
+    document.querySelectorAll('[data-swap-no]').forEach(x=>x.onclick=()=>swapRespond(x.dataset.swapNo,false));
+    document.querySelectorAll('[data-swap-cancel]').forEach(x=>x.onclick=()=>swapCancel(x.dataset.swapCancel));
+    document.querySelectorAll('[data-swap-approve]').forEach(x=>x.onclick=()=>approveSwap(x.dataset.swapApprove));
+    document.querySelectorAll('[data-swap-reject]').forEach(x=>x.onclick=()=>rejectSwap(x.dataset.swapReject));
+  }
+  function openSwapModal(date){
+    if(!myName) return;
+    swapDate=date;
+    const emps=dayObj(date).employees||[];
+    $('swapInfo').textContent=`Smena ${fmtDay(date)}`;
+    const others=employees.list.map(e=>e.name).filter(n=>n!==myName && !emps.includes(n)).sort((a,b)=>a.localeCompare(b,'sk'));
+    $('swapTo').innerHTML='<option value="">— vyber kolegu —</option>'+others.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    fillSwapDays();
+    $('swapModal').classList.add('open');
+  }
+  function fillSwapDays(){
+    const to=$('swapTo').value; const tk=todayKey();
+    let opts='<option value="">— nič, len prevezme moju smenu —</option>';
+    if(to){
+      const days=Object.keys(schedule.days||{}).sort().filter(k=>{ const d=schedule.days[k]||{}; return k>=tk && k!==swapDate && d.closed && (d.employees||[]).includes(to) && !(d.employees||[]).includes(myName); });
+      opts+=days.map(k=>`<option value="${k}">${esc(fmtDay(k))}</option>`).join('');
+    }
+    $('swapDayChoice').innerHTML=opts;
+  }
+  async function sendSwap(){
+    if(!myName||!swapDate||!dbAvailable) return;
+    const to=$('swapTo').value, toDay=$('swapDayChoice').value;
+    if(!to){ showToast('Vyber kolegu.'); return; }
+    const d=dayObj(swapDate);
+    if(!d.closed || !(d.employees||[]).includes(myName) || swapDate<todayKey()){ showToast('Túto smenu už nemožno vymeniť.'); return; }
+    const dup=Object.values(swaps||{}).some(x=>x && x.from===myName && x.day===swapDate && (x.status==='pending_peer'||x.status==='pending_manager'));
+    if(dup){ showToast('Na túto smenu už máš čakajúcu žiadosť.'); return; }
+    const doc={ from:myName, day:swapDate, to, status:'pending_peer', ts:serverTs() };
+    if(toDay) doc.toDay=toDay;
+    try{
+      await swapsRef.push(doc);
+      $('swapModal').classList.remove('open');
+      showToast(`Žiadosť odoslaná. Čaká na súhlas: ${to}`, 3000);
+      logEvent(swapDate, `${myName} žiada o výmenu smeny s ${to}`, myName);
+    }catch(e){ showToast('Nepodarilo sa odoslať žiadosť (nastav nové pravidlá vo Firebase).', 4000); }
+  }
+  async function swapRespond(id, accept){
+    const x=swaps[id];
+    if(!x || x.to!==myName || x.status!=='pending_peer') return;
+    if(accept){
+      const ex=dayObj(x.day).employees||[];
+      const okX = ex.includes(x.from) && !ex.includes(myName);
+      const okY = !x.toDay || ((dayObj(x.toDay).employees||[]).includes(myName) && !(dayObj(x.toDay).employees||[]).includes(x.from));
+      if(!okX || !okY){ showToast('Táto výmena už nie je možná, smeny sa medzitým zmenili.', 3500); return; }
+    }
+    try{
+      await swapsRef.child(id).update({ status: accept ? 'pending_manager' : 'declined_peer' });
+      showToast(accept ? 'Súhlasil/a si. Teraz to schváli vedúci.' : 'Výmena odmietnutá', 3000);
+      logEvent(x.day, accept ? `${myName} súhlasil/a s výmenou od ${x.from}` : `${myName} odmietol/a výmenu od ${x.from}`, myName);
+    }catch(e){ showToast('Nepodarilo sa uložiť.'); }
+  }
+  async function swapCancel(id){
+    const x=swaps[id];
+    if(!x || x.from!==myName || !(x.status==='pending_peer'||x.status==='pending_manager')) return;
+    try{ await swapsRef.child(id).update({status:'cancelled'}); showToast('Žiadosť zrušená'); logEvent(x.day, `${myName} zrušil/a žiadosť o výmenu`, myName); }
+    catch(e){ showToast('Nepodarilo sa uložiť.'); }
+  }
+  async function approveSwap(id){
+    const x=swaps[id];
+    if(!manager||!dbAvailable||!x||x.status!=='pending_manager') return;
+    const X=x.day, Y=x.toDay||'';
+    const ex=(dayObj(X).employees||[]).slice(), ey=Y?(dayObj(Y).employees||[]).slice():[];
+    const valid = ex.includes(x.from) && !ex.includes(x.to) && (!Y || (ey.includes(x.to) && !ey.includes(x.from)));
+    if(!valid){ showToast('Výmena už nie je možná, smeny sa medzitým zmenili. Zamietni ju.', 4000); return; }
+    const patch={};
+    patch[`schedule/days/${X}/employees`]=ex.map(n=>n===x.from?x.to:n);
+    if(Y) patch[`schedule/days/${Y}/employees`]=ey.map(n=>n===x.to?x.from:n);
+    patch[`swaps/${id}/status`]='approved';
+    try{
+      await rtdb.ref().update(patch);
+      showToast('Výmena schválená ✓');
+      logEvent(X, `Vedúci schválil/a výmenu: ${x.from} → ${x.to}${Y?' (za '+fmtDayNum(Y)+')':''}`);
+    }catch(e){ showToast('Nepodarilo sa uložiť (chýba oprávnenie alebo si offline).'); }
+  }
+  async function rejectSwap(id){
+    const x=swaps[id];
+    if(!manager||!dbAvailable||!x||x.status!=='pending_manager') return;
+    try{ await swapsRef.child(id).update({status:'declined'}); showToast('Výmena zamietnutá'); logEvent(x.day, `Vedúci zamietol/a výmenu: ${x.from} → ${x.to}`); }
+    catch(e){ showToast('Nepodarilo sa uložiť.'); }
+  }
+
   async function renameEmployee(oldName, newName){
     newName=(newName||'').trim().replace(/\s+/g,' ');
     if(!manager||!dbAvailable||!newName||newName===oldName) return;
@@ -784,15 +1194,25 @@
       const arr=(schedule.days[k]||{}).employees||[];
       if(arr.includes(oldName)){ patch[`schedule/days/${k}/employees`]=arr.map(n=>n===oldName?newName:n); days++; }
     });
+    Object.keys(schedule.days||{}).forEach(k=>{
+      const na=(schedule.days[k]||{}).na||[];
+      if(na.includes(oldName)) patch[`schedule/days/${k}/na`]=na.map(n=>n===oldName?newName:n);
+    });
+    Object.keys(swaps||{}).forEach(id=>{
+      const x=swaps[id]||{};
+      if(x.from===oldName) patch[`swaps/${id}/from`]=newName;
+      if(x.to===oldName) patch[`swaps/${id}/to`]=newName;
+    });
     try{
       await rtdb.ref().update(patch);   // zoznam aj všetky smeny sa zmenia naraz
       showToast(`Premenované na ${newName}` + (days?` (upravených dní: ${days})`:''), 3000);
+      logEvent('', `Premenovaný zamestnanec: ${oldName} → ${newName}`);
     }catch(e){ showToast('Nepodarilo sa uložiť (chýba oprávnenie alebo si offline).'); }
   }
   async function removeEmployeeName(name){
     if(!manager||!dbAvailable) return;
     const list=employees.list.filter(e=>e.name!==name);
-    await writeEmployees(list);
+    if(await writeEmployees(list)) logEvent('', `Odstránený zamestnanec: ${name}`);
     if(getRating(name)){ try{ await ratingsRef.child(ratingKey(name)).remove(); }catch(e){} }
     if(myName===name){ myName=''; localStorage.removeItem('cp_myname'); }
   }
@@ -915,15 +1335,20 @@
 
   function renderMine(){
     if(!myName || manager){ $('mine').style.display='none'; return; }
-    const entries=Object.keys(schedule.days||{}).sort().filter(k=>((schedule.days[k]||{}).employees||[]).includes(myName)).map(k=>({date:k, d:schedule.days[k]}));
+    const tk=todayKey();
+    const all=Object.keys(schedule.days||{}).sort().filter(k=>((schedule.days[k]||{}).employees||[]).includes(myName)).map(k=>({date:k, d:schedule.days[k]}));
+    const past=all.filter(e=>e.date<tk);
+    const shown=showPastMine ? all : all.filter(e=>e.date>=tk);
     $('mine').style.display='block';
     $('myName').textContent=myName;
-    $('icsBtn').style.display = entries.some(e=>e.date>=todayKey()) ? '' : 'none';
-    $('chips').innerHTML=entries.length? entries.map(({date,d})=>{
+    $('icsBtn').style.display = all.some(e=>e.date>=tk) ? '' : 'none';
+    $('pastMineBtn').style.display = past.length ? '' : 'none';
+    $('pastMineBtn').textContent = showPastMine ? 'Skryť staré smeny' : `Zobraziť staré smeny (${past.length})`;
+    $('chips').innerHTML=shown.length? shown.map(({date,d})=>{
       const dt=new Date(date+'T12:00');
       const note=(d.note||'').trim();
-      return `<button class="chip" data-my="${date}"><b>${dt.toLocaleDateString('sk-SK',{day:'numeric',month:'short'})}</b><span style="color:${d.closed?'var(--green)':'var(--yellow)'}">${d.closed?'✓ potvrdené':'čaká na potvrdenie'}</span>${note?`<span>📝 ${esc(note.length>28?note.slice(0,28)+'…':note)}</span>`:''}</button>`;
-    }).join('') : '<span class="sub">Zatiaľ nemáš žiadnu smenu.</span>';
+      return `<button class="chip" data-my="${date}"${date<tk?' style="opacity:.6"':''}><b>${dt.toLocaleDateString('sk-SK',{day:'numeric',month:'short'})}</b><span style="color:${d.closed?'var(--green)':'var(--yellow)'}">${d.closed?'✓ potvrdené':'čaká na potvrdenie'}</span>${note?`<span>📝 ${esc(note.length>28?note.slice(0,28)+'…':note)}</span>`:''}</button>`;
+    }).join('') : `<span class="sub">${all.length?'Zatiaľ nemáš žiadnu nadchádzajúcu smenu.':'Zatiaľ nemáš žiadnu smenu.'}</span>`;
     document.querySelectorAll('[data-my]').forEach(x=>x.onclick=()=>openShift(x.dataset.my));
   }
 
@@ -942,10 +1367,37 @@
     document.querySelectorAll('[data-crit-close]').forEach(x=>x.onclick=()=>setDayClosed(x.dataset.critClose,true));
   }
 
+  const plural=(n,one,few,many)=> n===1 ? one : (n>=2&&n<=4 ? few : many);
+  // Víkend = pi–ne (jeden víkend = jeden blok piatok–nedeľa), týždeň = po–št. Počíta sa v mesiaci ym = 'RRRR-MM'.
+  function empStats(name, ym, onlyClosed){
+    const wknd=new Set(), wk=new Set(); let days=0;
+    Object.keys(schedule.days||{}).forEach(k=>{
+      if(ym && !k.startsWith(ym+'-')) return;
+      const d=schedule.days[k]||{};
+      if(!(d.employees||[]).includes(name)) return;
+      if(onlyClosed && !d.closed) return;
+      days++;
+      const dt=new Date(k+'T12:00'); const dow=dt.getDay();          // 0 = nedeľa
+      if(dow>=1 && dow<=4){ const mon=new Date(dt); mon.setDate(dt.getDate()-(dow-1)); wk.add(iso(mon)); }
+      else { const back = dow===5 ? 0 : (dow===6 ? 1 : 2); const fri=new Date(dt); fri.setDate(dt.getDate()-back); wknd.add(iso(fri)); }
+    });
+    return { weekends:wknd.size, weeks:wk.size, days };
+  }
+  function statsHTML(name, ym){
+    const st=empStats(name, ym, rosterOnlyClosed);
+    if(!st.days) return 'V tomto mesiaci bez smien';
+    return `<b>${st.weekends}</b> ${plural(st.weekends,'víkend','víkendy','víkendov')} · <b>${st.weeks}</b> ${plural(st.weeks,'týždeň','týždne','týždňov')} · <b>${st.days}</b> ${plural(st.days,'deň','dni','dní')}`;
+  }
+
   function renderRoster(){
     if(!manager){ $('rosterSection').style.display='none'; $('rosterList').innerHTML=''; return; }
     $('rosterSection').style.display='block';
     $('rosterSummary').textContent=`👥 Zoznam zamestnancov (${employees.list.length})`;
+    const rd=new Date(new Date().getFullYear(), new Date().getMonth()+rosterOffset, 1);
+    const ym=`${rd.getFullYear()}-${String(rd.getMonth()+1).padStart(2,'0')}`;
+    const mn=MONTHS[rd.getMonth()];
+    $('rmLabel').textContent=mn.charAt(0).toUpperCase()+mn.slice(1)+' '+rd.getFullYear();
+    $('rmClosed').checked=rosterOnlyClosed;
     $('rosterList').innerHTML=employees.list.map(e=>`
       <div class="rrow">
         <div class="rname"><span class="avatar">${esc(e.name[0]||'?')}</span>${esc(e.name)}</div>
@@ -955,6 +1407,7 @@
           <button class="icon-btn" data-regen="${esc(e.name)}" title="Nový kód">↻</button>
           <button class="icon-btn danger" data-remove-emp="${esc(e.name)}" title="Odstrániť">×</button>
         </div>
+        <div class="rstats">${statsHTML(e.name, ym)}</div>
       </div>`).join('');
     bindRating();
     document.querySelectorAll('[data-rename]').forEach(x=>x.onclick=()=>{ const old=x.dataset.rename; const nw=prompt(`Nové meno pre „${old}“:`, old); if(nw!==null) renameEmployee(old,nw); });
@@ -974,8 +1427,9 @@
       const d=dayObj(key); const t=dayTotals(key);
       const past = key<tKey;
       const isMine = !!myName && (d.employees||[]).includes(myName);
+      const isCant = !!myName && !isMine && (d.na||[]).includes(myName);
       const idle = past && !t.closed && (!manager || t.signed===0);
-      const cls='day'+(idle?' past':' active')+(key===tKey?' today':'')+(t.closed?' full':'')+(t.full?' limfull':'')+(isMine?' me':'')+multiClass(key);
+      const cls='day'+(idle?' past':' active')+(key===tKey?' today':'')+(t.closed?' full':'')+(t.full?' limfull':'')+(t.short?' short':'')+(isCant?' cant':'')+(isMine?' me':'')+multiClass(key);
       let inner;
       if(idle){
         inner='<small class="closed">uplynulé</small>';
@@ -983,6 +1437,9 @@
         inner = t.closed ? '<strong>Zavreté</strong>' : (t.full ? '<strong>Plné</strong>' : '<strong>Otvorené</strong>');
         if(t.signed>0 || t.limit>0) inner += `<span class="cnt">👤 ${t.signed}${t.limit?'/'+t.limit:''}</span>`;
         inner += ratingDots(d.employees);
+        if(t.short) inner += `<span class="need">⚠ chýba ${t.need}</span>`;
+        if(manager && t.na>0) inner += `<span class="na">✗ ${t.na}</span>`;
+        if(isCant) inner += `<span class="na">✗ nemôžem</span>`;
         const line = t.note || (t.hasRes ? ((d.reservations||[])[0]||{}).title : '');
         if(line) inner += `<small>${esc(line)}</small>`;
       }
@@ -1006,16 +1463,19 @@
       const d=dayObj(key); const t=dayTotals(key);
       const past=key<tKey;
       const isMine=!!myName && (d.employees||[]).includes(myName);
+      const isCant=!!myName && !isMine && (d.na||[]).includes(myName);
       const idle=past && !t.closed && (!manager || t.signed===0);
       if(idle) continue;
       const we=(dt.getDay()===0||dt.getDay()===6);
       const status=t.closed?'Zavreté':(t.full?'Plné':'Otvorené');
       const parts=[];
       if(t.signed>0||t.limit>0) parts.push(`👤 ${t.signed}${t.limit?'/'+t.limit:''}`);
+      if(t.short) parts.push(`⚠ chýba ${t.need}`);
+      if(manager && t.na>0) parts.push(`✗ ${t.na} nemôže`);
       if(t.note) parts.push(`📝 ${esc(t.note)}`);
       if(t.hasRes) parts.push(`🔒 ${esc(((d.reservations||[])[0]||{}).title||'rezervácia')}`);
-      const mark = multiSel.has(key) ? '☑ vybraté' : (isMine ? '✓ Ty' : '');
-      const cls='lrow'+(key===tKey?' today':'')+(t.closed?' closed':'')+(t.full?' limfull':'')+(isMine?' me':'')+(past?' past':'')+(we?' we':'')+multiClass(key);
+      const mark = multiSel.has(key) ? '☑ vybraté' : (isMine ? '✓ Ty' : (isCant ? '✗ Nemôžem' : ''));
+      const cls='lrow'+(key===tKey?' today':'')+(t.closed?' closed':'')+(t.full?' limfull':'')+(t.short?' short':'')+(isCant?' cant':'')+(isMine?' me':'')+(past?' past':'')+(we?' we':'')+multiClass(key);
       rows+=`<button class="${cls}" data-date="${key}"><span class="ldate"><b>${day}</b><small>${dt.toLocaleDateString('sk-SK',{weekday:'short'})}</small></span><span class="lmain"><strong>${status}</strong>${parts.length?`<span class="lsub">${parts.join(' · ')}</span>`:''}${ratingDots(d.employees,20)}</span>${mark?`<span class="lmark">${mark}</span>`:''}</button>`;
     }
     if(!rows) rows='<p class="sub">V tomto mesiaci už nie sú žiadne dni.</p>';
@@ -1053,6 +1513,13 @@
       if(fresh) $('dayLimitInput').value = (d.limit===undefined||d.limit===null) ? '' : d.limit;
     }
 
+    // minimum pre deň (zobrazí sa iba keď je minimum zapnuté)
+    $('minBox').hidden = !(manager && minCfg.enabled);
+    if(manager && minCfg.enabled){
+      $('minInfo').textContent = `(štandardné: ${minCfg.people||'žiadne'})`;
+      if(fresh) $('dayMinInput').value = (d.min===undefined||d.min===null) ? '' : d.min;
+    }
+
     // rezervácie (zamestnanci ich vidia len keď nejaké sú; pridávanie je pod „Viac“ iba pre vedúceho)
     const resArr=d.reservations||[];
     $('resPublic').hidden = !resArr.length;
@@ -1062,12 +1529,13 @@
     document.querySelectorAll('[data-res-remove]').forEach(x=>x.onclick=()=>removeReservation(selected,x.dataset.resRemove).then(()=>openShift(selected)));
     $('moreDay').hidden = !manager;
     if(manager){
-      $('moreDaySummary').textContent = '⚙ Viac – pridať rezerváciu' + (limitCfg.enabled ? ' a limit dňa' : '') + ((limitCfg.enabled && d.limit!==undefined && d.limit!==null) ? ` (limit teraz: ${d.limit})` : '');
+      $('moreDaySummary').textContent = '⚙ Viac – pridať rezerváciu' + ((limitCfg.enabled||minCfg.enabled) ? ' a limit/minimum dňa' : '') + ((limitCfg.enabled && d.limit!==undefined && d.limit!==null) ? ` (limit teraz: ${d.limit})` : '');
       if(fresh) $('moreDay').open=false;
     }
 
     // smena na celý deň
     const emps=d.employees||[];
+    const na=d.na||[];
     const closed=!!d.closed;
     const already=!!myName && emps.includes(myName);
     const past=date<todayKey();
@@ -1077,20 +1545,22 @@
     if(manager){
       statusHtml = closed ? '<div class="sfree ok">✓ Zavreté</div>' : `<div class="sfree ${full?'full':'pending'}">Otvorené · ${emps.length}${lim?' z '+lim:''} prihl.${full?' (plné)':''}</div>`;
       teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Zatiaľ sa nikto neprihlásil.</p>';
-      const available=employees.list.filter(e=>!emps.includes(e.name));
+      const available=employees.list.filter(e=>!emps.includes(e.name)).sort((a,b)=>(na.includes(a.name)?1:0)-(na.includes(b.name)?1:0));
       actionHtml = `<div class="manage-row">
-          <select id="addEmpSelect"><option value="">Pridať zamestnanca…</option>${available.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('')}</select>
+          <select id="addEmpSelect"><option value="">Pridať zamestnanca…</option>${available.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}${na.includes(e.name)?' (nemôže)':''}</option>`).join('')}</select>
           <button class="outline" id="addEmpToDay">Pridať</button>
         </div>
         <div class="manage-row">
           ${closed
             ? `<button class="outline" id="reopenDay">Znovu otvoriť prihlasovanie</button>`
             : `<button class="primary small" id="closeDay">Zavrieť a uložiť</button>`}
+          ${emps.length?`<button class="outline" id="copyList">📋 Kopírovať zoznam</button>`:''}
         </div>`;
     } else if(closed){
       statusHtml = '<div class="sfree ok">✓ Zavreté</div>';
       teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Na smene nikto nie je.</p>';
-      actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">${already?'Si na tejto smene. ':''}Zmeny už robí iba vedúci.</p>`;
+      actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">${already?'Si na tejto smene. ':''}Zmeny už robí iba vedúci.</p>`
+        + `<div class="manage-row" style="margin-top:10px;">${emps.length?`<button class="outline" id="copyList">📋 Kopírovať zoznam</button>`:''}${(already&&!past&&myName)?`<button class="outline" id="swapBtn">🔁 Požiadať o výmenu</button>`:''}</div>`;
     } else {
       statusHtml = full ? `<div class="sfree full">Plné · ${emps.length} z ${lim}</div>` : `<div class="sfree pending">Otvorené · ${emps.length}${lim?' z '+lim:''} prihl.</div>`;
       teamHtml = `<p class="sub" style="margin:6px 0 0;">${already?'✓ Si prihlásený/á. ':''}Zoznam ľudí sa zobrazí po potvrdení vedúcim.</p>`;
@@ -1099,6 +1569,9 @@
       else if(already) actionHtml = `<button class="outline" id="leaveDay" style="margin-top:10px;width:100%;">Odhlásiť sa</button>`;
       else if(full) actionHtml = `<button class="primary small" disabled style="margin-top:10px;">Smena je plná</button>`;
       else actionHtml = `<button class="primary small" id="signUpDay" style="margin-top:10px;">Prihlásiť sa na tento deň</button>`;
+      if(!past && myName && !already) actionHtml += na.includes(myName)
+        ? `<button class="outline" id="canDay" style="margin-top:8px;width:100%;">✓ Nemôžeš tento deň – zrušiť (už môžem)</button>`
+        : `<button class="outline" id="cantDay" style="margin-top:8px;width:100%;">✗ Nemôžem tento deň</button>`;
     }
     const keepSel = $('addEmpSelect') ? $('addEmpSelect').value : '';
     $('shiftsList').innerHTML = `<div class="shift-card">
@@ -1107,11 +1580,16 @@
         ${actionHtml}
       </div>`;
 
+    $('naBox').innerHTML = (manager && na.length) ? `<div class="nabox">✗ Nemôžu: ${na.map(esc).join(', ')}</div>` : '';
     if(keepSel && $('addEmpSelect') && Array.from($('addEmpSelect').options).some(o=>o.value===keepSel)) $('addEmpSelect').value=keepSel;
     const again=()=>openShift(selected);
     const on=(id,fn)=>{ const el=$(id); if(el) el.onclick=fn; };
     on('signUpDay',()=>signUpDay(selected).then(again));
     on('leaveDay',()=>leaveDay(selected).then(again));
+    on('copyList',()=>copyDayList(selected));
+    on('swapBtn',()=>openSwapModal(selected));
+    on('cantDay',()=>cantDay(selected,true).then(again));
+    on('canDay',()=>cantDay(selected,false).then(again));
     on('closeDay',()=>setDayClosed(selected,true).then(again));
     on('reopenDay',()=>setDayClosed(selected,false).then(again));
     on('addEmpToDay',()=>{ const v=$('addEmpSelect').value; if(!v) return showToast('Vyber zamestnanca'); addEmployeeToDay(selected,v).then(again); });
@@ -1140,25 +1618,25 @@
     if(typeof XLSX==='undefined'){ showToast('Excel knižnica sa nenačítala, obnov stránku a skús znova.'); return; }
     const fmt=k=>{ const [y,m,d]=k.split('-'); return `${d}.${m}.${y}`; };
     const dayName=k=>new Date(k+'T12:00').toLocaleDateString('sk-SK',{weekday:'long'});
-    const keys=Object.keys(schedule.days||{}).sort().filter(k=>{ if(month!=='all' && !k.startsWith(month)) return false; const t=dayTotals(k); return t.signed>0||t.closed||t.note||t.hasRes; });
+    const keys=Object.keys(schedule.days||{}).sort().filter(k=>{ if(month!=='all' && !k.startsWith(month)) return false; const t=dayTotals(k); return t.signed>0||t.closed||t.note||t.hasRes||t.na>0; });
     if(!keys.length){ showToast('V tomto období nie sú žiadne dáta na export.'); return; }
 
-    const rows=[['Dátum','Deň','Stav','Počet ľudí','Ľudia na smene / prihlásení','Poznámka','Rezervácie / uzávery']];
+    const rows=[['Dátum','Deň','Stav','Počet ľudí','Ľudia na smene / prihlásení','Poznámka','Rezervácie / uzávery','Nemôžu (nahlásili)']];
     keys.forEach(k=>{
       const d=dayObj(k); const t=dayTotals(k);
       rows.push([fmt(k), dayName(k), t.closed?'Zavreté (potvrdené)':'Otvorené', t.signed, (d.employees||[]).join(', '), t.note,
-        (d.reservations||[]).map(r=>r.title+(r.note?` (${r.note})`:'')).join('; ')]);
+        (d.reservations||[]).map(r=>r.title+(r.note?` (${r.note})`:'')).join('; '), (d.na||[]).join(', ')]);
     });
 
     const per={};
     keys.forEach(k=>{ const d=dayObj(k); (d.employees||[]).forEach(n=>{ const e=per[n]||(per[n]={conf:[],pend:[]}); (d.closed?e.conf:e.pend).push(fmt(k)); }); });
-    const rows2=[['Zamestnanec','Potvrdené smeny','Čakajúce prihlásenia','Dátumy potvrdených smien']];
-    Object.keys(per).sort((a,b)=>a.localeCompare(b,'sk')).forEach(n=>rows2.push([n, per[n].conf.length, per[n].pend.length, per[n].conf.join(', ')]));
+    const rows2=[['Zamestnanec','Potvrdené smeny','Čakajúce prihlásenia','Dátumy potvrdených smien','Víkendy (pi–ne)','Týždne (po–št)','Dni spolu']];
+    Object.keys(per).sort((a,b)=>a.localeCompare(b,'sk')).forEach(n=>{ const st=empStats(n, month==='all'?null:month, false); rows2.push([n, per[n].conf.length, per[n].pend.length, per[n].conf.join(', '), st.weekends, st.weeks, st.days]); });
 
     const ws1=XLSX.utils.aoa_to_sheet(rows);
-    ws1['!cols']=[{wch:12},{wch:13},{wch:20},{wch:11},{wch:45},{wch:40},{wch:40}];
+    ws1['!cols']=[{wch:12},{wch:13},{wch:20},{wch:11},{wch:45},{wch:40},{wch:40},{wch:30}];
     const ws2=XLSX.utils.aoa_to_sheet(rows2);
-    ws2['!cols']=[{wch:28},{wch:17},{wch:20},{wch:60}];
+    ws2['!cols']=[{wch:28},{wch:17},{wch:20},{wch:60},{wch:16},{wch:16},{wch:11}];
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws1, 'Kalendár smien');
     XLSX.utils.book_append_sheet(wb, ws2, 'Podľa zamestnanca');
@@ -1172,6 +1650,9 @@
     $('limitToggle').checked = limitCfg.enabled;
     $('limitRow').style.display = limitCfg.enabled ? 'flex' : 'none';
     if(document.activeElement!==$('limitDefault')) $('limitDefault').value = limitCfg.defaultLimit || '';
+    $('minToggle').checked = minCfg.enabled;
+    $('minRow').style.display = minCfg.enabled ? 'flex' : 'none';
+    if(document.activeElement!==$('minDefault')) $('minDefault').value = minCfg.people || '';
   }
 
   function renderLegend(){
@@ -1184,6 +1665,9 @@
       manager ? ['<span class="rdots" style="margin:0;justify-content:center;"><i class="rd green"></i><i class="rd yellow"></i><i class="rd red"></i></span>','<b>Farebné bodky</b> – ľudia prihlásení na deň podľa tvojho hodnotenia (zelená výborný, žltá priemerný, červená slabý, prázdna bez hodnotenia). Vidíš ich iba ty.'] : null,
       ['📝','<b>Poznámka vedúceho</b> k tomu dňu – otvor deň a prečítaj si ju.'],
       ['🔒','<b>Rezervácia alebo uzávera</b> v ten deň.'],
+      minCfg.enabled ? ['⚠','<b>Chýba N</b> – na deň chýba ešte N ľudí do minima (prerušovaný rám).'] : null,
+      (!manager && myName) ? ['✗','<b>Nemôžem</b> – deň, ktorý si označil/a, že nemôžeš (šrafovaný). Vidí to iba vedúci.'] : null,
+      manager ? ['✗ 2','<b>Nemôžu</b> – koľko ľudí nahlásilo, že ten deň nemôžu (mená v okne dňa).'] : null,
       !manager ? ['<i class="lg-box lg-me"></i>','Žltý rám (v zozname ✓ Ty) = <b>si prihlásený/á</b>.'] : null,
       ['<i class="lg-box lg-today"></i>','Žltý obrys = <b>dnešný deň</b>.'],
       ['<i class="lg-box lg-past"></i>','Zoslabený deň = <b>už uplynul</b>.']
@@ -1202,11 +1686,17 @@
     $('bulkBtn').style.display = manager ? '' : 'none';
     $('moreBox').style.display = manager ? 'block' : 'none';
     $('rosterBox').style.display = manager ? 'block' : 'none';
+    $('statsBox').style.display = manager ? 'block' : 'none';
+    $('historyBox').style.display = manager ? 'block' : 'none';
     renderSettings();
     renderHero();
     renderMine();
+    renderSwaps();
     renderCritical();
+    renderShort();
     renderRoster();
+    renderStats();
+    renderHistory();
     renderMonths();
     renderLegend();
     // otvorené okno dňa sa obnoví samo, keď sa zmenia dáta (bez straty rozpísaného textu)
@@ -1215,6 +1705,35 @@
 
   $('resAddBtn').onclick=()=>{ addReservation(selected,$('resTitle').value,$('resNote').value).then(()=>{ $('resTitle').value=''; $('resNote').value=''; openShift(selected); }); };
   $('exportBtn').onclick=openExport;
+  $('rmPrev').onclick=()=>{ rosterOffset--; refreshRosterViews(); };
+  $('rmNext').onclick=()=>{ rosterOffset++; refreshRosterViews(); };
+  $('rmClosed').onchange=e=>{ rosterOnlyClosed=e.target.checked; refreshRosterViews(); };
+  $('smPrev').onclick=()=>{ rosterOffset--; refreshRosterViews(); };
+  $('smNext').onclick=()=>{ rosterOffset++; refreshRosterViews(); };
+  $('smClosed').onchange=e=>{ rosterOnlyClosed=e.target.checked; refreshRosterViews(); };
+  $('pastMineBtn').onclick=()=>{ showPastMine=!showPastMine; renderMine(); };
+  $('histFilter').addEventListener('input',renderHistory);
+  $('histClear').onclick=clearHistory;
+  $('multiCant').onclick=multiCant;
+  $('swapTo').onchange=fillSwapDays;
+  $('swapSend').onclick=sendSwap;
+  $('minToggle').onchange=async e=>{
+    if(!manager) return;
+    const on=e.target.checked; const patch={enabled:on};
+    if(on && !minCfg.people) patch.people=3;
+    if(await writeMin(patch)) showToast(on?'Minimum zapnuté':'Minimum vypnuté');
+  };
+  $('minSave').onclick=async()=>{
+    const v=Math.max(0,Math.min(100,parseInt($('minDefault').value,10)||0));
+    if(await writeMin({people:v})) showToast('Štandardné minimum uložené');
+  };
+  $('dayMinSave').onclick=async()=>{
+    if(!manager||!selected) return;
+    const raw=$('dayMinInput').value.trim();
+    const val = raw==='' ? null : Math.max(0,Math.min(100,parseInt(raw,10)||0));
+    if(await writeDay(selected,{min:val})) showToast('Minimum dňa uložené');
+    openShift(selected);
+  };
   $('viewBtn').onclick=()=>{ viewMode = viewMode==='list' ? 'grid' : 'list'; try{ localStorage.setItem('cp_view',viewMode); }catch(e){} renderMonths(); };
   $('multiBtn').onclick=()=>{ multiMode=!multiMode; multiSel.clear(); renderMonths(); };
   $('multiGo').onclick=multiSignUp;
