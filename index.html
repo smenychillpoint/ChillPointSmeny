@@ -649,8 +649,9 @@
 
       <div id="dayRules" class="dayrule" hidden>
         <div id="minBox" hidden>
-          <label>MINIMUM ĽUDÍ PRE TENTO DEŇ <span id="minInfo"></span></label>
-          <div class="manage-row"><input id="dayMinInput" type="number" min="0" max="100" placeholder="prázdne = podľa dňa v týždni, 0 = netreba"><button class="primary small" id="dayMinSave">Uložiť</button></div>
+          <label>NA TENTO DEŇ TREBA ĽUDÍ <span id="minInfo"></span></label>
+          <div class="manage-row"><input id="dayMinInput" type="number" min="0" max="100" placeholder="napr. 4 (prázdne = nezadané, 0 = netreba)"><button class="primary small" id="dayMinSave">Uložiť</button></div>
+          <div class="sub" id="minStatus" style="font-size:12px;margin-top:6px;"></div>
         </div>
         <div id="limitBox" hidden style="margin-top:10px;">
           <label>LIMIT ĽUDÍ PRE TENTO DEŇ <span id="limitInfo"></span></label>
@@ -903,6 +904,8 @@
           <li><b>✅ Checklisty</b> (Nastavenia) a <b>záznam zo smeny</b>: v okne dňa zamestnanci na smene v ten deň odškrtávajú otvorenie a zatvorenie a hlásia poznámky alebo <b>🛠 závady</b>. Nevyriešené závady vidíš v prehľade.</li>
           <li>V okne <b>📨 Správa pre ľudí</b> si cez <b>✎ Vlastná šablóna</b> upravíš znenie výzvy a oznamu (použi {dni}, {cas}, {odkaz}).</li>
           <li><b>🪑 Náhradníci:</b> na zavretom (alebo plnom) dni sa zamestnanci môžu prihlásiť ako záloha. V okne dňa ich vidíš s časom a tlačidlom <b>→ Na smenu</b>, v kalendári ako <b>🪑 2</b>. Návrh zostavy ich pri dopĺňaní uprednostní. Vypnúť sa dá v Nastaveniach → Funkcie.</li>
+          <li>V okne dňa je vždy pole <b>NA TENTO DEŇ TREBA ĽUDÍ</b>: napíš číslo (napr. 4) a daj Uložiť. Kalendár, sekcia „Chýbajú ľudia“ aj správa pre ľudí potom ukážu, koľko ešte chýba. Funguje aj keď je všeobecné minimum v Nastaveniach vypnuté. 0 = netreba, prázdne = nezadané.</li>
+          <li>Zoznamy <b>★ Chcú</b> a <b>✓ Môžu</b> ostávajú viditeľné aj po <b>Zavrieť a uložiť</b> (kto ten deň chcel, ale nie je na smene). Kto chcel deň a na smene je, má pri mene ★.</li>
           <li>V okne dňa vidíš aj <b>👻 tých, ktorí sa prihlásili, ale už na smene nie sú</b> (odhlásili sa sami alebo si ich odstránil): s časom a tlačidlom <b>↩ Vrátiť na smenu</b>. Pod tým je celá <b>história prihlásení</b> toho dňa. Zapisuje sa od tejto verzie, staršie údaje sa doplnia z histórie zmien (posledných 300 záznamov).</li>
           <li><b>🙋 Hľadá sa náhrada</b>: zamestnanec na zavretej smene, ktorý nemôže prísť, pošle žiadosť všetkým. Keď ju niekto zoberie, príde k tebe na schválenie ako bežná výmena (s poznámkou „náhradník“). Kým sa nikto neprihlási, vidíš ju v sekcii výmen a môžeš ľudí osloviť tlačidlom <b>📨 Osloviť ľudí</b>.</li>
           <li><b>🧹 Kontrola údajov</b> (menu Dáta) nájde mená v smenách, ktoré už nie sú v zozname zamestnancov, duplicity a neplatné údaje. Opravu môžeš vrátiť.</li>
@@ -1161,13 +1164,12 @@
     return v>0 ? v : 0;
   }
   const MIN_HORIZON_DAYS=14;
+  // Číslo „na tento deň treba“ zadané vedúcim priamo pri dni platí vždy (aj keď je všeobecné minimum vypnuté)
+  const hasDayMin=key=>{ const v=dayObj(key).min; return v!==undefined && v!==null && v!==''; };
   function dayMin(key){
     let base=0;
-    if(minCfg.enabled){
-      const d=dayObj(key);
-      const v=(d.min!==undefined && d.min!==null && d.min!=='') ? Number(d.min) : dayDefaultMin(key);
-      base = v>0 ? v : 0;
-    }
+    if(hasDayMin(key)) base=Math.max(0, Number(dayObj(key).min)||0);
+    else if(minCfg.enabled) base=Math.max(0, Number(dayDefaultMin(key))||0);
     return Math.max(base, resStaff(key));
   }
   function minHorizonKey(){ const d=new Date(); d.setDate(d.getDate()+MIN_HORIZON_DAYS); return iso(d); }
@@ -1176,10 +1178,10 @@
     const off=!!d.off;
     const signed=(d.employees||[]).length, closed=!!d.closed, limit=dayLimit(key), min=dayMin(key);
     // „chýbajú ľudia“: nezavretý deň od dnes, kde je menej ľudí ako minimum (do 14 dní dopredu alebo ak už niekto je prihlásený)
-    const short = !off && !closed && min>0 && signed<min && key>=todayKey() && (signed>0 || key<=minHorizonKey() || resStaff(key)>0);
+    const short = !off && !closed && min>0 && signed<min && key>=todayKey() && (signed>0 || key<=minHorizonKey() || resStaff(key)>0 || hasDayMin(key));
     return { off, signed, closed, limit, full: !off && !closed && limit>0 && signed>=limit, min, short, need: short ? min-signed : 0,
-             na: cantInfo(key).length, can: (off||closed||key<todayKey()) ? 0 : canInfo(key).length,
-             want: (off||closed||key<todayKey()) ? 0 : wantInfo(key).length,
+             na: cantInfo(key).length, can: (off||key<todayKey()) ? 0 : canInfo(key).length,
+             want: (off||key<todayKey()) ? 0 : wantInfo(key).length,
              sb: sbInfo(key).length,
              cfDone: (feat('confirm') && closed && !off && key>=todayKey()) ? cfInfo(key).confirmed.length : 0,
              cfTotal: (feat('confirm') && closed && !off && key>=todayKey()) ? (cfInfo(key).confirmed.length+cfInfo(key).pending.length) : 0,
@@ -4159,15 +4161,20 @@
       if(fresh) $('dayLimitInput').value = (d.limit===undefined||d.limit===null) ? '' : d.limit;
     }
 
-    // minimum pre deň (zobrazí sa iba keď je minimum zapnuté)
-    $('minBox').hidden = !(manager && minCfg.enabled);
-    if(manager && minCfg.enabled){
-      $('minInfo').textContent = `(štandardné pre tento deň: ${dayDefaultMin(date)||'žiadne'}${periodFor(date)?` – obdobie „${periodFor(date).name||''}“`:''})`;
+    // „na tento deň treba“ (minimum pre deň): vedúci ho má k dispozícii vždy, aj keď je všeobecné minimum vypnuté
+    $('minBox').hidden = !manager;
+    if(manager){
+      $('minInfo').textContent = minCfg.enabled
+        ? `(štandardné pre tento deň: ${dayDefaultMin(date)||'žiadne'}${periodFor(date)?` – obdobie „${periodFor(date).name||''}“`:''})`
+        : '(platí len pre tento deň)';
       if(fresh) $('dayMinInput').value = (d.min===undefined||d.min===null) ? '' : d.min;
+      const tt=dayTotals(date), missing=Math.max(0, tt.min-tt.signed);
+      $('minStatus').textContent = tt.min>0 ? `Treba ${tt.min}, prihlásených ${tt.signed}${missing?` – ${needWord(missing)}`:' ✓ splnené'}.` : 'Nezadané.';
     }
 
     // nastavenie minima/limitu pre konkrétny deň je hneď viditeľné (nie pod „Viac“)
-    $('dayRules').hidden = !(manager && (limitCfg.enabled || minCfg.enabled) && !d.off);
+    $('dayRules').hidden = !(manager && !d.off);
+    $('goWeekRules').style.display = (limitCfg.enabled || minCfg.enabled) ? '' : 'none';
     $('goWeekDay').textContent = ['nedele','pondelky','utorky','stredy','štvrtky','piatky','soboty'][new Date(date+'T12:00').getDay()];
 
     // rezervácie (zamestnanci ich vidia len keď nejaké sú; pridávanie je pod „Viac“ iba pre vedúceho)
@@ -4199,7 +4206,7 @@
     const standbyHtml=(sbMine||sbCan) ? `<div class="segbox"><div class="seglabel">NÁHRADNÍK</div><button class="seg${sbMine?' on':''}" id="standbyBtn" style="width:100%">${sbMine?'🪑 Si náhradník – odhlásiť':'🪑 Prihlásiť sa ako náhradník'}</button><p class="sub" style="margin:6px 0 0;font-size:12px;">${sbMine?'Vedúci vidí, že môžeš zaskočiť, keby sa niekto odhlásil.':`Deň je ${closed?'zavretý':'plný'}. Ako náhradník sa nezapočítaš do smeny, ale vedúci uvidí, že môžeš zaskočiť, keby sa niekto odhlásil.`}</p></div>` : '';
     const myReqs=(myName && !manager) ? Object.keys(swaps||{}).map(id=>({ id, ...swaps[id] })).filter(x=>x && x.from===myName && x.day===date && ['open','pending_peer','pending_manager'].includes(x.status)) : [];
     const subReq=myReqs.find(x=>x.status==='open')||null, subBusy=myReqs.length>0;
-    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
+    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${(manager && avMark(date,n)==='want')?' <span title="Tento deň výslovne chcel/a" style="color:#ffd11a">★</span>':''}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
     let statusHtml, teamHtml, actionHtml='';
     if(isOff){
       statusHtml = '<div class="sfree" style="color:#8f9297;">🚫 Bez prevádzky</div>';
@@ -4255,8 +4262,8 @@
         ${actionHtml}${standbyHtml}
       </div>`;
 
-    $('canBox').innerHTML = (manager && canSet.length && !isOff && !closed && !past) ? `<div class="canbox">✓ Môžu: ${canSet.map(esc).join(', ')}</div>` : '';
-    $('wantBox').innerHTML = (manager && wantSet.length && !isOff && !closed && !past) ? `<div class="wantbox">★ Chcú tento deň: ${wantSet.map(esc).join(', ')}</div>` : '';
+    $('canBox').innerHTML = (manager && canSet.length && !isOff && !past) ? `<div class="canbox">✓ Môžu: ${canSet.map(esc).join(', ')}</div>` : '';
+    $('wantBox').innerHTML = (manager && wantSet.length && !isOff && !past) ? `<div class="wantbox">★ Chcú tento deň${closed?' (nie sú na smene)':''}: ${wantSet.map(esc).join(', ')}</div>` : '';
     { const sbl=sbInfo(date); $('sbBox').innerHTML = (manager && sbl.length && !isOff && !past) ? `<div class="sbbox">🪑 <b>Náhradníci (záloha):</b>${sbl.map(x=>`<div class="jrow"><span>${esc(x.name)}${x.t?` <span class="sub">(hlásil/a sa ${esc(fmtTsShort(x.t))})</span>`:''}</span><span><button class="cfm" data-sb-add="${esc(x.name)}">→ Na smenu</button><button class="cfm" data-sb-del="${esc(x.name)}">✕</button></span></div>`).join('')}</div>` : ''; }
     $('naBox').innerHTML = (manager && cantList.length && !isOff) ? `<div class="nabox">✗ Nemôžu: ${cantList.map(x=>esc(x.name)+(x.rec?' (pravidelne)':'')).join(', ')}</div>` : '';
     if(keepSel && $('addEmpSelect') && Array.from($('addEmpSelect').options).some(o=>o.value===keepSel)) $('addEmpSelect').value=keepSel;
@@ -4367,7 +4374,7 @@
       (manager && feat('ratings')) ? ['<span class="rdots" style="margin:0;justify-content:center;"><i class="rd green"></i><i class="rd lime"></i><i class="rd yellow"></i><i class="rd orange"></i><i class="rd red"></i></span>','<b>Farebné bodky</b> – ľudia prihlásení na deň podľa tvojho hodnotenia (zelená výborný, svetlozelená dobrý, žltá priemerný, oranžová slabší, červená slabý, prázdna bez hodnotenia). Vidíš ich iba ty.'] : null,
       ['📝','<b>Poznámka vedúceho</b> k tomu dňu – otvor deň a prečítaj si ju.'],
       ['🔒','<b>Rezervácia alebo uzávera</b> v ten deň.'],
-      minCfg.enabled ? ['⚠','<b>Chýba N</b> – na deň chýba ešte N ľudí do minima (prerušovaný rám).'] : null,
+      (minCfg.enabled || Object.keys(schedule.days||{}).some(k=>k>=todayKey() && hasDayMin(k) && dayMin(k)>0)) ? ['⚠','<b>Chýba N</b> – na deň chýba ešte N ľudí do potrebného počtu (prerušovaný rám).'] : null,
       (!manager && myName) ? ['✗','<b>Nemôžem</b> – deň, ktorý si označil/a, že nemôžeš (šrafovaný). Vidí to iba vedúci.'] : null,
       manager ? ['✗ 2','<b>Nemôžu</b> – koľko ľudí nahlásilo, že ten deň nemôžu (mená v okne dňa).'] : null,
       manager ? ['✓ 3','<b>Môžu</b> – koľko ľudí ten deň môže (výslovne alebo pravidelne „stále môžem“) a ešte nie je prihlásených.'] : null,
@@ -4465,7 +4472,7 @@
     if(!manager||!selected) return;
     const raw=$('dayMinInput').value.trim();
     const val = raw==='' ? null : Math.max(0,Math.min(100,parseInt(raw,10)||0));
-    if(await writeDay(selected,{min:val})) showToast('Minimum dňa uložené');
+    if(await writeDay(selected,{min:val})) showToast(val===null ? 'Minimum dňa zrušené' : `Uložené: na tento deň treba ${val} ${plural(val,'človeka','ľudí','ľudí')}`);
     openShift(selected);
   };
   $('viewBtn').onclick=()=>{ viewMode = viewMode==='list' ? 'grid' : 'list'; try{ localStorage.setItem('cp_view',viewMode); }catch(e){} renderMonths(); };
