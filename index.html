@@ -163,6 +163,12 @@
     .menu-pop button{width:100%;text-align:left;margin:0}
     .offline-banner{background:#3a2a0a;border:1px solid #d6912a;color:#ffd79a;padding:10px 14px;margin:0 0 14px;font-size:13px}
     .offline-banner[hidden]{display:none}
+    .sbbox{margin-top:10px;padding:10px 12px;background:#0f1a24;border:1px solid #2a4a6b;color:#bcd8f5;font-size:13px}
+    .day .sbc{display:block;color:#9ec5ff;font-size:11px;font-weight:700;margin-top:3px}
+    @media(max-width:560px){.day .sbc{font-size:10px}}
+    .joinbox{margin-top:10px;padding:10px 12px;background:#1a1a1f;border:1px solid #3c3f44;font-size:13px}
+    .jrow{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #2c2f33;flex-wrap:wrap}
+    .jlog{font-size:12px;color:#c9ccd0;padding:3px 0}
     .ck-sec{margin:10px 0}
     .ckrow{display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:14px;cursor:pointer}
     .ckrow input{width:20px;height:20px;accent-color:var(--yellow);flex:0 0 auto;margin-top:1px}
@@ -637,6 +643,8 @@
       <div id="naBox"></div>
       <div id="canBox"></div>
       <div id="wantBox"></div>
+      <div id="sbBox"></div>
+      <div id="joinBox"></div>
       <div id="ckBox"></div>
 
       <div id="dayRules" class="dayrule" hidden>
@@ -870,6 +878,7 @@
           <li><b>📲 Do mobilu</b> pridá stránku na plochu ako aplikáciu. Na iPhone cez Zdieľať → Pridať na plochu.</li>
           <li><b>OZNAMY</b> od vedúceho sa zobrazia hore. Tlačidlom <b>Beriem na vedomie</b> dáš vedieť, že si ich prečítal/a.</li>
           <li>V okne dňa v ten deň, keď si na smene, odškrtávaš <b>checklist</b> a môžeš pridať <b>záznam</b> alebo nahlásiť <b>🛠 závadu</b>.</li>
+          <li><b>Deň je zavretý alebo plný?</b> Stále sa môžeš prihlásiť ako <b>🪑 náhradník</b>. Do smeny sa nezapočítaš, ale vedúci uvidí, že môžeš zaskočiť, keby sa niekto odhlásil. Keď ťa pridá na smenu, z náhradníkov zmizneš. Ak sa neskôr prihlásiš normálne, náhradník sa zruší.</li>
           <li><b>Nemôžeš prísť?</b> V okne zavretého dňa klikni <b>🙋 Nemôžem prísť – hľadám náhradu</b> (môžeš napísať dôvod). Kolegovia uvidia žiadosť hore v sekcii „Výmeny smien“ a prvý, kto klikne <b>Beriem smenu</b>, ju prevezme. Potom to schváli vedúci. Kým sa nikto neprihlási, ostávaš na smene ty. Žiadosť môžeš poslať aj do skupiny alebo ju zrušiť.</li>
           <li>Po zavretí dňa sa objaví <b>POTVRĎ ÚČASŤ</b>: klikni <b>Potvrdzujem</b>, že prídeš (aj v okne dňa).</li>
           <li><b>Čo je nové pre teba</b> ukáže, čo sa od tvojej poslednej návštevy zmenilo na tvojich smenách (pridanie, potvrdenie, poznámka, výmena). Tlačidlom <b>Rozumiem</b> to odškrtneš.</li>
@@ -893,6 +902,8 @@
           <li><b>✨ Návrh na obdobie</b> navrhne zostavu pre všetky otvorené dni týždňa alebo mesiaca naraz (dni sa navrhujú postupne, takže sa počíta aj s tým, koho už dostali). Ťuknutím na mená ju upravíš a potvrdíš jedným klikom.</li>
           <li><b>✅ Checklisty</b> (Nastavenia) a <b>záznam zo smeny</b>: v okne dňa zamestnanci na smene v ten deň odškrtávajú otvorenie a zatvorenie a hlásia poznámky alebo <b>🛠 závady</b>. Nevyriešené závady vidíš v prehľade.</li>
           <li>V okne <b>📨 Správa pre ľudí</b> si cez <b>✎ Vlastná šablóna</b> upravíš znenie výzvy a oznamu (použi {dni}, {cas}, {odkaz}).</li>
+          <li><b>🪑 Náhradníci:</b> na zavretom (alebo plnom) dni sa zamestnanci môžu prihlásiť ako záloha. V okne dňa ich vidíš s časom a tlačidlom <b>→ Na smenu</b>, v kalendári ako <b>🪑 2</b>. Návrh zostavy ich pri dopĺňaní uprednostní. Vypnúť sa dá v Nastaveniach → Funkcie.</li>
+          <li>V okne dňa vidíš aj <b>👻 tých, ktorí sa prihlásili, ale už na smene nie sú</b> (odhlásili sa sami alebo si ich odstránil): s časom a tlačidlom <b>↩ Vrátiť na smenu</b>. Pod tým je celá <b>história prihlásení</b> toho dňa. Zapisuje sa od tejto verzie, staršie údaje sa doplnia z histórie zmien (posledných 300 záznamov).</li>
           <li><b>🙋 Hľadá sa náhrada</b>: zamestnanec na zavretej smene, ktorý nemôže prísť, pošle žiadosť všetkým. Keď ju niekto zoberie, príde k tebe na schválenie ako bežná výmena (s poznámkou „náhradník“). Kým sa nikto neprihlási, vidíš ju v sekcii výmen a môžeš ľudí osloviť tlačidlom <b>📨 Osloviť ľudí</b>.</li>
           <li><b>🧹 Kontrola údajov</b> (menu Dáta) nájde mená v smenách, ktoré už nie sú v zozname zamestnancov, duplicity a neplatné údaje. Opravu môžeš vrátiť.</li>
           <li>Bez internetu aplikácia ukáže <b>naposledy uložený kalendár</b> iba na čítanie (hore je oranžový pruh).</li>
@@ -1043,6 +1054,7 @@
   let pnotes={}, pnotesRef=null, pnotesAttached=false, pnoteFor='';
   let personName='', personOffset=0, highlightPerson='';
   let notices={}, noticesRef=null, noticeAcks={}, noticeAcksRef=null;
+  let joinOpen=false;
   let rosterOffset=0, rosterOnlyClosed=false;
   let minCfg={enabled:false,people:0}, minRef=null;
   let swaps={}, swapsRef=null, swapDate='', swapsPruned=false;
@@ -1168,6 +1180,7 @@
     return { off, signed, closed, limit, full: !off && !closed && limit>0 && signed>=limit, min, short, need: short ? min-signed : 0,
              na: cantInfo(key).length, can: (off||closed||key<todayKey()) ? 0 : canInfo(key).length,
              want: (off||closed||key<todayKey()) ? 0 : wantInfo(key).length,
+             sb: sbInfo(key).length,
              cfDone: (feat('confirm') && closed && !off && key>=todayKey()) ? cfInfo(key).confirmed.length : 0,
              cfTotal: (feat('confirm') && closed && !off && key>=todayKey()) ? (cfInfo(key).confirmed.length+cfInfo(key).pending.length) : 0,
              note:(d.note||'').trim(), hasRes:(d.reservations||[]).length>0 };
@@ -1336,8 +1349,11 @@
         const base = cur || dayObj(key) || {};
         const day = {...base};
         day.employees = Array.isArray(base.employees) ? base.employees.slice() : Object.values(base.employees||{});
+        const before = day.employees.slice();
         const out = fn(day);
         if(out===null) return undefined;
+        suDiffInto(out, before, out.employees||[], 'mgr');
+        { const addedNames=(out.employees||[]).filter(n=>!before.includes(n)); if(out.sb && addedNames.length){ out.sb={ ...out.sb }; addedNames.forEach(n=>{ delete out.sb[ratingKey(n)]; }); if(!Object.keys(out.sb).length) delete out.sb; } }
         if(!out.employees.length) delete out.employees;
         if(!out.closed) delete out.closed;
         return out;
@@ -1372,6 +1388,8 @@
     });
     if(ok){
       logEvent(key, `${myName} sa prihlásil/a`, myName);
+      suPush(key, myName, 'in', 'self');
+      if(hasSbEntry(key,myName)){ try{ const p=scheduleRef.child(key).child('sb').child(ratingKey(myName)).remove(); if(p && p.catch) p.catch(()=>{}); }catch(e){} }
       seenTouchDay(key, true);
       if((dayObj(key).na||[]).includes(myName)) mutateNa(key, arr=>arr.filter(n=>n!==myName));   // prihlásený už nie je „nemôžem“
       return {ok:true, reason:''};
@@ -1436,7 +1454,7 @@
     if(!myName||!dbAvailable) return;
     if(dayObj(key).closed){ showToast('Deň je už zavretý, odhlásiť ťa môže iba vedúci.'); return; }
     const ok=await mutateEmployees(key, arr=>arr.filter(n=>n!==myName));
-    if(ok){ showToast('Odhlásený/á'); logEvent(key, `${myName} sa odhlásil/a`, myName); seenTouchDay(key, false); }
+    if(ok){ showToast('Odhlásený/á'); logEvent(key, `${myName} sa odhlásil/a`, myName); suPush(key, myName, 'out', 'self'); seenTouchDay(key, false); }
     else showToast(dayObj(key).closed?'Deň je už zavretý, odhlásiť ťa môže iba vedúci.':'Nepodarilo sa uložiť, skús znova.');
   }
   async function setDayClosed(key, val){
@@ -1555,7 +1573,7 @@
     const snap=snapDays(targets);
     const patch={};
     targets.forEach(k=>{
-      if(mode==='off'){ patch[k+'/off']=true; patch[k+'/employees']=null; patch[k+'/closed']=null; patch[k+'/cf']=null; }
+      if(mode==='off'){ patch[k+'/off']=true; patch[k+'/employees']=null; patch[k+'/closed']=null; patch[k+'/cf']=null; patch[k+'/sb']=null; suPatch(patch, k, dayObj(k).employees||[], [], 'mgr'); }
       else patch[k+'/off']=null;
     });
     try{
@@ -1749,6 +1767,7 @@
           await mutateNa(key, arr=>arr.filter(n=>n!==myName)); if((dayObj(key).na||[]).includes(myName)) return fail;
         }
         if(curMark) await scheduleRef.child(key).child('av').child(nk).remove();
+        if(state==='cant' && hasSbEntry(key,myName)) await scheduleRef.child(key).child('sb').child(nk).remove();
       }
       return {ok:true, reason:''};
     }catch(e){ return fail; }
@@ -1826,7 +1845,7 @@
     if(val && n && !confirm(`Na tento deň je prihlásených ${n} ${plural(n,'človek','ľudia','ľudí')}. Označením „bez prevádzky“ sa odstránia. Pokračovať?`)) return;
     const snap=snapDays([key]);
     const ok=await mutateDay(key, day=>{
-      if(val){ day.off=true; day.employees=[]; delete day.closed; delete day.cf; } else { delete day.off; }
+      if(val){ day.off=true; day.employees=[]; delete day.closed; delete day.cf; delete day.sb; } else { delete day.off; }
       return day;
     });
     if(ok){
@@ -2204,8 +2223,10 @@
     const valid = ex.includes(x.from) && !ex.includes(x.to) && (!Y || (ey.includes(x.to) && !ey.includes(x.from)));
     if(!valid){ showToast('Výmena už nie je možná, smeny sa medzitým zmenili. Zamietni ju.', 4000); return; }
     const patch={};
-    patch[`schedule/days/${X}/employees`]=ex.map(n=>n===x.from?x.to:n);
-    if(Y) patch[`schedule/days/${Y}/employees`]=ey.map(n=>n===x.to?x.from:n);
+    const newX=ex.map(n=>n===x.from?x.to:n);
+    patch[`schedule/days/${X}/employees`]=newX;
+    suPatch(patch, `schedule/days/${X}`, ex, newX, 'mgr'); sbClearPatch(patch, `schedule/days/${X}`, X, ex, newX);
+    if(Y){ const newY=ey.map(n=>n===x.to?x.from:n); patch[`schedule/days/${Y}/employees`]=newY; suPatch(patch, `schedule/days/${Y}`, ey, newY, 'mgr'); sbClearPatch(patch, `schedule/days/${Y}`, Y, ey, newY); }
     if((dayObj(X).cf||{})[ratingKey(x.from)]) patch[`schedule/days/${X}/cf/${ratingKey(x.from)}`]=null;
     patch[`swaps/${id}/status`]='approved';
     const snap=snapDays(Y?[X,Y]:[X]).concat([{ path:`swaps/${id}/status`, v:x.status }]);
@@ -2287,13 +2308,13 @@
       return { name, rating, load:same, other, wkndDays:st.wkndDays, weekDays:st.weekDays, days:st.days, target:tgt, cant, mark, pnote:getPNote(name), score: pts[rating]*10 - same*6 - other*3 + tgtTerm + markBonus - (cant?100:0) };
     };
     const byScore=(a,b)=>(b.score-a.score) || a.name.localeCompare(b.name,'sk');
-    const canSet=canInfo(key), wantSet=wantInfo(key);   // „môžem“ / „stále môžem“ a „chcem tento deň“ (ešte neprihlásení)
-    const withCan=x=>({...x, canRec:canSet.includes(x.name), wantRec:wantSet.includes(x.name), canExplicit:avMark(key,x.name)==='can'});
+    const canSet=canInfo(key), wantSet=wantInfo(key), sbSet=sbInfo(key).map(x=>x.name);   // „môžem“, „chcem tento deň“ a náhradníci (ešte neprihlásení)
+    const withCan=x=>({...x, canRec:canSet.includes(x.name), wantRec:wantSet.includes(x.name), sbRec:sbSet.includes(x.name), canExplicit:avMark(key,x.name)==='can'});
     const cand=signed.map(info).sort(byScore);
     const keep=cand.slice(0,n), drop=cand.slice(n);
     let add=[];
     if(keep.length<n){
-      const bonus=x=>x.score+(x.wantRec?25:(x.canRec?15:0));   // kto chce ten deň (+25) alebo môže (+15), má pri doplnení prednosť
+      const bonus=x=>x.score+(x.wantRec?25:(x.sbRec?20:(x.canRec?15:0)));   // kto chce ten deň (+25) alebo môže (+15), má pri doplnení prednosť
       add=employees.list.map(e=>e.name).filter(nm=>!signed.includes(nm) && !na.includes(nm)).map(nm=>withCan(info(nm))).sort((a,b)=>(bonus(b)-bonus(a)) || a.name.localeCompare(b.name,'sk')).slice(0,n-keep.length);
     }
     const cantNames=employees.list.map(e=>e.name).filter(nm=>na.includes(nm) && !signed.includes(nm));
@@ -2308,7 +2329,7 @@
     const defN = dayLimit(selected) || dayMin(selected) || (d.employees||[]).length || 3;
     const n = sugState.n || defN;
     const r = (sugState.res && sugState.res.key===selected) ? sugState.res : null;
-    const line=q=>`<div class="sug-line"><i class="rd ${q.rating||'none'}"></i><div><b>${esc(q.name)}</b><br><span>${q.rating?RATING_LABEL[q.rating]:'bez hodnotenia'} · v mesiaci: ${q.wkndDays} ${plural(q.wkndDays,'deň','dni','dní')} cez víkend, ${q.weekDays} ${plural(q.weekDays,'deň','dni','dní')} cez týždeň${q.target!==null&&q.target!==undefined?` · cieľ ${q.target}, má ${q.days}`:''}${(q.wantRec||q.mark==='want')?' · ★ chce tento deň':''}${q.canRec?(q.canExplicit?' · ✓ môže tento deň':' · ✓ stále môže'):''}${q.cant?' · ⚠ nahlásil/a, že nemôže':''}${q.pnote?` · 📝 ${esc(q.pnote.slice(0,60))}`:''}</span></div></div>`;
+    const line=q=>`<div class="sug-line"><i class="rd ${q.rating||'none'}"></i><div><b>${esc(q.name)}</b><br><span>${q.rating?RATING_LABEL[q.rating]:'bez hodnotenia'} · v mesiaci: ${q.wkndDays} ${plural(q.wkndDays,'deň','dni','dní')} cez víkend, ${q.weekDays} ${plural(q.weekDays,'deň','dni','dní')} cez týždeň${q.target!==null&&q.target!==undefined?` · cieľ ${q.target}, má ${q.days}`:''}${(q.wantRec||q.mark==='want')?' · ★ chce tento deň':''}${q.sbRec?' · 🪑 náhradník':''}${q.canRec?(q.canExplicit?' · ✓ môže tento deň':' · ✓ stále môže'):''}${q.cant?' · ⚠ nahlásil/a, že nemôže':''}${q.pnote?` · 📝 ${esc(q.pnote.slice(0,60))}`:''}</span></div></div>`;
     let html=`<div class="sug"><div class="sug-head"><b>✨ Návrh zostavy</b></div><div class="manage-row"><span>Koľko ľudí:</span><input id="sugN" type="number" min="1" max="100" value="${n}"><button class="outline" id="sugBtn">Navrhnúť</button></div>`;
     if(r){
       html+=`<h5>NAVRHOVANÁ ZOSTAVA (${r.keep.length+r.add.length} z ${r.n})</h5>`+r.keep.map(line).join('');
@@ -2799,7 +2820,7 @@
     if(!confirm(`Použiť návrh pre ${items.length} dní? Odstráni sa ${removed} a pridá ${added} prihlásení.`+(closeAfter?'\nDni sa potom zavrú.':''))) return;
     const snap=snapDays(items.map(x=>x.key));
     const patch={};
-    items.forEach(x=>{ patch[`schedule/days/${x.key}/employees`]=x.names; if(closeAfter){ patch[`schedule/days/${x.key}/closed`]=true; patch[`schedule/days/${x.key}/cf`]=null; } });
+    items.forEach(x=>{ patch[`schedule/days/${x.key}/employees`]=x.names; suPatch(patch, `schedule/days/${x.key}`, dayObj(x.key).employees||[], x.names, 'mgr'); sbClearPatch(patch, `schedule/days/${x.key}`, x.key, dayObj(x.key).employees||[], x.names); if(closeAfter){ patch[`schedule/days/${x.key}/closed`]=true; patch[`schedule/days/${x.key}/cf`]=null; } });
     try{
       await rtdb.ref().update(patch);
       showUndoToast(`Návrh použitý pre ${items.length} dní${closeAfter?' (zavreté)':''}`, snap, 12000);
@@ -2901,6 +2922,7 @@
         ? `📊 <b>${nm}:</b> ${a.wkndDays} ${plural(a.wkndDays,'deň','dni','dní')} cez víkend · ${a.weekDays} ${plural(a.weekDays,'deň','dni','dní')} cez týždeň · ${a.days} spolu${c.days!==a.days?` (potvrdených ${c.days})`:''}`
         : `📊 <b>${nm}:</b> zatiaľ žiadne smeny`);
     });
+    { const sbd=mySbDays(); if(sbd.length) lines.push(`🪑 <b>Náhradník na:</b> ${sbd.map(fmtDayNum).join(', ')}`); }
     return lines.join('<br>');
   }
 
@@ -3112,6 +3134,7 @@
   // ---------- vypínanie funkcií ----------
   const FEATURES=[
     { id:'swaps',      label:'Výmeny smien' },
+    { id:'standby',    label:'Náhradníci (prihlásenie na zavretý alebo plný deň)' },
     { id:'ratings',    label:'Hodnotenie farbami' },
     { id:'targets',    label:'Cieľové počty smien' },
     { id:'avail',      label:'Môžem / Nemôžem / Chcem (dostupnosť)' },
@@ -3563,7 +3586,7 @@
       if(clean.length!==emps.length) patch2[`schedule/days/${k}/employees`]=clean.length?clean:null;
       const na=Array.isArray(d.na)?d.na:[]; const naClean=na.filter((n,i)=>names.has(n) && na.indexOf(n)===i);
       if(naClean.length!==na.length){ na.filter(n=>!names.has(n)).forEach(n=>unknown.add(n)); cnt2+=na.length-naClean.length; patch2[`schedule/days/${k}/na`]=naClean.length?naClean:null; touched=true; }
-      ['av','cf'].forEach(f=>{ Object.keys(d[f]||{}).forEach(key=>{ const n=nameFromKey(key); if(!names.has(n)){ unknown.add(n); cnt2++; patch2[`schedule/days/${k}/${f}/${key}`]=null; touched=true; } }); });
+      ['av','cf','sb'].forEach(f=>{ Object.keys(d[f]||{}).forEach(key=>{ const n=nameFromKey(key); if(!names.has(n)){ unknown.add(n); cnt2++; patch2[`schedule/days/${k}/${f}/${key}`]=null; touched=true; } }); });
       if(touched) dayKeys.push(k);
     });
     if(cnt2) out.push({ id:'daynames', title:'Neplatné alebo duplicitné mená v nadchádzajúcich dňoch', count:cnt2, detail:`${dayKeys.length} ${plural(dayKeys.length,'deň','dni','dní')}${unknown.size?' · neznáme mená: '+ex(Array.from(unknown),6):' · duplicity'}`, fixLabel:'Opraviť', destructive:false, patch:patch2 });
@@ -3614,6 +3637,144 @@
   }
   function openDataCheck(){ if(!manager) return; renderDataCheck(); $('dataModal').classList.add('open'); }
 
+  // ---------- záznam prihlásení dňa (vedúci vidí aj tých, ktorí už na smene nie sú) ----------
+  // days/<deň>/su/<id> = { n:meno, t:čas, a:'in'|'out', b:'self'|'mgr' }
+  const suId=()=>'e'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  // do dňa (v transakcii vedúceho) pripíše udalosti podľa zmeny zoznamu mien
+  function suDiffInto(day, before, after, by){
+    const added=after.filter(n=>!before.includes(n)), removed=before.filter(n=>!after.includes(n));
+    if(!added.length && !removed.length) return;
+    const t=Date.now(); day.su={ ...(day.su||{}) };
+    added.forEach(n=>{ day.su[suId()]={ n, t, a:'in', b:by }; });
+    removed.forEach(n=>{ day.su[suId()]={ n, t, a:'out', b:by }; });
+  }
+  // rovnaké pre hromadný zápis (patch); base = cesta k dňu
+  function suPatch(patch, base, before, after, by){
+    const t=Date.now();
+    after.filter(n=>!before.includes(n)).forEach(n=>{ patch[`${base}/su/${suId()}`]={ n, t, a:'in', b:by }; });
+    before.filter(n=>!after.includes(n)).forEach(n=>{ patch[`${base}/su/${suId()}`]={ n, t, a:'out', b:by }; });
+  }
+  // zamestnanec zapisuje iba svoju udalosť; chyba záznamu nikdy nezhodí prihlásenie
+  function suPush(key, name, a, b){
+    try{ const p=scheduleRef.child(key).child('su').child(suId()).set({ n:name, t:Date.now(), a, b }); if(p && p.catch) p.catch(()=>{}); }catch(e){}
+  }
+  // staršie udalosti sa dajú vyčítať z histórie (zápisy o prihlásení, odhlásení, pridaní, odstránení, návrhu a výmene)
+  function parseJoinText(text){
+    let m;
+    if((m=/^(.+) sa prihlásil\/a$/.exec(text))) return [{ n:m[1], a:'in', b:'self' }];
+    if((m=/^(.+) sa odhlásil\/a$/.exec(text))) return [{ n:m[1], a:'out', b:'self' }];
+    if((m=/^Vedúci pridal\/a (.+) na smenu$/.exec(text))) return [{ n:m[1], a:'in', b:'mgr' }];
+    if((m=/^Vedúci odstránil\/a (.+) zo smeny$/.exec(text))) return [{ n:m[1], a:'out', b:'mgr' }];
+    if((m=/^Vedúci schválil\/a výmenu: (.+?) → (.+?)(?: \(za .+\))?$/.exec(text))) return [{ n:m[1], a:'out', b:'mgr' }, { n:m[2], a:'in', b:'mgr' }];
+    if(text.startsWith('Vedúci použil/a návrh zostavy')){
+      const out=[], r=/odstránení: ([^;)]+)/.exec(text), a=/pridaní: ([^;)]+)/.exec(text);
+      if(r) r[1].split(', ').forEach(n=>{ if(n.trim()) out.push({ n:n.trim(), a:'out', b:'mgr' }); });
+      if(a) a[1].split(', ').forEach(n=>{ if(n.trim()) out.push({ n:n.trim(), a:'in', b:'mgr' }); });
+      return out;
+    }
+    return [];
+  }
+  function historyJoinEvents(key){
+    const out=[];
+    (history||[]).forEach(h=>{ if(h && h.day===key && typeof h.text==='string') parseJoinText(h.text).forEach(e=>out.push({ ...e, t:h.t||0, src:'h' })); });
+    return out;
+  }
+  // udalosti z histórie, ktoré už máme aj v zázname dňa (do 10 minút, rovnaké meno a akcia), sa nepočítajú dvakrát
+  function mergeJoinEvents(own, hist){
+    const used=new Set(), extra=[];
+    hist.forEach(h=>{
+      let best=-1, bd=Infinity;
+      own.forEach((o,i)=>{ if(used.has(i) || o.n!==h.n || o.a!==h.a) return; const dt=Math.abs((o.t||0)-(h.t||0)); if(dt<=600000 && dt<bd){ best=i; bd=dt; } });
+      if(best>=0) used.add(best); else extra.push(h);
+    });
+    return own.concat(extra);
+  }
+  function dayJoinInfo(key){
+    const d=dayObj(key), su=d.su||{};
+    const own=Object.keys(su).map(id=>({ id, ...su[id] })).filter(e=>e && e.n && (e.a==='in'||e.a==='out'));
+    const events=mergeJoinEvents(own, historyJoinEvents(key)).sort((x,y)=>(x.t||0)-(y.t||0));
+    const now=new Set(d.employees||[]), roster=new Set((employees.list||[]).map(e=>e.name));
+    const byName={}; events.forEach(e=>{ (byName[e.n]=byName[e.n]||[]).push(e); });
+    const removed=[];
+    Object.keys(byName).forEach(n=>{
+      if(now.has(n) || !roster.has(n)) return;           // kto je na smene alebo už nie je v zozname (napr. premenovaný), sa nezobrazuje
+      const evs=byName[n], last=evs[evs.length-1], lastIn=[...evs].reverse().find(e=>e.a==='in');
+      removed.push({ name:n, by:last.a==='out' ? last.b : '', t:last.t||0, inT:lastIn ? (lastIn.t||0) : 0 });
+    });
+    removed.sort((a,b)=>b.t-a.t);
+    return { events:events.slice().reverse(), removed };
+  }
+  const JOIN_LABEL={ 'in|self':'prihlásil/a sa', 'in|mgr':'pridaný/á vedúcim', 'out|self':'odhlásil/a sa sám/sama', 'out|mgr':'odstránený/á vedúcim' };
+  function renderJoinLog(date){
+    const box=$('joinBox');
+    if(!manager){ box.innerHTML=''; return; }
+    const info=dayJoinInfo(date);
+    if(!info.events.length){ box.innerHTML=''; return; }
+    const why=r=>r.by==='self' ? 'odhlásil/a sa sám/sama' : (r.by==='mgr' ? 'odstránil/a vedúci' : 'už nie je na smene');
+    const removedHtml = info.removed.length
+      ? `<div><b>👻 Prihlásili sa, ale nie sú na smene</b></div>${info.removed.map(r=>`<div class="jrow"><span>${esc(r.name)} · ${why(r)}${r.t?` · ${esc(fmtTsShort(r.t))}`:''}${r.inT?` <span class="sub">(prihlásený/á ${esc(fmtTsShort(r.inT))})</span>`:''}</span><button class="cfm" data-jback="${esc(r.name)}">↩ Vrátiť na smenu</button></div>`).join('')}`
+      : '';
+    box.innerHTML=`<div class="joinbox">${removedHtml}<details class="more-day"${joinOpen?' open':''} id="joinDet" style="margin-top:8px;"><summary>História prihlásení tohto dňa (${info.events.length})</summary><div style="padding:6px 12px 10px;">${info.events.map(e=>`<div class="jlog">${esc(fmtTsShort(e.t))} · <b>${esc(e.n)}</b> · ${esc(JOIN_LABEL[e.a+'|'+e.b]||'')}</div>`).join('')}</div></details></div>`;
+    document.querySelectorAll('#joinBox [data-jback]').forEach(x=>x.onclick=()=>addEmployeeToDay(date, x.dataset.jback));
+    const det=$('joinDet'); if(det && det.addEventListener) det.addEventListener('toggle',()=>{ joinOpen=det.open; });
+  }
+
+  // ---------- náhradníci: prihlásenie na zavretý (alebo plný) deň, keby sa niekto odhlásil ----------
+  // days/<deň>/sb/<kľúč mena> = { n:meno, t:čas }
+  function sbNames(key){
+    const sb=dayObj(key).sb||{};
+    return Object.keys(sb).map(k=>({ name:(sb[k] && sb[k].n) || nameFromKey(k), t:(sb[k] && sb[k].t) || 0 })).filter(x=>x.name);
+  }
+  function sbInfo(key){
+    if(!feat('standby')) return [];
+    const d=dayObj(key); if(d.off || key<todayKey()) return [];
+    const on=new Set(d.employees||[]), roster=new Set((employees.list||[]).map(e=>e.name));
+    return sbNames(key).filter(x=>!on.has(x.name) && roster.has(x.name)).sort((a,b)=>a.t-b.t);
+  }
+  const isMySb=key=>!!myName && sbInfo(key).some(x=>x.name===myName);
+  // samotný záznam (nezávisle od toho, či už som zapísaný na smene)
+  const hasSbEntry=(key,name)=>!!((dayObj(key).sb||{})[ratingKey(name)]);
+  // môže sa prihlásiť ako náhradník: zavretý deň, alebo otvorený deň, ktorý je plný
+  function sbAllowed(key){
+    if(!feat('standby') || !myName) return false;
+    const d=dayObj(key); if(d.off || key<todayKey() || (d.employees||[]).includes(myName)) return false;
+    if(d.closed) return true;
+    const lim=dayLimit(key); return lim>0 && (d.employees||[]).length>=lim;
+  }
+  async function setStandby(key, val){
+    if(!myName||!dbAvailable) return { ok:false, reason:'Najprv sa prihlás.' };
+    const d=dayObj(key);
+    if(val){
+      if(d.off) return { ok:false, reason:'V tento deň nie je prevádzka.' };
+      if(key<todayKey()) return { ok:false, reason:'Tento deň už uplynul.' };
+      if((d.employees||[]).includes(myName)) return { ok:false, reason:'Na tejto smene už si.' };
+      if(!sbAllowed(key)) return { ok:false, reason:'Deň je otvorený, prihlás sa normálne.' };
+    }
+    const ref=scheduleRef.child(key).child('sb').child(ratingKey(myName));
+    try{
+      if(val){ await ref.set({ n:myName, t:Date.now() }); if((d.na||[]).includes(myName)) await mutateNa(key, arr=>arr.filter(n=>n!==myName)); }
+      else await ref.remove();
+      return { ok:true, reason:'' };
+    }catch(e){ return { ok:false, reason:'Nepodarilo sa uložiť, skús znova.' }; }
+  }
+  async function toggleStandby(key){
+    const on=isMySb(key); const r=await setStandby(key, !on);
+    showToast(r.ok ? (on ? 'Už nie si náhradník' : 'Si náhradník 🪑 Vedúci uvidí, že môžeš zaskočiť.') : r.reason, 3000);
+    if(r.ok) logEvent(key, on ? `${myName} sa odhlásil/a z náhradníkov` : `${myName} sa prihlásil/a ako náhradník`, myName);
+    return r.ok;
+  }
+  async function removeStandby(key, name){
+    if(!manager||!dbAvailable) return false;
+    try{ await scheduleRef.child(key).child('sb').child(ratingKey(name)).remove(); return true; }
+    catch(e){ showToast('Nepodarilo sa uložiť.'); return false; }
+  }
+  // pri pridaní na smenu (hromadný zápis) sa človek zo zoznamu náhradníkov odstráni
+  function sbClearPatch(patch, base, key, before, after){
+    const sb=dayObj(key).sb||{};
+    after.filter(n=>!before.includes(n)).forEach(n=>{ const k=ratingKey(n); if(sb[k]) patch[`${base}/sb/${k}`]=null; });
+  }
+  const mySbDays=()=>{ if(!myName||!feat('standby')) return []; const tk=todayKey(); return Object.keys(schedule.days||{}).sort().filter(k=>k>=tk && isMySb(k)); };
+
   async function renameEmployee(oldName, newName){
     newName=(newName||'').trim().replace(/\s+/g,' ');
     if(!manager||!dbAvailable||!newName||newName===oldName) return;
@@ -3632,6 +3793,8 @@
       const na=(schedule.days[k]||{}).na||[];
       if(na.includes(oldName)) patch[`schedule/days/${k}/na`]=na.map(n=>n===oldName?newName:n);
     });
+    Object.keys(schedule.days||{}).forEach(k=>{ const su=(schedule.days[k]||{}).su||{}; Object.keys(su).forEach(id=>{ if(su[id] && su[id].n===oldName) patch[`schedule/days/${k}/su/${id}/n`]=newName; }); });
+    { const ok0=ratingKey(oldName), nk0=ratingKey(newName); Object.keys(schedule.days||{}).forEach(k=>{ const v=((schedule.days[k]||{}).sb||{})[ok0]; if(v){ patch[`schedule/days/${k}/sb/${nk0}`]={ ...v, n:newName }; patch[`schedule/days/${k}/sb/${ok0}`]=null; } }); }
     { const ok=ratingKey(oldName), nk=ratingKey(newName);
       Object.keys(schedule.days||{}).forEach(k=>{ const v=((schedule.days[k]||{}).av||{})[ok]; if(v){ patch[`schedule/days/${k}/av/${nk}`]=v; patch[`schedule/days/${k}/av/${ok}`]=null; } }); }
     Object.keys(swaps||{}).forEach(id=>{
@@ -3902,6 +4065,7 @@
         if(!t.off && manager && t.can>0) inner += `<span class="can">✓ ${t.can}</span>`;
         if(!t.off && manager && t.want>0) inner += `<span class="wt">★ ${t.want}</span>`;
         if(!t.off && manager && t.cfTotal>0) inner += `<span class="cf">✓ ${t.cfDone}/${t.cfTotal}</span>`;
+        if(!t.off && manager && t.sb>0) inner += `<span class="sbc">🪑 ${t.sb}</span>`;
         if(!t.off && isCant) inner += `<span class="na">✗ nemôžem</span>`;
         if(!t.off && myAv) inner += `<span class="${myAv==='want'?'wt':'can'}">${myAv==='want'?'★ chcem':'✓ môžem'}</span>`;
         const line = t.note || (t.hasRes ? ((d.reservations||[])[0]||{}).title : '');
@@ -3953,6 +4117,7 @@
       if(!t.off && manager && t.can>0) parts.push(`✓ ${t.can} môže`);
       if(!t.off && manager && t.want>0) parts.push(`★ ${t.want} chce`);
       if(!t.off && manager && t.cfTotal>0) parts.push(`✓ ${t.cfDone}/${t.cfTotal} potvrdilo`);
+      if(!t.off && manager && t.sb>0) parts.push(`🪑 ${t.sb} ${plural(t.sb,'náhradník','náhradníci','náhradníkov')}`);
       if(t.note) parts.push(`📝 ${esc(t.note)}`);
       if(t.hasRes) parts.push(`🔒 ${esc(((d.reservations||[])[0]||{}).title||'rezervácia')}`);
       const mark = multiSel.has(key) ? '☑ vybraté' : (isMine ? '✓ Ty' : (isCant ? '✗ Nemôžem' : (myAv==='want' ? '★ Chcem' : (myAv==='can' ? '✓ Môžem' : ''))));
@@ -4029,6 +4194,9 @@
     const already=!!myName && emps.includes(myName);
     const past=date<todayKey();
     const lim=dayLimit(date), full=lim>0 && emps.length>=lim;
+    const sbMine=feat('standby') && !!myName && !manager && !past && !isOff && isMySb(date);
+    const sbCan=feat('standby') && !!myName && !manager && !past && !isOff && !already && sbAllowed(date);
+    const standbyHtml=(sbMine||sbCan) ? `<div class="segbox"><div class="seglabel">NÁHRADNÍK</div><button class="seg${sbMine?' on':''}" id="standbyBtn" style="width:100%">${sbMine?'🪑 Si náhradník – odhlásiť':'🪑 Prihlásiť sa ako náhradník'}</button><p class="sub" style="margin:6px 0 0;font-size:12px;">${sbMine?'Vedúci vidí, že môžeš zaskočiť, keby sa niekto odhlásil.':`Deň je ${closed?'zavretý':'plný'}. Ako náhradník sa nezapočítaš do smeny, ale vedúci uvidí, že môžeš zaskočiť, keby sa niekto odhlásil.`}</p></div>` : '';
     const myReqs=(myName && !manager) ? Object.keys(swaps||{}).map(id=>({ id, ...swaps[id] })).filter(x=>x && x.from===myName && x.day===date && ['open','pending_peer','pending_manager'].includes(x.status)) : [];
     const subReq=myReqs.find(x=>x.status==='open')||null, subBusy=myReqs.length>0;
     const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
@@ -4084,11 +4252,12 @@
     $('shiftsList').innerHTML = `<div class="shift-card">
         <div class="shead"><div class="slabel">Smena na celý deň</div>${statusHtml}</div>
         <div class="team">${teamHtml}</div>
-        ${actionHtml}
+        ${actionHtml}${standbyHtml}
       </div>`;
 
     $('canBox').innerHTML = (manager && canSet.length && !isOff && !closed && !past) ? `<div class="canbox">✓ Môžu: ${canSet.map(esc).join(', ')}</div>` : '';
     $('wantBox').innerHTML = (manager && wantSet.length && !isOff && !closed && !past) ? `<div class="wantbox">★ Chcú tento deň: ${wantSet.map(esc).join(', ')}</div>` : '';
+    { const sbl=sbInfo(date); $('sbBox').innerHTML = (manager && sbl.length && !isOff && !past) ? `<div class="sbbox">🪑 <b>Náhradníci (záloha):</b>${sbl.map(x=>`<div class="jrow"><span>${esc(x.name)}${x.t?` <span class="sub">(hlásil/a sa ${esc(fmtTsShort(x.t))})</span>`:''}</span><span><button class="cfm" data-sb-add="${esc(x.name)}">→ Na smenu</button><button class="cfm" data-sb-del="${esc(x.name)}">✕</button></span></div>`).join('')}</div>` : ''; }
     $('naBox').innerHTML = (manager && cantList.length && !isOff) ? `<div class="nabox">✗ Nemôžu: ${cantList.map(x=>esc(x.name)+(x.rec?' (pravidelne)':'')).join(', ')}</div>` : '';
     if(keepSel && $('addEmpSelect') && Array.from($('addEmpSelect').options).some(o=>o.value===keepSel)) $('addEmpSelect').value=keepSel;
     const again=()=>openShift(selected);
@@ -4099,6 +4268,9 @@
     on('swapBtn',()=>openSwapModal(selected));
     on('subBtn',()=>requestSub(selected).then(again));
     on('subCancel',()=>{ const r=Object.keys(swaps||{}).map(id=>({ id, ...swaps[id] })).find(x=>x.from===myName && x.day===selected && x.status==='open'); if(r) swapCancel(r.id).then(again); });
+    on('standbyBtn',()=>toggleStandby(selected).then(again));
+    document.querySelectorAll('#sbBox [data-sb-add]').forEach(x=>x.onclick=()=>addEmployeeToDay(selected, x.dataset.sbAdd).then(again));
+    document.querySelectorAll('#sbBox [data-sb-del]').forEach(x=>x.onclick=()=>removeStandby(selected, x.dataset.sbDel).then(again));
     on('confirmDay',()=>setConfirm(selected, !cfNames(selected).includes(myName)).then(again));
     document.querySelectorAll('[data-cf-toggle]').forEach(x=>x.onclick=()=>setConfirm(selected, !cfNames(selected).includes(x.dataset.cfToggle), x.dataset.cfToggle).then(again));
     on('okDay',()=>toggleMark(selected,'can').then(again));
@@ -4115,6 +4287,7 @@
     document.querySelectorAll('[data-emp-remove]').forEach(x=>x.onclick=()=>removeEmployeeFromDay(selected,x.dataset.empRemove).then(again));
     bindRating();
 
+    renderJoinLog(date);
     renderCk(date);
     renderSug();
     if(!keep) $('msg').classList.remove('show');
