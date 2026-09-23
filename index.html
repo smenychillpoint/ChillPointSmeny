@@ -440,6 +440,15 @@
       <button class="outline" id="pastMineBtn" style="margin:12px 0 0 8px;display:none;"></button>
       <button class="outline" id="recBtn" style="margin:12px 0 0 8px;">🔁 Pravidelne nemôžem / stále môžem</button>
       <p class="sub" id="recInfo" style="margin:10px 0 0;font-size:12px;white-space:pre-line;"></p>
+      <div class="form" style="margin-top:14px;">
+        <label>KOĽKO DNÍ BY SI CHCEL/A ZA TÝŽDEŇ</label>
+        <div class="manage-row">
+          <span class="sub" style="font-size:13px;">Cez týždeň (Po–Št):</span><input id="wantWdInput" type="number" min="0" max="4" placeholder="—" style="width:64px;height:38px;background:#0d0f11;color:#fff;border:1px solid #55585c;text-align:center;">
+          <span class="sub" style="font-size:13px;">Cez víkend (Pia–Ne):</span><input id="wantWeInput" type="number" min="0" max="3" placeholder="—" style="width:64px;height:38px;background:#0d0f11;color:#fff;border:1px solid #55585c;text-align:center;">
+          <button class="primary small" id="wantSave" style="width:auto;padding:0 16px;">Uložiť</button>
+        </div>
+        <p class="sub" style="margin:6px 0 0;font-size:12px;">Vedúci to uvidí v prehľade zamestnancov, nič ťa to neprihlasuje ani neodhlasuje.</p>
+      </div>
     </section>
 
     <section class="critical" id="newsSection" style="display:none;">
@@ -866,6 +875,7 @@
         <details class="more-day"><summary>Nemôžem prísť</summary><div style="padding:0 12px 12px;"><ul>
           <li><b>Je ti jedno, ktorý deň?</b> Klikni <b>🎯 Z viacerých dní chcem…</b>, napíš koľko dní chceš (zvyčajne 1) a potom zaškrtni dni, z ktorých by ti to stačilo (napríklad piatok aj sobotu), a daj <b>🎯 Uložiť</b>. Vedúci to uvidí v sekcii „Chcem jeden z týchto dní“ aj v okne každého z tých dní, a stačí, keď ťa pridá na ktorýkoľvek z nich.</li>
           <li>Na jeden deň si v okne dňa vyberieš <b>✓ Môžem</b>, <b>✗ Nemôžem</b> alebo <b>★ Chcem tento deň</b>. Ťuknutím na zvolenú možnosť ju zrušíš. Vo výbere viacerých dní to nastavíš pre všetky naraz. Nič ťa to neprihlási, vedúci to vidí pri plánovaní a „chcem“ má pri doplňaní ľudí prednosť.</li>
+          <li>V „Moje smeny“ si napíšeš, <b>koľko dní by si chcel/a za týždeň</b> (zvlášť cez týždeň a cez víkend). Vedúci to vidí v prehľade zamestnancov ako porovnanie s tým, koľko dní skutočne máš.</li>
           <li>Pravidelne (napríklad škola): <b>🔁 Pravidelne nemôžem / stále môžem</b> v „Moje smeny“. Tam môžeš označiť aj dni, keď <b>stále môžeš</b>, a vedúci ťa uvidí medzi ľuďmi, ktorých môže osloviť.</li>
         </ul></div></details>
         <details class="more-day"><summary>Výmena smeny po zavretí dňa</summary><div style="padding:0 12px 12px;"><ul>
@@ -878,6 +888,7 @@
           <li><b>📲 Do mobilu</b> pridá stránku na plochu ako aplikáciu. Na iPhone cez Zdieľať → Pridať na plochu.</li>
           <li><b>OZNAMY</b> od vedúceho sa zobrazia hore. Tlačidlom <b>Beriem na vedomie</b> dáš vedieť, že si ich prečítal/a.</li>
           <li>V okne dňa v ten deň, keď si na smene, odškrtávaš <b>checklist</b> a môžeš pridať <b>záznam</b> alebo nahlásiť <b>🛠 závadu</b>.</li>
+          <li>V prehľade zamestnancov sú stĺpce <b>CHCE VÍKEND</b> a <b>CHCE TÝŽDEŇ</b> — koľko dní si zamestnanec sám nastavil, že by chcel za týždeň (na porovnanie s tým, čo skutočne má).</li>
           <li><b>🎯 Chcem jeden z týchto dní:</b> keď zamestnancovi je jedno, ktorý z viacerých dní dostane, vidíš to v okne dňa a v sekcii „Chcú jeden z viacerých dní“. Žiadosť sama zmizne, keď dostane dosť dní alebo keď všetky vybrané dni uplynú.</li>
           <li><b>Deň je zavretý alebo plný?</b> Stále sa môžeš prihlásiť ako <b>🪑 náhradník</b>. Do smeny sa nezapočítaš, ale vedúci uvidí, že môžeš zaskočiť, keby sa niekto odhlásil. Keď ťa pridá na smenu, z náhradníkov zmizneš. Ak sa neskôr prihlásiš normálne, náhradník sa zruší.</li>
           <li><b>Nemôžeš prísť?</b> V okne zavretého dňa klikni <b>🙋 Nemôžem prísť – hľadám náhradu</b> (môžeš napísať dôvod). Kolegovia uvidia žiadosť hore v sekcii „Výmeny smien“ a prvý, kto klikne <b>Beriem smenu</b>, ju prevezme. Potom to schváli vedúci. Kým sa nikto neprihlási, ostávaš na smene ty. Žiadosť môžeš poslať aj do skupiny alebo ju zrušiť.</li>
@@ -1058,6 +1069,7 @@
   let settingsRef=null, auth=null, latestRaw=null, migrating=false, lastMigTry=0, loginFails=0;
   let ratings={}, ratingsRef=null, ratingsAttached=false;
   let pnotes={}, pnotesRef=null, pnotesAttached=false, pnoteFor='';
+  let weekWant={}, weekWantRef=null;
   let personDone=new Set();
   try{ personDone=new Set(JSON.parse(localStorage.getItem('cp_persondone')||'[]')); }catch(e){}
   const isPersonDone=name=>personDone.has(name);
@@ -1254,6 +1266,7 @@
       noticesRef = rtdb.ref('notices');
       noticeAcksRef = rtdb.ref('noticeAcks');
       flexRef = rtdb.ref('flex');
+      weekWantRef = rtdb.ref('weekwant');
       swapsRef = rtdb.ref('swaps');
       historyRef = rtdb.ref('history');
       recurringRef = rtdb.ref('recurring');
@@ -1312,6 +1325,7 @@
     noticesRef.on('value', snap=>{ notices=snap.val()||{}; renderAll(); }, err=>{ notices={}; });
     noticeAcksRef.on('value', snap=>{ noticeAcks=snap.val()||{}; renderAll(); }, err=>{ noticeAcks={}; });
     flexRef.on('value', snap=>{ flex=snap.val()||{}; renderAll(); }, err=>{ flex={}; });
+    weekWantRef.on('value', snap=>{ weekWant=snap.val()||{}; renderAll(); }, err=>{ weekWant={}; });
     // Vypínanie funkcií
     featRef.on('value', snap=>{ featCfg=snap.val()||{}; renderAll(); }, err=>{});
     checkRef.on('value', snap=>{
@@ -1734,7 +1748,7 @@
     const {ym,label}=rosterYM();
     $('smLabel').textContent=label; $('smClosed').checked=rosterOnlyClosed;
     $('statsSummary').textContent=`📊 Prehľad za mesiac (${label})`;
-    const rows=employees.list.map(e=>({name:e.name, rating:getRating(e.name), target:getTarget(e.name), ...empStats(e.name, ym, rosterOnlyClosed)}));
+    const rows=employees.list.map(e=>({name:e.name, rating:getRating(e.name), target:getTarget(e.name), want:getWeekWant(e.name), ...empStats(e.name, ym, rosterOnlyClosed)}));
     const {key,dir}=statsSort;
     const val=r=>(r[key]===null||r[key]===undefined) ? -1 : r[key];
     rows.sort((a,b)=> key==='name' ? dir*a.name.localeCompare(b.name,'sk') : ((dir*(val(a)-val(b))) || a.name.localeCompare(b.name,'sk')));
@@ -1743,9 +1757,9 @@
     const badge=r=> r.target===null ? '' : (r.days<r.target ? `<em class="tgt-low">−${r.target-r.days}</em>` : (r.days===r.target ? '<em class="tgt-ok">✓</em>' : `<em class="tgt-high">+${r.days-r.target}</em>`));
     const arrow=k=> statsSort.key===k ? (statsSort.dir<0?' ▼':' ▲') : '';
     const th=(k,t)=>`<th data-sort="${k}">${t}${arrow(k)}</th>`;
-    $('statsTable').innerHTML=`<table class="stbl"><thead><tr>${th('name','ZAMESTNANEC')}${th('wkndDays','DNI VÍKEND')}${th('weekDays','DNI TÝŽDEŇ')}${th('days','SPOLU')}${feat('targets')?th('target','CIEĽ'):''}</tr></thead><tbody>${
-      rows.map(r=>`<tr class="${r.days?'':'zero'}"><td>${r.rating?`<i class="rd ${r.rating}" style="margin-right:6px"></i>`:''}${esc(r.name)}</td><td>${r.wkndDays}</td><td>${r.weekDays}</td><td>${r.days}</td>${feat('targets')?`<td><input class="tgt" type="number" min="0" max="31" placeholder="—" data-target="${esc(r.name)}" value="${r.target===null?'':r.target}">${badge(r)}</td>`:''}</tr>`).join('')
-    }</tbody><tfoot><tr><td>Spolu</td><td>${tot.wkndDays}</td><td>${tot.weekDays}</td><td>${tot.days}</td>${feat('targets')?`<td>${anyT?totT:''}</td>`:''}</tr></tfoot></table>`;
+    $('statsTable').innerHTML=`<table class="stbl"><thead><tr>${th('name','ZAMESTNANEC')}${th('wkndDays','DNI VÍKEND')}<th>CHCE VÍKEND</th>${th('weekDays','DNI TÝŽDEŇ')}<th>CHCE TÝŽDEŇ</th>${th('days','SPOLU')}${feat('targets')?th('target','CIEĽ'):''}</tr></thead><tbody>${
+      rows.map(r=>`<tr class="${r.days?'':'zero'}"><td>${r.rating?`<i class="rd ${r.rating}" style="margin-right:6px"></i>`:''}${esc(r.name)}</td><td>${r.wkndDays}</td><td class="sub">${r.want&&r.want.we!==null?r.want.we:'—'}</td><td>${r.weekDays}</td><td class="sub">${r.want&&r.want.wd!==null?r.want.wd:'—'}</td><td>${r.days}</td>${feat('targets')?`<td><input class="tgt" type="number" min="0" max="31" placeholder="—" data-target="${esc(r.name)}" value="${r.target===null?'':r.target}">${badge(r)}</td>`:''}</tr>`).join('')
+    }</tbody><tfoot><tr><td>Spolu</td><td>${tot.wkndDays}</td><td></td><td>${tot.weekDays}</td><td></td><td>${tot.days}</td>${feat('targets')?`<td>${anyT?totT:''}</td>`:''}</tr></tfoot></table>`;
     document.querySelectorAll('#statsTable [data-sort]').forEach(x=>x.onclick=()=>{
       const k=x.dataset.sort;
       statsSort = statsSort.key===k ? {key:k, dir:-statsSort.dir} : {key:k, dir:(k==='name'?1:-1)};
@@ -2404,7 +2418,7 @@
         schedule:{ days: schedule.days||{} },
         employees:{ list: employees.list },
         settings:{ limits:{enabled:limitCfg.enabled, defaultLimit:limitCfg.defaultLimit}, min:{enabled:minCfg.enabled, people:minCfg.people}, weekdays: weekCfg, periods: periods||[], features: featCfg, checklists: checkCfg, templates: tplCfg },
-        ratings: ratings||{}, swaps: swaps||{}, recurring: recurring||{}, targets: targets||{}, privateNotes: pnotes||{}, notices: notices||{}, noticeAcks: noticeAcks||{}, flex: flex||{}, history: hist
+        ratings: ratings||{}, swaps: swaps||{}, recurring: recurring||{}, targets: targets||{}, privateNotes: pnotes||{}, notices: notices||{}, noticeAcks: noticeAcks||{}, flex: flex||{}, weekwant: weekWant||{}, history: hist
       }
     };
   }
@@ -2453,6 +2467,7 @@
       'notices': nz(dd.notices),
       'noticeAcks': nz(dd.noticeAcks),
       'flex': nz(dd.flex),
+      'weekwant': nz(dd.weekwant),
       'history': nz(dd.history)
     };
     try{
@@ -3735,6 +3750,7 @@
     [['ratings',ratings],['targets',targets],['privateNotes',pnotes]].forEach(([node,obj])=>{ Object.keys(obj||{}).forEach(k=>{ const n=nameFromKey(k); if(!names.has(n)){ orphan.add(n); patch5[`${node}/${k}`]=null; } }); });
     Object.keys(recurring||{}).forEach(k=>{ const r=recurring[k]; if(!(r && names.has(r.name))){ orphan.add((r&&r.name)||nameFromKey(k)); patch5[`recurring/${k}`]=null; } });
     Object.keys(flex||{}).forEach(id=>{ const x=flex[id]; if(x && !names.has(x.from)){ orphan.add(x.from); patch5[`flex/${id}`]=null; } });
+    Object.keys(weekWant||{}).forEach(k=>{ const n=nameFromKey(k); if(!names.has(n)){ orphan.add(n); patch5[`weekwant/${k}`]=null; } });
     if(Object.keys(patch5).length) out.push({ id:'orphandata', title:'Hodnotenia, ciele, poznámky alebo pravidlá zamestnancov, ktorí už nie sú v zozname', count:Object.keys(patch5).length, detail:ex(Array.from(orphan),6), fixLabel:'Odstrániť', destructive:true, patch:patch5 });
     // 6) výmeny s neznámymi ľuďmi
     const badFlex=Object.keys(flex||{}).filter(id=>{ const x=flex[id]; return !x || !names.has(x.from) || !Array.isArray(x.days) || !x.days.length; });
@@ -3988,6 +4004,7 @@
     const list=employees.list.map(e=>e.name===oldName ? {...e, name:newName} : e);
     const patch={ 'employees/list': list };
     Object.keys(flex||{}).forEach(id=>{ if(flex[id] && flex[id].from===oldName) patch[`flex/${id}/from`]=newName; });
+    { const ok=ratingKey(oldName), nk=ratingKey(newName); if(weekWant[ok]!==undefined){ patch[`weekwant/${nk}`]=weekWant[ok]; patch[`weekwant/${ok}`]=null; } }
     const oldR=getRating(oldName);
     if(oldR){ patch['ratings/'+ratingKey(newName)]=oldR; patch['ratings/'+ratingKey(oldName)]=null; }
     let days=0;
@@ -4161,6 +4178,9 @@
     $('myStats').innerHTML=myStatsHTML();
     $('recBtn').style.display = feat('avail') ? '' : 'none';
     $('recInfo').textContent = [recSummary(myName)?`🔁 Pravidelne nemôžeš: ${recSummary(myName)}`:'', canSummary(myName)?`✓ Stále môžeš: ${canSummary(myName)}`:''].filter(Boolean).join('\n');
+    { const ww=getWeekWant(myName);
+      if(document.activeElement!==$('wantWdInput')) $('wantWdInput').value = (ww && ww.wd!==null) ? ww.wd : '';
+      if(document.activeElement!==$('wantWeInput')) $('wantWeInput').value = (ww && ww.we!==null) ? ww.we : ''; }
     $('icsBtn').style.display = all.some(e=>e.date>=tk) ? '' : 'none';
     $('icsRemind').style.display = $('icsBtn').style.display;
     { let r='prev'; try{ r=localStorage.getItem('cp_remind')||'prev'; }catch(e){} if(document.activeElement!==$('icsRemind')) $('icsRemind').value=r; }
@@ -4190,6 +4210,23 @@
   }
 
   const plural=(n,one,few,many)=> n===1 ? one : (n>=2&&n<=4 ? few : many);
+  // Prianie zamestnanca: koľko dní by chcel/a za týždeň, cez týždeň (Po–Pia) a cez víkend (So–Ne)
+  function getWeekWant(name){
+    const v=weekWant[ratingKey(name)];
+    const wd=(v && typeof v.wd==='number') ? v.wd : null, we=(v && typeof v.we==='number') ? v.we : null;
+    return (wd===null && we===null) ? null : { wd, we };
+  }
+  async function saveWeekWant(){
+    if(!myName||manager||!dbAvailable) return;
+    const clamp=(v,max)=>{ if(v==='') return null; const n=Math.max(0, Math.min(max, parseInt(v,10)||0)); return n; };
+    const wd=clamp($('wantWdInput').value, 4), we=clamp($('wantWeInput').value, 3);
+    const ref=weekWantRef.child(ratingKey(myName));
+    try{
+      if(wd===null && we===null) await ref.remove();
+      else await ref.set({ wd: wd===null?0:wd, we: we===null?0:we });
+      showToast('Uložené 👍');
+    }catch(e){ showToast('Nepodarilo sa uložiť (nastav nové pravidlá vo Firebase).', 4000); }
+  }
   // Víkend = pi–ne (jeden víkend = jeden blok piatok–nedeľa), týždeň = po–št. Počíta sa v mesiaci ym = 'RRRR-MM'.
   // Počíta sa každý deň zvlášť: cez víkend (pi, so, ne) a cez týždeň (po–št). Jeden deň cez víkend = 1, dva dni = 2, rovnako cez týždeň.
   function empStats(name, ym, onlyClosed, excludeKey){
@@ -4806,6 +4843,7 @@
   $('bulkOff').onclick=()=>bulkOff('off');
   $('bulkOn').onclick=()=>bulkOff('on');
   $('recBtn').onclick=openRecModal;
+  $('wantSave').onclick=saveWeekWant;
   $('recSave').onclick=saveRec;
   $('recClear').onclick=clearRec;
 
