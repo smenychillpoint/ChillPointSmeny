@@ -169,7 +169,8 @@
     @media(max-width:560px){.day .sbc{font-size:10px}}
         .person-panels{position:fixed;inset:0;z-index:55;pointer-events:none}
     .person-panel{position:fixed;pointer-events:auto;width:340px;max-width:92vw;max-height:80vh;overflow:auto;background:#17191d;border:1px solid #3c3f44;box-shadow:0 10px 30px rgba(0,0,0,.55);padding:14px}
-    .pp-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .pp-head{display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:move;user-select:none}
+    .person-panel.dragging{opacity:.85}
     .pp-head b{font-size:15px}
     @media(max-width:560px){.person-panel{width:calc(100vw - 28px)}}
     .joinbox{margin-top:10px;padding:10px 12px;background:#1a1a1f;border:1px solid #3c3f44;font-size:13px}
@@ -1054,7 +1055,7 @@
   let settingsRef=null, auth=null, latestRaw=null, migrating=false, lastMigTry=0, loginFails=0;
   let ratings={}, ratingsRef=null, ratingsAttached=false;
   let pnotes={}, pnotesRef=null, pnotesAttached=false, pnoteFor='';
-  let personPanels=[], highlightPerson='';   // personPanels: {name, offset}[] – viacero súčasne otvorených plávajúcich okien
+  let personPanels=[], highlightPerson='', ppZTop=60;   // personPanels: {name, offset, x, y, z}[] – viacero súčasne otvorených, ťahateľných plávajúcich okien
   let notices={}, noticesRef=null, noticeAcks={}, noticeAcksRef=null;
   let joinOpen=false;
   let flex={}, flexRef=null;
@@ -3261,7 +3262,7 @@
     personPanels=personPanels.filter(p=>names.includes(p.name));
     $('personPanels').innerHTML=personPanels.map((p,i)=>{
       const {ym,label}=personMonthInfo(p.offset);
-      return `<div class="person-panel" style="top:${16+i*28}px;right:${16+i*28}px;z-index:${60+i};">
+      return `<div class="person-panel" data-pp-name="${esc(p.name)}" style="top:${p.y}px;left:${p.x}px;z-index:${p.z};">
         <div class="pp-head"><b>Rozpis – ${esc(p.name)}</b><button class="outline" data-pp-close="${esc(p.name)}" style="padding:2px 10px;">✕</button></div>
         <div class="rmonth" style="margin:8px 0;"><button class="outline" data-pp-prev="${esc(p.name)}">‹</button><b>${esc(label)}</b><button class="outline" data-pp-next="${esc(p.name)}">›</button></div>
         <div class="pp-body">${personBodyHtml(p.name, ym)}</div>
@@ -3286,7 +3287,45 @@
     document.querySelectorAll('[data-pp-print]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppPrint); if(!p) return; const {ym,label}=personMonthInfo(p.offset); printPerson(p.name,ym,label); });
     document.querySelectorAll('[data-pp-hl]').forEach(x=>x.onclick=()=>setHighlight(x.dataset.ppHl));
     document.querySelectorAll('[data-pback]').forEach(x=>x.onclick=()=>addEmployeeToDay(x.dataset.pback, x.dataset.pperson).then(renderPersonPanels));
+    wirePanelDrag();
   }
+  // ťahanie za hlavičku okna myšou aj prstom; nemení DOM (žiadne prekreslenie), iba pozíciu v stave a priamo na prvku
+  function wirePanelDrag(){
+    document.querySelectorAll('.person-panel').forEach(el=>{
+      const name=el.dataset.ppName, head=el.querySelector ? el.querySelector('.pp-head') : null;
+      if(!head) return;
+      let dragging=false, startX=0, startY=0, origX=0, origY=0;
+      const pt=e=>e.touches&&e.touches[0] ? {x:e.touches[0].clientX,y:e.touches[0].clientY} : {x:e.clientX,y:e.clientY};
+      const onMove=e=>{
+        if(!dragging) return;
+        if(e.cancelable) e.preventDefault();
+        const c=pt(e);
+        setPersonPanelPos(name, origX+(c.x-startX), origY+(c.y-startY));
+        const p=personPanels.find(p=>p.name===name);
+        if(p){ el.style.left=p.x+'px'; el.style.top=p.y+'px'; }
+      };
+      const onUp=()=>{
+        dragging=false; el.classList.remove('dragging');
+        document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp);
+        document.removeEventListener('touchmove',onMove); document.removeEventListener('touchend',onUp);
+      };
+      const onDown=e=>{
+        if(e.target && e.target.closest && e.target.closest('button')) return;   // klik na ✕ nemá spúšťať ťahanie
+        dragging=true; el.classList.add('dragging');
+        const c=pt(e); startX=c.x; startY=c.y;
+        const p=personPanels.find(p=>p.name===name); origX=p?p.x:0; origY=p?p.y:0;
+        bringPanelToFront(name); el.style.zIndex=String((personPanels.find(p=>p.name===name)||{}).z||60);
+        document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
+        document.addEventListener('touchmove',onMove,{passive:false}); document.addEventListener('touchend',onUp);
+      };
+      head.addEventListener('mousedown',onDown);
+      head.addEventListener('touchstart',onDown,{passive:false});
+    });
+  }
+  function personPanelDefaultPos(){ const i=personPanels.length%8; return { x:16+i*28, y:16+i*28 }; }
+  // mení pozíciu bez prekreslenia (aby ťahanie neprerušilo samo seba); y sa nedá vytiahnuť nad vrch obrazovky
+  function setPersonPanelPos(name, x, y){ const p=personPanels.find(p=>p.name===name); if(!p) return; p.x=x; p.y=Math.max(0,y); }
+  function bringPanelToFront(name){ const p=personPanels.find(p=>p.name===name); if(p) p.z=++ppZTop; }
   function closePersonPanel(name){ personPanels=personPanels.filter(p=>p.name!==name); renderPersonPanels(); }
   function movePersonMonth(name, delta){ const p=personPanels.find(p=>p.name===name); if(p){ p.offset=(p.offset||0)+delta; renderPersonPanels(); } }
   function openPerson(name, dateHint){
@@ -3294,7 +3333,8 @@
     const offset = dateHint ? monthOffsetFor(dateHint) : 0;
     const i=personPanels.findIndex(p=>p.name===name);
     if(i>=0){ const p=personPanels.splice(i,1)[0]; if(dateHint) p.offset=offset; personPanels.push(p); }
-    else{ if(personPanels.length>=6) personPanels.shift(); personPanels.push({ name, offset }); }
+    else{ const pos=personPanelDefaultPos(); personPanels.push({ name, offset, x:pos.x, y:pos.y, z:++ppZTop }); }
+    bringPanelToFront(name);
     renderPersonPanels();
   }
   // dni v danom mesiaci, na ktoré sa tento človek prihlásil (podľa záznamu prihlásení/histórie), ale už na nich nie je
