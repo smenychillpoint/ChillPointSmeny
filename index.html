@@ -167,8 +167,15 @@
     .sbbox{margin-top:10px;padding:10px 12px;background:#0f1a24;border:1px solid #2a4a6b;color:#bcd8f5;font-size:13px}
     .day .sbc{display:block;color:#9ec5ff;font-size:11px;font-weight:700;margin-top:3px}
     @media(max-width:560px){.day .sbc{font-size:10px}}
+        .person-panels{position:fixed;inset:0;z-index:55;pointer-events:none}
+    .person-panel{position:fixed;pointer-events:auto;width:340px;max-width:92vw;max-height:80vh;overflow:auto;background:#17191d;border:1px solid #3c3f44;box-shadow:0 10px 30px rgba(0,0,0,.55);padding:14px}
+    .pp-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .pp-head b{font-size:15px}
+    @media(max-width:560px){.person-panel{width:calc(100vw - 28px)}}
     .joinbox{margin-top:10px;padding:10px 12px;background:#1a1a1f;border:1px solid #3c3f44;font-size:13px}
     .jrow{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #2c2f33;flex-wrap:wrap}
+    .pname{cursor:pointer}
+    .pname:hover{text-decoration:underline}
     .jlog{font-size:12px;color:#c9ccd0;padding:3px 0}
     .ck-sec{margin:10px 0}
     .ckrow{display:flex;gap:8px;align-items:flex-start;padding:5px 0;font-size:14px;cursor:pointer}
@@ -325,11 +332,9 @@
       body.print-plan #planModal .close,body.print-plan #planModal .rmonth,body.print-plan #planModal #planActions,body.print-plan #planModal #planShareHint,body.print-plan #planModal #planOptWrap{display:none !important}
       body.print-plan #planModal *{color:#000 !important;background:transparent !important;border-color:#999 !important}
       body.print-plan #planModal .plan-title{font-size:16px}
-      body.print-person>*:not(#personModal){display:none !important}
-      body.print-person #personModal{display:block !important;position:static !important;background:#fff !important;padding:0 !important}
-      body.print-person #personModal .box{background:#fff !important;color:#000 !important;border:none !important;box-shadow:none !important;max-width:none !important;width:auto !important;max-height:none !important;overflow:visible !important;padding:0 !important}
-      body.print-person #personModal .close,body.print-person #personModal .rmonth,body.print-person #personModal #personActions,body.print-person #personModal .form{display:none !important}
-      body.print-person #personModal *{color:#000 !important;background:transparent !important;border-color:#999 !important}
+      body.print-person>*:not(#personPrintArea){display:none !important}
+      body.print-person #personPrintArea{display:block !important;position:static !important;background:#fff !important;color:#000 !important;padding:20px !important}
+      body.print-person #personPrintArea *{color:#000 !important;background:transparent !important;border-color:#999 !important}
     }
     .avtbl{border-collapse:collapse;font-size:13px;width:100%}
     .avtbl th,.avtbl td{border:1px solid #2c2f33;padding:6px 8px;text-align:center;white-space:nowrap}
@@ -773,25 +778,8 @@
     </div>
   </div>
 
-  <div class="modal" id="personModal">
-    <div class="box" id="personBox" style="max-width:640px;">
-      <button class="close" data-close>×</button>
-      <h2 id="personTitle">Rozpis človeka</h2>
-      <div class="form"><label>ZAMESTNANEC</label><select id="personSel"></select></div>
-      <div class="rmonth" style="margin-top:10px;">
-        <button class="outline" id="personPrev">‹</button><b id="personLabel"></b><button class="outline" id="personNext">›</button>
-      </div>
-      <div id="personBody"></div>
-      <div class="manage-row" id="personActions" style="margin-top:14px;">
-        <button class="primary small" id="personCopy" style="width:auto;padding:0 16px;">📋 Kopírovať</button>
-        <button class="outline" id="personWa">💬 WhatsApp</button>
-        <button class="outline" id="personIg">📷 Instagram</button>
-        <button class="outline" id="personImg">🖼 Obrázok</button>
-        <button class="outline" id="personPrint">🖨 Tlačiť</button>
-        <button class="outline" id="personHl">🔎 Zvýrazniť v kalendári</button>
-      </div>
-    </div>
-  </div>
+  <div id="personPanels" class="person-panels"></div>
+  <div id="personPrintArea" style="display:none;"></div>
 
   <div class="modal" id="callModal">
     <div class="box">
@@ -1066,7 +1054,7 @@
   let settingsRef=null, auth=null, latestRaw=null, migrating=false, lastMigTry=0, loginFails=0;
   let ratings={}, ratingsRef=null, ratingsAttached=false;
   let pnotes={}, pnotesRef=null, pnotesAttached=false, pnoteFor='';
-  let personName='', personOffset=0, highlightPerson='';
+  let personPanels=[], highlightPerson='';   // personPanels: {name, offset}[] – viacero súčasne otvorených plávajúcich okien
   let notices={}, noticesRef=null, noticeAcks={}, noticeAcksRef=null;
   let joinOpen=false;
   let flex={}, flexRef=null;
@@ -3222,11 +3210,12 @@
   async function deletePNote(){ $('pnoteText').value=''; await savePNote(); }
 
   // ---------- rozpis jedného človeka ----------
-  function personMonthInfo(){
-    const now=new Date(); const d=new Date(now.getFullYear(), now.getMonth()+personOffset, 1);
+  function personMonthInfo(offset){
+    const now=new Date(); const d=new Date(now.getFullYear(), now.getMonth()+(offset||0), 1);
     const mn=MONTHS[d.getMonth()];
     return { ym:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`, label: mn.charAt(0).toUpperCase()+mn.slice(1)+' '+d.getFullYear() };
   }
+  const monthOffsetFor=key=>{ const now=new Date(), d=new Date(key+'T12:00'); return (d.getFullYear()-now.getFullYear())*12+(d.getMonth()-now.getMonth()); };
   function personEntries(name, ym){
     return Object.keys(schedule.days||{}).sort()
       .filter(k=>k.startsWith(ym+'-'))
@@ -3254,26 +3243,76 @@
       : [{ title:'Bez smien', state:'text', text:'V tomto mesiaci nemá žiadne smeny.', note:'', res:[] }];
     return { title:'CHILLPOINT LASER ARÉNA', sub:`Rozpis – ${name} · ${label}`, entries };
   }
-  function renderPerson(){
-    if(!manager){ $('personBody').innerHTML=''; return; }
-    const names=employees.list.map(e=>e.name).sort((a,b)=>a.localeCompare(b,'sk'));
-    if(!names.includes(personName)) personName=names[0]||'';
-    $('personSel').innerHTML=names.map(n=>`<option value="${esc(n)}"${n===personName?' selected':''}>${esc(n)}</option>`).join('');
-    const {ym,label}=personMonthInfo();
-    $('personTitle').textContent=`Rozpis – ${personName||'…'}`;
-    $('personLabel').textContent=label;
-    const list=personEntries(personName, ym), st=personTotals(list);
-    $('personBody').innerHTML = (list.length
+  // HTML tela rozpisu (bez rámu okna) – zdieľané medzi plávajúcim oknom aj tlačou
+  function personBodyHtml(name, ym){
+    const list=personEntries(name, ym), st=personTotals(list);
+    const removed=personRemoved(name, ym);
+    const why=r=>r.by==='self' ? 'odhlásil/a sa sám/sama' : (r.by==='mgr' ? 'odstránil/a vedúci' : 'už nie je na smene');
+    return (list.length
       ? list.map(e=>`<div class="prow"><b>${esc(e.title)}</b> · ${e.closed?'✓ potvrdené':'nepotvrdené'}${e.note?` · 📝 ${esc(e.note)}`:''}${e.res.map(r=>` · 🔒 ${esc(r)}`).join('')}</div>`).join('')
       : '<p class="sub">V tomto mesiaci nemá žiadne smeny.</p>')
-      + (list.length ? `<p class="sub" style="margin:10px 0 0;"><b>Spolu: ${st.days} ${plural(st.days,'deň','dni','dní')}</b> (${st.wkndDays} cez víkend, ${st.weekDays} cez týždeň)</p>` : '');
+      + (list.length ? `<p class="sub" style="margin:10px 0 0;"><b>Spolu: ${st.days} ${plural(st.days,'deň','dni','dní')}</b> (${st.wkndDays} cez víkend, ${st.weekDays} cez týždeň)</p>` : '')
+      + (removed.length ? `<div class="joinbox" style="margin-top:14px;"><div><b>👻 Prihlásil/a sa, ale nie je na smene</b></div>${removed.map(r=>`<div class="jrow"><span>${esc(r.title)} · ${why(r)}${r.t?` · ${esc(fmtTsShort(r.t))}`:''}${r.inT?` <span class="sub">(prihlásený/á ${esc(fmtTsShort(r.inT))})</span>`:''}</span><button class="cfm" data-pback="${esc(r.key)}" data-pperson="${esc(name)}">↩ Vrátiť na smenu</button></div>`).join('')}</div>` : '');
   }
-  function openPerson(name){
-    if(!manager) return;
-    if(name) personName=name;
-    personOffset=0; renderPerson(); $('personModal').classList.add('open');
+  // Viacero súčasne otvorených plávajúcich okien „Rozpis človeka“, kaskádovo posunutých; stránka pod nimi ostáva klikateľná.
+  function renderPersonPanels(){
+    if(!manager) personPanels=[];
+    const names=employees.list.map(e=>e.name);
+    personPanels=personPanels.filter(p=>names.includes(p.name));
+    $('personPanels').innerHTML=personPanels.map((p,i)=>{
+      const {ym,label}=personMonthInfo(p.offset);
+      return `<div class="person-panel" style="top:${16+i*28}px;right:${16+i*28}px;z-index:${60+i};">
+        <div class="pp-head"><b>Rozpis – ${esc(p.name)}</b><button class="outline" data-pp-close="${esc(p.name)}" style="padding:2px 10px;">✕</button></div>
+        <div class="rmonth" style="margin:8px 0;"><button class="outline" data-pp-prev="${esc(p.name)}">‹</button><b>${esc(label)}</b><button class="outline" data-pp-next="${esc(p.name)}">›</button></div>
+        <div class="pp-body">${personBodyHtml(p.name, ym)}</div>
+        <div class="manage-row" style="margin-top:12px;flex-wrap:wrap;">
+          <button class="primary small" data-pp-copy="${esc(p.name)}" style="width:auto;padding:0 16px;">📋 Kopírovať</button>
+          <button class="outline" data-pp-wa="${esc(p.name)}">💬 WhatsApp</button>
+          <button class="outline" data-pp-ig="${esc(p.name)}">📷 Instagram</button>
+          <button class="outline" data-pp-img="${esc(p.name)}">🖼 Obrázok</button>
+          <button class="outline" data-pp-print="${esc(p.name)}">🖨 Tlačiť</button>
+          <button class="outline" data-pp-hl="${esc(p.name)}">🔎 Zvýrazniť</button>
+        </div>
+      </div>`;
+    }).join('');
+    const panelOf=n=>personPanels.find(p=>p.name===n);
+    document.querySelectorAll('[data-pp-close]').forEach(x=>x.onclick=()=>closePersonPanel(x.dataset.ppClose));
+    document.querySelectorAll('[data-pp-prev]').forEach(x=>x.onclick=()=>movePersonMonth(x.dataset.ppPrev,-1));
+    document.querySelectorAll('[data-pp-next]').forEach(x=>x.onclick=()=>movePersonMonth(x.dataset.ppNext,1));
+    document.querySelectorAll('[data-pp-copy]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppCopy); if(!p) return; const {ym,label}=personMonthInfo(p.offset); copyText(personText(p.name,ym,label),'Rozpis skopírovaný 📋'); });
+    document.querySelectorAll('[data-pp-wa]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppWa); if(!p) return; const {ym,label}=personMonthInfo(p.offset); try{ window.open('https://wa.me/?text='+encodeURIComponent(personText(p.name,ym,label)),'_blank'); }catch(e){ showToast('Nepodarilo sa otvoriť WhatsApp.'); } });
+    document.querySelectorAll('[data-pp-ig]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppIg); if(!p) return; const {ym,label}=personMonthInfo(p.offset); personInstagram(p.name,ym,label); });
+    document.querySelectorAll('[data-pp-img]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppImg); if(!p) return; const {ym,label}=personMonthInfo(p.offset); downloadModelImage(personImageModel(p.name,ym,label), personFile(p.name,ym)); });
+    document.querySelectorAll('[data-pp-print]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppPrint); if(!p) return; const {ym,label}=personMonthInfo(p.offset); printPerson(p.name,ym,label); });
+    document.querySelectorAll('[data-pp-hl]').forEach(x=>x.onclick=()=>setHighlight(x.dataset.ppHl));
+    document.querySelectorAll('[data-pback]').forEach(x=>x.onclick=()=>addEmployeeToDay(x.dataset.pback, x.dataset.pperson).then(renderPersonPanels));
   }
-  const personFile=()=>`rozpis-${(personName||'osoba').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'osoba'}-${personMonthInfo().ym}.png`;
+  function closePersonPanel(name){ personPanels=personPanels.filter(p=>p.name!==name); renderPersonPanels(); }
+  function movePersonMonth(name, delta){ const p=personPanels.find(p=>p.name===name); if(p){ p.offset=(p.offset||0)+delta; renderPersonPanels(); } }
+  function openPerson(name, dateHint){
+    if(!manager || !name) return;
+    const offset = dateHint ? monthOffsetFor(dateHint) : 0;
+    const i=personPanels.findIndex(p=>p.name===name);
+    if(i>=0){ const p=personPanels.splice(i,1)[0]; if(dateHint) p.offset=offset; personPanels.push(p); }
+    else{ if(personPanels.length>=6) personPanels.shift(); personPanels.push({ name, offset }); }
+    renderPersonPanels();
+  }
+  // dni v danom mesiaci, na ktoré sa tento človek prihlásil (podľa záznamu prihlásení/histórie), ale už na nich nie je
+  function personRemoved(name, ym){
+    const out=[];
+    Object.keys(schedule.days||{}).sort().filter(k=>k.startsWith(ym+'-')).forEach(k=>{
+      const d=schedule.days[k]||{};
+      if(d.off || (d.employees||[]).includes(name)) return;
+      const own=Object.keys(d.su||{}).map(id=>({ id, ...d.su[id] })).filter(e=>e && e.n===name && (e.a==='in'||e.a==='out'));
+      const hist=historyJoinEvents(k).filter(e=>e.n===name);
+      const events=mergeJoinEvents(own, hist).sort((a,b)=>(a.t||0)-(b.t||0));
+      if(!events.length) return;
+      const last=events[events.length-1], lastIn=[...events].reverse().find(e=>e.a==='in');
+      out.push({ key:k, title:dayTitle(k), by:last.a==='out'?last.b:'', t:last.t||0, inT:lastIn?(lastIn.t||0):0 });
+    });
+    return out.sort((a,b)=>b.t-a.t);
+  }
+  const personFile=(name, ym)=>`rozpis-${(name||'osoba').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,'')||'osoba'}-${ym}.png`;
   async function downloadModelImage(model, fname){
     try{
       const blob=await modelBlob(model);
@@ -3293,13 +3332,15 @@
     }catch(e){ if(e && e.name==='AbortError') return true; }
     return false;
   }
-  async function personInstagram(){
-    const {ym,label}=personMonthInfo(); const model=personImageModel(personName, ym, label);
-    if(canShareFiles() && await shareModelImage(model, personFile(), `Rozpis – ${personName}`)) return;
+  async function personInstagram(name, ym, label){
+    const model=personImageModel(name, ym, label);
+    if(canShareFiles() && await shareModelImage(model, personFile(name,ym), `Rozpis – ${name}`)) return;
     try{ window.open('https://www.instagram.com/','_blank'); }catch(e){}
-    if(await downloadModelImage(model, personFile())) showToast('Obrázok stiahnutý. Nahraj ho do Instagramu (príbeh alebo správa) 📷', 4500);
+    if(await downloadModelImage(model, personFile(name,ym))) showToast('Obrázok stiahnutý. Nahraj ho do Instagramu (príbeh alebo správa) 📷', 4500);
   }
-  function printPerson(){
+  function printPerson(name, ym, label){
+    const el=$('personPrintArea');
+    el.innerHTML=`<h2>Rozpis – ${esc(name)}</h2><h3>${esc(label)}</h3>${personBodyHtml(name, ym)}`;
     const b=document.body;
     if(b && b.classList) b.classList.add('print-person');
     const done=()=>{ if(b && b.classList) b.classList.remove('print-person'); };
@@ -4122,7 +4163,7 @@
     $('rmClosed').checked=rosterOnlyClosed;
     $('rosterList').innerHTML=employees.list.map(e=>`
       <div class="rrow">
-        <div class="rname"><span class="avatar">${esc(e.name[0]||'?')}</span>${esc(e.name)}</div>
+        <div class="rname"><span class="avatar">${esc(e.name[0]||'?')}</span><span class="pname" data-person="${esc(e.name)}">${esc(e.name)}</span></div>
         ${rateBtns(e.name)}
         <div class="rbtns"><span class="rcode">${esc(e.code)}</span>
           <button class="icon-btn" data-pnote="${esc(e.name)}" title="Súkromná poznámka">📝</button>
@@ -4136,6 +4177,7 @@
         ${getPNote(e.name)?`<div class="rstats">📝 ${esc(getPNote(e.name).slice(0,90))}${getPNote(e.name).length>90?'…':''}</div>`:''}
       </div>`).join('');
     bindRating();
+    document.querySelectorAll('[data-person]').forEach(x=>x.onclick=()=>openPerson(x.dataset.person));
     document.querySelectorAll('[data-pnote]').forEach(x=>x.onclick=()=>openPNote(x.dataset.pnote));
     document.querySelectorAll('[data-rename]').forEach(x=>x.onclick=()=>{ const old=x.dataset.rename; const nw=prompt(`Nové meno pre „${old}“:`, old); if(nw!==null) renameEmployee(old,nw); });
     document.querySelectorAll('[data-regen]').forEach(x=>x.onclick=()=>regenCode(x.dataset.regen));
@@ -4309,7 +4351,7 @@
     const standbyHtml=(sbMine||sbCan) ? `<div class="segbox"><div class="seglabel">NÁHRADNÍK</div><button class="seg${sbMine?' on':''}" id="standbyBtn" style="width:100%">${sbMine?'🪑 Si náhradník – odhlásiť':'🪑 Prihlásiť sa ako náhradník'}</button><p class="sub" style="margin:6px 0 0;font-size:12px;">${sbMine?'Vedúci vidí, že môžeš zaskočiť, keby sa niekto odhlásil.':`Deň je ${closed?'zavretý':'plný'}. Ako náhradník sa nezapočítaš do smeny, ale vedúci uvidí, že môžeš zaskočiť, keby sa niekto odhlásil.`}</p></div>` : '';
     const myReqs=(myName && !manager) ? Object.keys(swaps||{}).map(id=>({ id, ...swaps[id] })).filter(x=>x && x.from===myName && x.day===date && ['open','pending_peer','pending_manager'].includes(x.status)) : [];
     const subReq=myReqs.find(x=>x.status==='open')||null, subBusy=myReqs.length>0;
-    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${esc(n)}${(manager && avMark(date,n)==='want')?' <span title="Tento deň výslovne chcel/a" style="color:#ffd11a">★</span>':''}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
+    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${manager?`<span class="pname" data-person="${esc(n)}">${esc(n)}</span>`:esc(n)}${(manager && avMark(date,n)==='want')?' <span title="Tento deň výslovne chcel/a" style="color:#ffd11a">★</span>':''}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
     let statusHtml, teamHtml, actionHtml='';
     if(isOff){
       statusHtml = '<div class="sfree" style="color:#8f9297;">🚫 Bez prevádzky</div>';
@@ -4402,6 +4444,7 @@
     on('reopenDay',()=>setDayClosed(selected,false).then(again));
     on('addEmpToDay',()=>{ const v=$('addEmpSelect').value; if(!v) return showToast('Vyber zamestnanca'); addEmployeeToDay(selected,v).then(again); });
     document.querySelectorAll('[data-emp-remove]').forEach(x=>x.onclick=()=>removeEmployeeFromDay(selected,x.dataset.empRemove).then(again));
+    document.querySelectorAll('[data-person]').forEach(x=>x.onclick=()=>openPerson(x.dataset.person, date));
     bindRating();
 
     renderJoinLog(date);
@@ -4544,7 +4587,7 @@
     // otvorené okno dňa sa obnoví samo, keď sa zmenia dáta (bez straty rozpísaného textu)
     if(selected && $('shiftModal').classList.contains('open') && !(document.activeElement && document.activeElement.id==='addEmpSelect')) openShift(selected,true);
     if($('planModal').classList.contains('open')) renderPlan();
-    if($('personModal').classList.contains('open')) renderPerson();
+    if(personPanels.length) renderPersonPanels();
     if($('noticeModal').classList.contains('open')) renderNoticeAdmin();
     if($('defectModal').classList.contains('open')) renderDefects();
     if($('dataModal').classList.contains('open')) renderDataCheck();
@@ -4720,16 +4763,7 @@
   $('dataRecheck').onclick=renderDataCheck;
   $('noticePost').onclick=postNotice;
   $('confirmAll').onclick=confirmAllMine;
-  $('personBtn').onclick=()=>openPerson();
-  $('personSel').onchange=()=>{ personName=$('personSel').value; renderPerson(); };
-  $('personPrev').onclick=()=>{ personOffset--; renderPerson(); };
-  $('personNext').onclick=()=>{ personOffset++; renderPerson(); };
-  $('personCopy').onclick=()=>{ const {ym,label}=personMonthInfo(); copyText(personText(personName,ym,label),'Rozpis skopírovaný 📋'); };
-  $('personWa').onclick=()=>{ const {ym,label}=personMonthInfo(); try{ window.open('https://wa.me/?text='+encodeURIComponent(personText(personName,ym,label)),'_blank'); }catch(e){ showToast('Nepodarilo sa otvoriť WhatsApp.'); } };
-  $('personIg').onclick=personInstagram;
-  $('personImg').onclick=()=>{ const {ym,label}=personMonthInfo(); downloadModelImage(personImageModel(personName,ym,label), personFile()); };
-  $('personPrint').onclick=printPerson;
-  $('personHl').onclick=()=>{ $('personModal').classList.remove('open'); setHighlight(personName); };
+  $('personBtn').onclick=()=>{ const first=employees.list.map(e=>e.name).sort((a,b)=>a.localeCompare(b,'sk'))[0]; if(first) openPerson(first); };
   $('pnoteSave').onclick=savePNote;
   $('pnoteDel').onclick=deletePNote;
   $('backupGo').onclick=()=>{ $('backupBox').open=true; scrollToId('backupBox'); };
