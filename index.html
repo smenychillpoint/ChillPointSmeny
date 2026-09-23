@@ -170,6 +170,8 @@
         .person-panels{position:fixed;inset:0;z-index:55;pointer-events:none}
     .person-panel{position:fixed;pointer-events:auto;width:340px;max-width:92vw;max-height:80vh;overflow:auto;background:#17191d;border:1px solid #3c3f44;box-shadow:0 10px 30px rgba(0,0,0,.55);padding:14px}
     .pp-head{display:flex;justify-content:space-between;align-items:center;gap:10px;cursor:move;user-select:none}
+    .pp-head .btns{display:flex;gap:6px;cursor:default}
+    .done-mark{color:#3fdc6a}
     .person-panel.dragging{opacity:.85}
     .pp-head b{font-size:15px}
     @media(max-width:560px){.person-panel{width:calc(100vw - 28px)}}
@@ -902,6 +904,7 @@
           <li><b>✅ Checklisty</b> (Nastavenia) a <b>záznam zo smeny</b>: v okne dňa zamestnanci na smene v ten deň odškrtávajú otvorenie a zatvorenie a hlásia poznámky alebo <b>🛠 závady</b>. Nevyriešené závady vidíš v prehľade.</li>
           <li>V okne <b>📨 Správa pre ľudí</b> si cez <b>✎ Vlastná šablóna</b> upravíš znenie výzvy a oznamu (použi {dni}, {cas}, {odkaz}).</li>
           <li><b>🪑 Náhradníci:</b> na zavretom (alebo plnom) dni sa zamestnanci môžu prihlásiť ako záloha. V okne dňa ich vidíš s časom a tlačidlom <b>→ Na smenu</b>, v kalendári ako <b>🪑 2</b>. Návrh zostavy ich pri dopĺňaní uprednostní. Vypnúť sa dá v Nastaveniach → Funkcie.</li>
+          <li>V zozname zamestnancov a v okne rozpisu človeka si môžeš pri mene dať <b>✅ hotovo</b> – hodí sa, keď prechádzaš viac ľudí naraz a chceš vedieť, ktorých máš už skontrolovaných. Ostáva to uložené aj po obnovení stránky (iba v tomto prehliadači).</li>
           <li>V okne dňa je vždy pole <b>NA TENTO DEŇ TREBA ĽUDÍ</b>: napíš číslo (napr. 4) a daj Uložiť. Kalendár, sekcia „Chýbajú ľudia“ aj správa pre ľudí potom ukážu, koľko ešte chýba. Funguje aj keď je všeobecné minimum v Nastaveniach vypnuté. 0 = netreba, prázdne = nezadané.</li>
           <li>Zoznamy <b>★ Chcú</b> a <b>✓ Môžu</b> ostávajú viditeľné aj po <b>Zavrieť a uložiť</b> (kto ten deň chcel, ale nie je na smene). Kto chcel deň a na smene je, má pri mene ★.</li>
           <li>V okne dňa vidíš aj <b>👻 tých, ktorí sa prihlásili, ale už na smene nie sú</b> (odhlásili sa sami alebo si ich odstránil): s časom a tlačidlom <b>↩ Vrátiť na smenu</b>. Pod tým je celá <b>história prihlásení</b> toho dňa. Zapisuje sa od tejto verzie, staršie údaje sa doplnia z histórie zmien (posledných 300 záznamov).</li>
@@ -1055,7 +1058,13 @@
   let settingsRef=null, auth=null, latestRaw=null, migrating=false, lastMigTry=0, loginFails=0;
   let ratings={}, ratingsRef=null, ratingsAttached=false;
   let pnotes={}, pnotesRef=null, pnotesAttached=false, pnoteFor='';
-  let personPanels=[], highlightPerson='', ppZTop=60;   // personPanels: {name, offset, x, y, z}[] – viacero súčasne otvorených, ťahateľných plávajúcich okien
+  let personDone=new Set();
+  try{ personDone=new Set(JSON.parse(localStorage.getItem('cp_persondone')||'[]')); }catch(e){}
+  const isPersonDone=name=>personDone.has(name);
+  function savePersonDone(){ try{ localStorage.setItem('cp_persondone', JSON.stringify(Array.from(personDone))); }catch(e){} }
+  function togglePersonDone(name){ if(!name) return; if(personDone.has(name)) personDone.delete(name); else personDone.add(name); savePersonDone(); }
+  let personPanels=[], highlightPerson='', ppZTop=60, ppIdSeq=0;   // personPanels: {id, name, offset, x, y, z}[] – viacero súčasne otvorených, ťahateľných plávajúcich okien s prepínaním mena
+  const newPanelId=()=>'pp'+(++ppIdSeq);
   let notices={}, noticesRef=null, noticeAcks={}, noticeAcksRef=null;
   let joinOpen=false;
   let flex={}, flexRef=null;
@@ -3260,24 +3269,28 @@
     if(!manager) personPanels=[];
     const names=employees.list.map(e=>e.name);
     personPanels=personPanels.filter(p=>names.includes(p.name));
+    const sortedNames=names.slice().sort((a,b)=>a.localeCompare(b,'sk'));
     $('personPanels').innerHTML=personPanels.map((p,i)=>{
       const {ym,label}=personMonthInfo(p.offset);
-      return `<div class="person-panel" data-pp-name="${esc(p.name)}" style="top:${p.y}px;left:${p.x}px;z-index:${p.z};">
-        <div class="pp-head"><b>Rozpis – ${esc(p.name)}</b><button class="outline" data-pp-close="${esc(p.name)}" style="padding:2px 10px;">✕</button></div>
-        <div class="rmonth" style="margin:8px 0;"><button class="outline" data-pp-prev="${esc(p.name)}">‹</button><b>${esc(label)}</b><button class="outline" data-pp-next="${esc(p.name)}">›</button></div>
+      return `<div class="person-panel" data-pp-id="${p.id}" style="top:${p.y}px;left:${p.x}px;z-index:${p.z};">
+        <div class="pp-head"><b>Rozpis</b><span class="btns"><button class="outline" data-pp-done="${p.id}" title="${isPersonDone(p.name)?'Označené ako hotovo – zrušiť':'Označiť ako hotovo'}" style="padding:2px 8px;${isPersonDone(p.name)?'color:#3fdc6a;border-color:#3fdc6a;':''}">${isPersonDone(p.name)?'✅':'☐'}</button><button class="outline" data-pp-close="${p.id}" style="padding:2px 10px;">✕</button></span></div>
+        <select data-pp-sel="${p.id}" style="width:100%;margin:8px 0;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:6px;">${sortedNames.map(n=>`<option value="${esc(n)}"${n===p.name?' selected':''}>${isPersonDone(n)?'✅ ':''}${esc(n)}</option>`).join('')}</select>
+        <div class="rmonth" style="margin:0 0 8px;"><button class="outline" data-pp-prev="${p.id}">‹</button><b>${esc(label)}</b><button class="outline" data-pp-next="${p.id}">›</button></div>
         <div class="pp-body">${personBodyHtml(p.name, ym)}</div>
         <div class="manage-row" style="margin-top:12px;flex-wrap:wrap;">
-          <button class="primary small" data-pp-copy="${esc(p.name)}" style="width:auto;padding:0 16px;">📋 Kopírovať</button>
-          <button class="outline" data-pp-wa="${esc(p.name)}">💬 WhatsApp</button>
-          <button class="outline" data-pp-ig="${esc(p.name)}">📷 Instagram</button>
-          <button class="outline" data-pp-img="${esc(p.name)}">🖼 Obrázok</button>
-          <button class="outline" data-pp-print="${esc(p.name)}">🖨 Tlačiť</button>
-          <button class="outline" data-pp-hl="${esc(p.name)}">🔎 Zvýrazniť</button>
+          <button class="primary small" data-pp-copy="${p.id}" style="width:auto;padding:0 16px;">📋 Kopírovať</button>
+          <button class="outline" data-pp-wa="${p.id}">💬 WhatsApp</button>
+          <button class="outline" data-pp-ig="${p.id}">📷 Instagram</button>
+          <button class="outline" data-pp-img="${p.id}">🖼 Obrázok</button>
+          <button class="outline" data-pp-print="${p.id}">🖨 Tlačiť</button>
+          <button class="outline" data-pp-hl="${p.id}">🔎 Zvýrazniť</button>
         </div>
       </div>`;
     }).join('');
-    const panelOf=n=>personPanels.find(p=>p.name===n);
+    const panelOf=id=>personPanels.find(p=>p.id===id);
     document.querySelectorAll('[data-pp-close]').forEach(x=>x.onclick=()=>closePersonPanel(x.dataset.ppClose));
+    document.querySelectorAll('[data-pp-done]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppDone); if(p){ togglePersonDone(p.name); renderPersonPanels(); } });
+    document.querySelectorAll('[data-pp-sel]').forEach(x=>x.onchange=()=>switchPersonPanel(x.dataset.ppSel, x.value));
     document.querySelectorAll('[data-pp-prev]').forEach(x=>x.onclick=()=>movePersonMonth(x.dataset.ppPrev,-1));
     document.querySelectorAll('[data-pp-next]').forEach(x=>x.onclick=()=>movePersonMonth(x.dataset.ppNext,1));
     document.querySelectorAll('[data-pp-copy]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppCopy); if(!p) return; const {ym,label}=personMonthInfo(p.offset); copyText(personText(p.name,ym,label),'Rozpis skopírovaný 📋'); });
@@ -3285,14 +3298,14 @@
     document.querySelectorAll('[data-pp-ig]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppIg); if(!p) return; const {ym,label}=personMonthInfo(p.offset); personInstagram(p.name,ym,label); });
     document.querySelectorAll('[data-pp-img]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppImg); if(!p) return; const {ym,label}=personMonthInfo(p.offset); downloadModelImage(personImageModel(p.name,ym,label), personFile(p.name,ym)); });
     document.querySelectorAll('[data-pp-print]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppPrint); if(!p) return; const {ym,label}=personMonthInfo(p.offset); printPerson(p.name,ym,label); });
-    document.querySelectorAll('[data-pp-hl]').forEach(x=>x.onclick=()=>setHighlight(x.dataset.ppHl));
+    document.querySelectorAll('[data-pp-hl]').forEach(x=>x.onclick=()=>{ const p=panelOf(x.dataset.ppHl); if(p) setHighlight(p.name); });
     document.querySelectorAll('[data-pback]').forEach(x=>x.onclick=()=>addEmployeeToDay(x.dataset.pback, x.dataset.pperson).then(renderPersonPanels));
     wirePanelDrag();
   }
   // ťahanie za hlavičku okna myšou aj prstom; nemení DOM (žiadne prekreslenie), iba pozíciu v stave a priamo na prvku
   function wirePanelDrag(){
     document.querySelectorAll('.person-panel').forEach(el=>{
-      const name=el.dataset.ppName, head=el.querySelector ? el.querySelector('.pp-head') : null;
+      const id=el.dataset.ppId, head=el.querySelector ? el.querySelector('.pp-head') : null;
       if(!head) return;
       let dragging=false, startX=0, startY=0, origX=0, origY=0;
       const pt=e=>e.touches&&e.touches[0] ? {x:e.touches[0].clientX,y:e.touches[0].clientY} : {x:e.clientX,y:e.clientY};
@@ -3300,8 +3313,8 @@
         if(!dragging) return;
         if(e.cancelable) e.preventDefault();
         const c=pt(e);
-        setPersonPanelPos(name, origX+(c.x-startX), origY+(c.y-startY));
-        const p=personPanels.find(p=>p.name===name);
+        setPersonPanelPos(id, origX+(c.x-startX), origY+(c.y-startY));
+        const p=personPanels.find(p=>p.id===id);
         if(p){ el.style.left=p.x+'px'; el.style.top=p.y+'px'; }
       };
       const onUp=()=>{
@@ -3313,8 +3326,8 @@
         if(e.target && e.target.closest && e.target.closest('button')) return;   // klik na ✕ nemá spúšťať ťahanie
         dragging=true; el.classList.add('dragging');
         const c=pt(e); startX=c.x; startY=c.y;
-        const p=personPanels.find(p=>p.name===name); origX=p?p.x:0; origY=p?p.y:0;
-        bringPanelToFront(name); el.style.zIndex=String((personPanels.find(p=>p.name===name)||{}).z||60);
+        const p=personPanels.find(p=>p.id===id); origX=p?p.x:0; origY=p?p.y:0;
+        bringPanelToFront(id); el.style.zIndex=String((personPanels.find(p=>p.id===id)||{}).z||60);
         document.addEventListener('mousemove',onMove); document.addEventListener('mouseup',onUp);
         document.addEventListener('touchmove',onMove,{passive:false}); document.addEventListener('touchend',onUp);
       };
@@ -3323,18 +3336,25 @@
     });
   }
   function personPanelDefaultPos(){ const i=personPanels.length%8; return { x:16+i*28, y:16+i*28 }; }
+  // prepne, koho dané okno zobrazuje (poloha aj veľkosť ostávajú); ak je ten človek už otvorený inde, ten druhý panel sa zlúči (zavrie)
+  function switchPersonPanel(id, newName){
+    if(!newName) return;
+    personPanels=personPanels.filter(p=>p.id===id || p.name!==newName);
+    const p=personPanels.find(p=>p.id===id);
+    if(p) p.name=newName;
+    renderPersonPanels();
+  }
   // mení pozíciu bez prekreslenia (aby ťahanie neprerušilo samo seba); y sa nedá vytiahnuť nad vrch obrazovky
-  function setPersonPanelPos(name, x, y){ const p=personPanels.find(p=>p.name===name); if(!p) return; p.x=x; p.y=Math.max(0,y); }
-  function bringPanelToFront(name){ const p=personPanels.find(p=>p.name===name); if(p) p.z=++ppZTop; }
-  function closePersonPanel(name){ personPanels=personPanels.filter(p=>p.name!==name); renderPersonPanels(); }
-  function movePersonMonth(name, delta){ const p=personPanels.find(p=>p.name===name); if(p){ p.offset=(p.offset||0)+delta; renderPersonPanels(); } }
+  function setPersonPanelPos(id, x, y){ const p=personPanels.find(p=>p.id===id); if(!p) return; p.x=x; p.y=Math.max(0,y); }
+  function bringPanelToFront(id){ const p=personPanels.find(p=>p.id===id); if(p) p.z=++ppZTop; }
+  function closePersonPanel(id){ personPanels=personPanels.filter(p=>p.id!==id); renderPersonPanels(); }
+  function movePersonMonth(id, delta){ const p=personPanels.find(p=>p.id===id); if(p){ p.offset=(p.offset||0)+delta; renderPersonPanels(); } }
   function openPerson(name, dateHint){
     if(!manager || !name) return;
     const offset = dateHint ? monthOffsetFor(dateHint) : 0;
-    const i=personPanels.findIndex(p=>p.name===name);
-    if(i>=0){ const p=personPanels.splice(i,1)[0]; if(dateHint) p.offset=offset; personPanels.push(p); }
-    else{ const pos=personPanelDefaultPos(); personPanels.push({ name, offset, x:pos.x, y:pos.y, z:++ppZTop }); }
-    bringPanelToFront(name);
+    const existing=personPanels.find(p=>p.name===name);
+    if(existing){ if(dateHint) existing.offset=offset; bringPanelToFront(existing.id); }
+    else{ const pos=personPanelDefaultPos(); personPanels.push({ id:newPanelId(), name, offset, x:pos.x, y:pos.y, z:++ppZTop }); }
     renderPersonPanels();
   }
   // dni v danom mesiaci, na ktoré sa tento človek prihlásil (podľa záznamu prihlásení/histórie), ale už na nich nie je
@@ -4203,9 +4223,10 @@
     $('rmClosed').checked=rosterOnlyClosed;
     $('rosterList').innerHTML=employees.list.map(e=>`
       <div class="rrow">
-        <div class="rname"><span class="avatar">${esc(e.name[0]||'?')}</span><span class="pname" data-person="${esc(e.name)}">${esc(e.name)}</span></div>
+        <div class="rname"><span class="avatar">${esc(e.name[0]||'?')}</span><span class="pname" data-person="${esc(e.name)}">${esc(e.name)}</span>${isPersonDone(e.name)?' <span class="done-mark" title="Označené ako hotovo">✅</span>':''}</div>
         ${rateBtns(e.name)}
         <div class="rbtns"><span class="rcode">${esc(e.code)}</span>
+          <button class="icon-btn" data-done="${esc(e.name)}" title="${isPersonDone(e.name)?'Zrušiť hotovo':'Označiť ako hotovo'}">${isPersonDone(e.name)?'✅':'☐'}</button>
           <button class="icon-btn" data-pnote="${esc(e.name)}" title="Súkromná poznámka">📝</button>
           <button class="icon-btn" data-rename="${esc(e.name)}" title="Premenovať">✎</button>
           <button class="icon-btn" data-regen="${esc(e.name)}" title="Nový kód">↻</button>
@@ -4218,6 +4239,7 @@
       </div>`).join('');
     bindRating();
     document.querySelectorAll('[data-person]').forEach(x=>x.onclick=()=>openPerson(x.dataset.person));
+    document.querySelectorAll('[data-done]').forEach(x=>x.onclick=()=>{ togglePersonDone(x.dataset.done); renderRoster(); });
     document.querySelectorAll('[data-pnote]').forEach(x=>x.onclick=()=>openPNote(x.dataset.pnote));
     document.querySelectorAll('[data-rename]').forEach(x=>x.onclick=()=>{ const old=x.dataset.rename; const nw=prompt(`Nové meno pre „${old}“:`, old); if(nw!==null) renameEmployee(old,nw); });
     document.querySelectorAll('[data-regen]').forEach(x=>x.onclick=()=>regenCode(x.dataset.regen));
@@ -4391,7 +4413,7 @@
     const standbyHtml=(sbMine||sbCan) ? `<div class="segbox"><div class="seglabel">NÁHRADNÍK</div><button class="seg${sbMine?' on':''}" id="standbyBtn" style="width:100%">${sbMine?'🪑 Si náhradník – odhlásiť':'🪑 Prihlásiť sa ako náhradník'}</button><p class="sub" style="margin:6px 0 0;font-size:12px;">${sbMine?'Vedúci vidí, že môžeš zaskočiť, keby sa niekto odhlásil.':`Deň je ${closed?'zavretý':'plný'}. Ako náhradník sa nezapočítaš do smeny, ale vedúci uvidí, že môžeš zaskočiť, keby sa niekto odhlásil.`}</p></div>` : '';
     const myReqs=(myName && !manager) ? Object.keys(swaps||{}).map(id=>({ id, ...swaps[id] })).filter(x=>x && x.from===myName && x.day===date && ['open','pending_peer','pending_manager'].includes(x.status)) : [];
     const subReq=myReqs.find(x=>x.status==='open')||null, subBusy=myReqs.length>0;
-    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${manager?`<span class="pname" data-person="${esc(n)}">${esc(n)}</span>`:esc(n)}${(manager && avMark(date,n)==='want')?' <span title="Tento deň výslovne chcel/a" style="color:#ffd11a">★</span>':''}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
+    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${manager?`<span class="pname" data-person="${esc(n)}">${esc(n)}</span>${isPersonDone(n)?' <span class="done-mark" title="Označené ako hotovo">✅</span>':''}`:esc(n)}${(manager && avMark(date,n)==='want')?' <span title="Tento deň výslovne chcel/a" style="color:#ffd11a">★</span>':''}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
     let statusHtml, teamHtml, actionHtml='';
     if(isOff){
       statusHtml = '<div class="sfree" style="color:#8f9297;">🚫 Bez prevádzky</div>';
