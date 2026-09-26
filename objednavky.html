@@ -235,17 +235,31 @@ function prune() {
 }
 
 let listening = false;
+// Databáza je zdieľaná so smenami, takže pravidlá povoľujú čítanie len po jednotlivých
+// uzloch (tables/menu/orders), nie naraz z koreňa - preto tri samostatné listenery.
+let live = { tables: null, menu: null, orders: null };
+let pruned = false;
+function tryRender() {
+  if (live.tables === null || live.menu === null || live.orders === null) return;
+  onData({ tables: live.tables, menu: live.menu, orders: live.orders });
+  if (!pruned) { pruned = true; prune(); }
+}
 function connect() {
   db.ref('.info/connected').on('value', s => {
     $('#conn').className = s.val() ? 'conn' : 'conn off'; $('#conn').textContent = s.val() ? '● online' : '● offline';
   });
   auth.onAuthStateChanged(async user => {
     $('#login').classList.toggle('hide', !!user);
-    if (!user) { if (listening) { db.ref().off(); listening = false; } return; }
+    if (!user) {
+      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); listening = false; }
+      live = { tables: null, menu: null, orders: null }; pruned = false;
+      return;
+    }
     try { await seedIfEmpty(); } catch (e) { console.warn(e); }
-    let first = true;
-    db.ref().on('value', s => { const v = s.val(); if (v) { delete v.meta; } onData(v); if (first) { first = false; prune(); } },
-      e => toast('Nemáte prístup k dátam – skontrolujte pravidlá databázy'));
+    const errH = () => toast('Nemáte prístup k dátam – skontrolujte pravidlá databázy');
+    db.ref('tables').on('value', s => { live.tables = s.val() || {}; tryRender(); }, errH);
+    db.ref('menu').on('value', s => { live.menu = s.val() || {}; tryRender(); }, errH);
+    db.ref('orders').on('value', s => { live.orders = s.val() || {}; tryRender(); }, errH);
     listening = true;
   });
 }
