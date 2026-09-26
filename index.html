@@ -4073,7 +4073,7 @@
   function message(id,text){ $(id).textContent=text; $(id).classList.add('show'); }
 
   function renderTopRight(){
-    let html=`<button class="outline" id="helpBtn">❓ Návod</button>`;
+    let html=`<a class="outline" id="ordersLink" href="objednavky.html" style="text-decoration:none;display:inline-flex;align-items:center">🍹 Objednávky</a><button class="outline" id="helpBtn">❓ Návod</button>`;
     if(canShowInstall()) html+=`<button class="outline" id="installBtn">📲 Do mobilu</button>`;
     if(myName) html+=`<div class="who-badge"><span class="avatar">${esc(myName[0]||'?')}</span>${esc(myName)}<button class="link-btn" id="logoutBtn">odhlásiť</button></div>`;
     if(manager) html+=`<span class="badge-manager">⚡ VEDÚCI</span><button class="outline" id="lockBtn">Vypnúť</button>`;
