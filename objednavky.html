@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1f2a24">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Objednávky</title>
+<style>
+:root{
+  --bg:#f4f1ea;--card:#fff;--ink:#1d2320;--muted:#6b716c;--line:#e3ddd1;
+  --brand:#1f2a24;--accent:#c8732e;--ok:#2f7d4f;--okbg:#e3f2e8;--warn:#b5461f;--warnbg:#fbe6dc;
+  --r:14px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#121614;--card:#1c2220;--ink:#eef0ec;--muted:#9aa19c;--line:#2c3431;
+  --brand:#0c0f0e;--accent:#e08a42;--ok:#5cc187;--okbg:#1d3326;--warn:#f08a62;--warnbg:#3a2219;
+}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button{font:inherit;color:inherit;border:0;cursor:pointer;border-radius:10px}
+input,select{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%}
+header{position:sticky;top:0;z-index:5;background:var(--brand);color:#fff;padding:env(safe-area-inset-top) 12px 0}
+.bar{display:flex;align-items:center;gap:8px;height:52px}
+.bar h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tabs{display:flex;gap:4px;padding-bottom:8px}
+.tabs button{flex:1;background:transparent;color:#c9d0cb;padding:9px 6px;font-weight:600}
+.tabs button.on{background:#ffffff1f;color:#fff}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e25b3a;margin-left:6px;vertical-align:middle}
+.conn{font-size:12px;color:#9fb1a6}.conn.off{color:#ffb199}
+main{padding:14px 12px 120px;max-width:1100px;margin:0 auto}
+h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:22px 4px 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px}
+.tbl{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 12px;text-align:left;min-height:92px;display:flex;flex-direction:column;gap:4px}
+.tbl b{font-size:18px}.tbl small{color:var(--muted)}
+.tbl.busy{border-color:var(--accent);box-shadow:inset 4px 0 0 var(--accent)}
+.pill{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px}
+.p-nova{background:var(--warnbg);color:var(--warn)}.p-hotova{background:var(--okbg);color:var(--ok)}.p-vydana{background:var(--line);color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px}
+.back{background:#ffffff1f;color:#fff;padding:7px 12px}
+.search{display:flex;gap:6px;margin-bottom:10px}.search input{flex:1;padding:12px 14px}.search button{background:var(--card);border:1px solid var(--line);padding:0 14px}
+.cats{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
+.cats button{background:var(--card);border:1px solid var(--line);padding:8px 14px;white-space:nowrap}
+.cats button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.items{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:left;min-height:70px;position:relative}
+.item span{display:block;color:var(--muted);font-size:14px}
+.item .q{position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;border-radius:99px;min-width:24px;height:24px;font-size:13px;font-weight:700;display:grid;place-items:center;padding:0 6px}
+.cart{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));z-index:6;box-shadow:0 -6px 20px #0000001a}
+.cart-in{max-width:1100px;margin:0 auto}
+.row{display:flex;align-items:center;gap:8px}
+.line{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dashed var(--line)}
+.line:last-child{border-bottom:0}
+.line .n{flex:1}.line .n small{display:block;color:var(--muted)}
+.qb{width:34px;height:34px;background:var(--bg);font-weight:700;font-size:18px}
+.btn{background:var(--accent);color:#fff;padding:13px 16px;font-weight:700;width:100%}
+.btn.ok{background:var(--ok)}.btn.ghost{background:var(--bg);color:var(--ink);border:1px solid var(--line)}
+.btn:disabled{opacity:.45}
+.cart-list{max-height:34vh;overflow:auto;margin-bottom:8px}
+.order{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px}
+.order.nova{border-color:var(--warn);box-shadow:inset 5px 0 0 var(--warn)}
+.order.hotova{border-color:var(--ok);box-shadow:inset 5px 0 0 var(--ok)}
+.order h3{margin:0;font-size:20px;display:flex;align-items:baseline;gap:8px}
+.order h3 small{font-size:13px;color:var(--muted);font-weight:500;margin-left:auto}
+.order ul{margin:0;padding:0;list-style:none}
+.order li{padding:5px 0;font-size:18px;border-bottom:1px solid var(--line)}
+.order li:last-child{border:0}
+.order li b{display:inline-block;min-width:36px;color:var(--accent)}
+.order li i{display:block;font-size:14px;color:var(--warn);margin-left:36px}
+.note{background:var(--warnbg);color:var(--warn);padding:8px 10px;border-radius:8px;font-size:15px}
+.bar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.ready{position:sticky;top:106px;z-index:4;display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.ready div{background:var(--ok);color:#fff;border-radius:12px;padding:10px 12px;display:flex;align-items:center;gap:8px;font-weight:600;animation:pop .3s}
+.ready div span{flex:1}
+.ready button{background:#ffffff33;color:#fff;padding:8px 12px}
+@keyframes pop{from{transform:scale(.96);opacity:0}}
+.total{display:flex;justify-content:space-between;font-size:22px;font-weight:800;padding:12px 0 4px}
+.muted{color:var(--muted)}
+.empty{text-align:center;color:var(--muted);padding:40px 10px}
+.set-row{display:grid;grid-template-columns:1fr 90px 1fr auto;gap:6px;align-items:center;margin-bottom:6px}
+.set-row.t{grid-template-columns:1fr auto}
+.del{background:var(--warnbg);color:var(--warn);padding:10px 12px}
+.login{position:fixed;inset:0;z-index:30;background:var(--bg);display:grid;place-items:center;padding:20px}.login form{width:100%;max-width:360px;display:grid;gap:10px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:20;max-width:90vw}
+.hide{display:none!important}
+@media (max-width:560px){.set-row{grid-template-columns:1fr 70px;}.set-row .cat{grid-column:1}.set-row .del{grid-column:2}}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <button id="backBtn" class="back hide">‹ Stoly</button>
+    <h1 id="title">Objednávky</h1>
+    <a href="index.html" class="back" style="text-decoration:none">📅 Smeny</a>
+    <span id="conn" class="conn">●</span>
+  </div>
+  <nav class="tabs">
+    <button data-role="casnik">Čašník</button>
+    <button data-role="bar">Bar <span id="barDot" class="dot hide"></span></button>
+    <button data-role="nastavenia">Nastavenia</button>
+  </nav>
+</header>
+<main id="app"></main>
+<div id="cart" class="cart hide"></div>
+
+<div id="login" class="login hide"><form onsubmit="login(event)" class="card">
+  <h2 style="margin-top:0">Prihlásenie</h2>
+  <input id="lmail" type="email" placeholder="E-mail" autocomplete="username" required>
+  <input id="lpass" type="password" placeholder="Heslo" autocomplete="current-password" required>
+  <div id="lerr" style="color:var(--warn);min-height:20px"></div>
+  <button class="btn">Prihlásiť</button></form></div>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+<script>
+// Rovnaký Firebase projekt ako appka na smeny (index.html) - jedna databáza pre obe.
+window.FIREBASE_CONFIG = {
+  apiKey: "AIzaSyB-2HeoePKrcsdawvI1LCOTQ6vWjibItpU",
+  authDomain: "chillpoint-smeny-350c4.firebaseapp.com",
+  databaseURL: "https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app",
+  projectId: "chillpoint-smeny-350c4",
+  storageBucket: "chillpoint-smeny-350c4.firebasestorage.app",
+  messagingSenderId: "251580957782",
+  appId: "1:251580957782:web:801f838e4cd65abb4027f7"
+};
+</script>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const eur = n => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',') + ' €';
+const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} } };
+
+let S = { tables: [], menu: [], orders: [] };
+let role = store.get('role', 'casnik');
+let tableId = null;          // otvorený stôl (čašník)
+let view = 'order';          // 'order' | 'bill'
+let cat = null;
+let cart = [];               // [{menuId, qty, note}]
+let orderNote = '';
+let q = '';                  // hľadanie v menu
+let sound = store.get('sound', true);
+let seenReady = new Set(store.get('seenReady', []));
+
+// ---------- Firebase (dáta sa ukladajú do Firebase Realtime Database) ----------
+if (!window.FIREBASE_CONFIG || String(window.FIREBASE_CONFIG.apiKey || '').includes('SEM')) {
+  document.body.innerHTML = '<div class="empty" style="padding:60px 20px">Chýba nastavenie Firebase.<br>Vyplňte súbor <b>firebase-config.js</b> podľa návodu.</div>';
+  throw new Error('config');
+}
+firebase.initializeApp(window.FIREBASE_CONFIG);
+const auth = firebase.auth(), db = firebase.database();
+const now = () => Date.now();
+const str = (v, max = 100) => String(v ?? '').trim().slice(0, max);
+const num = v => Math.round(Number(String(v ?? '').replace(',', '.')) * 100) / 100;
+function fail(msg) { toast(msg); throw new Error(msg); }
+
+// Rovnaké rozhranie ako pri verzii so serverom, len namiesto servera sa zapisuje do Firebase
+async function call(method, url, body = {}) {
+  try { return await callInner(method, url.split('/').filter(Boolean).slice(1), body); }
+  catch (e) { if (e.code) toast('Chyba: ' + (e.code.includes('permission') ? 'nemáte prístup' : e.message)); throw e; }
+}
+async function callInner(m, [col, id, action], body) {
+  if (col === 'tables') {
+    if (m === 'POST' && !id) { const name = str(body.name, 40); if (!name) fail('Chýba názov stola');
+      return db.ref('tables').push({ name, order: now() }); }
+    const t = S.tables.find(x => x.id === id); if (!t) fail('Stôl neexistuje');
+    if (m === 'PUT') { const name = str(body.name, 40); return name && db.ref('tables/' + id + '/name').set(name); }
+    if (m === 'DELETE') { if (tableOrders(id).length) fail('Stôl má nezaplatené objednávky'); return db.ref('tables/' + id).remove(); }
+    if (m === 'POST' && action === 'pay') {
+      const u = {}; tableOrders(id).forEach(o => { u[o.id + '/status'] = 'zaplatena'; u[o.id + '/paidAt'] = now(); });
+      return db.ref('orders').update(u);
+    }
+  }
+  if (col === 'menu') {
+    if (m === 'POST' && !id) { const name = str(body.name, 60), price = num(body.price);
+      if (!name || !(price >= 0)) fail('Zadajte názov a cenu');
+      return db.ref('menu').push({ name, price, category: str(body.category, 40) || 'Ostatné', order: now() }); }
+    if (m === 'PUT') { const u = {};
+      if (body.name !== undefined && str(body.name, 60)) u.name = str(body.name, 60);
+      if (body.price !== undefined && num(body.price) >= 0) u.price = num(body.price);
+      if (body.category !== undefined) u.category = str(body.category, 40) || 'Ostatné';
+      return db.ref('menu/' + id).update(u); }
+    if (m === 'DELETE') return db.ref('menu/' + id).remove();
+  }
+  if (col === 'orders') {
+    if (m === 'POST' && !id) {
+      const table = S.tables.find(t => t.id === body.tableId); if (!table) fail('Vyberte stôl');
+      const items = body.items.map(i => { const mi = S.menu.find(x => x.id === i.menuId);
+        return mi && { menuId: mi.id, name: mi.name, price: mi.price, qty: Math.max(1, Math.min(99, i.qty | 0)), note: str(i.note, 80) };
+      }).filter(Boolean);
+      if (!items.length) fail('Objednávka je prázdna');
+      const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
+      return db.ref('orders').push({ no: r.snapshot.val(), tableId: table.id, tableName: table.name,
+        waiter: str(body.waiter, 30), note: str(body.note, 120), items, status: 'nova', createdAt: now() });
+    }
+    const o = S.orders.find(x => x.id === id); if (!o) fail('Objednávka neexistuje');
+    if (m === 'POST' && action === 'status') return db.ref('orders/' + id).update({ status: body.status, [body.status + 'At']: now() });
+    if (m === 'DELETE') { if (o.status === 'zaplatena') fail('Už zaplatená'); return db.ref('orders/' + id).remove(); }
+  }
+  fail('Neznáma akcia');
+}
+
+const list = obj => Object.entries(obj || {}).map(([id, v]) => ({ ...v, id }));
+let prevStatus = null;   // na zistenie novej / hotovej objednávky (zvuk)
+function onData(v) {
+  v = v || {};
+  S = { tables: list(v.tables).sort((a, b) => a.order - b.order),
+        menu: list(v.menu).sort((a, b) => a.order - b.order),
+        orders: list(v.orders).map(o => ({ ...o, items: o.items || [] })).sort((a, b) => a.createdAt - b.createdAt) };
+  const st = Object.fromEntries(S.orders.map(o => [o.id, o.status]));
+  if (prevStatus) {
+    if (role === 'bar' && S.orders.some(o => o.status === 'nova' && !prevStatus[o.id])) beep([880, 1320]);
+    if (role === 'casnik' && S.orders.some(o => o.status === 'hotova' && prevStatus[o.id] && prevStatus[o.id] !== 'hotova')) beep([660, 990, 1320]);
+  }
+  prevStatus = st;
+  safeRender();
+}
+
+// Pri prvom spustení nahrá menu z VRP2 (menu.json) a ukážkové stoly – len raz
+async function seedIfEmpty() {
+  const r = await db.ref('meta/seeded').transaction(s => s ? undefined : true);
+  if (!r.committed) return;
+  const menu = await fetch('menu.json').then(x => x.json());
+  const u = {};
+  menu.forEach((m, i) => u['menu/' + m.id] = { name: m.name, price: m.price, category: m.category, order: i });
+  ['Stôl 1', 'Stôl 2', 'Stôl 3', 'Stôl 4', 'Bar'].forEach((n, i) => u['tables/t' + (i + 1)] = { name: n, order: i });
+  await db.ref().update(u);
+}
+// Zaplatené objednávky staršie ako 30 dní sa odmažú
+function prune() {
+  const u = {}, limit = now() - 30 * 864e5;
+  S.orders.forEach(o => { if (o.status === 'zaplatena' && o.paidAt < limit) u['orders/' + o.id] = null; });
+  if (Object.keys(u).length) db.ref().update(u).catch(() => {});
+}
+
+let listening = false;
+function connect() {
+  db.ref('.info/connected').on('value', s => {
+    $('#conn').className = s.val() ? 'conn' : 'conn off'; $('#conn').textContent = s.val() ? '● online' : '● offline';
+  });
+  auth.onAuthStateChanged(async user => {
+    $('#login').classList.toggle('hide', !!user);
+    if (!user) { if (listening) { db.ref().off(); listening = false; } return; }
+    try { await seedIfEmpty(); } catch (e) { console.warn(e); }
+    let first = true;
+    db.ref().on('value', s => { const v = s.val(); if (v) { delete v.meta; } onData(v); if (first) { first = false; prune(); } },
+      e => toast('Nemáte prístup k dátam – skontrolujte pravidlá databázy'));
+    listening = true;
+  });
+}
+async function login(ev) {
+  ev.preventDefault();
+  $('#lerr').textContent = '';
+  try { await auth.signInWithEmailAndPassword($('#lmail').value.trim(), $('#lpass').value); }
+  catch { $('#lerr').textContent = 'Nesprávny e-mail alebo heslo'; }
+}
+function logout() { if (confirm('Odhlásiť toto zariadenie?')) auth.signOut(); }
+
+// Neprekresľovať, kým niekto píše do políčka (inak by stratil text)
+let pending = false;
+function safeRender() {
+  if (document.activeElement?.tagName === 'INPUT') { pending = true; return; }
+  render();
+}
+document.addEventListener('focusout', () => setTimeout(() => {
+  if (pending && document.activeElement?.tagName !== 'INPUT') { pending = false; render(); }
+}, 50));
+
+// ---------- zvuk ----------
+let actx;
+function beep(freqs) {
+  if (!sound) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    freqs.forEach((f, i) => {
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(actx.destination);
+      const t = actx.currentTime + i * 0.18;
+      g.gain.setValueAtTime(0.25, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+      o.start(t); o.stop(t + 0.17);
+    });
+    navigator.vibrate?.(200);
+  } catch {}
+}
+document.addEventListener('click', () => { if (actx?.state === 'suspended') actx.resume(); });
+
+function toast(msg) {
+  const d = document.createElement('div'); d.className = 'toast'; d.textContent = msg;
+  document.body.appendChild(d); setTimeout(() => d.remove(), 2200);
+}
+const ago = t => { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? 'teraz' : m + ' min'; };
+const open = () => S.orders.filter(o => o.status !== 'zaplatena');
+const tableOrders = id => open().filter(o => o.tableId === id);
+const sumOrders = os => os.reduce((s, o) => s + o.items.reduce((a, i) => a + i.price * i.qty, 0), 0);
+const STAV = { nova: 'Na bare', hotova: 'Hotová – odniesť', vydana: 'Vydaná' };
+
+// ---------- render ----------
+function render() {
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
+  $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova'));
+  const inTable = role === 'casnik' && tableId && S.tables.some(t => t.id === tableId);
+  if (role === 'casnik' && tableId && !inTable) tableId = null;
+  $('#backBtn').classList.toggle('hide', !inTable);
+  $('#title').textContent = inTable ? S.tables.find(t => t.id === tableId).name
+    : { casnik: 'Stoly', bar: 'Bar – objednávky', nastavenia: 'Nastavenia' }[role];
+  $('#cart').classList.add('hide');
+  if (role === 'casnik') inTable ? (view === 'bill' ? renderBill() : renderTable()) : renderTables();
+  else if (role === 'bar') renderBar();
+  else renderSettings();
+}
+
+function readyBanner() {
+  const r = open().filter(o => o.status === 'hotova');
+  if (!r.length) return '';
+  return `<div class="ready">${r.map(o => `<div><span>${esc(o.tableName)} · #${o.no} je hotová</span>
+    <button onclick="setStatus('${o.id}','vydana')">Odnesené</button></div>`).join('')}</div>`;
+}
+
+function renderTables() {
+  const html = S.tables.map(t => {
+    const os = tableOrders(t.id);
+    const st = os.some(o => o.status === 'hotova') ? '<span class="pill p-hotova">Hotové</span>'
+             : os.some(o => o.status === 'nova') ? '<span class="pill p-nova">Na bare</span>' : '';
+    return `<button class="tbl ${os.length ? 'busy' : ''}" onclick="openTable('${t.id}')">
+      <b>${esc(t.name)}</b>${os.length ? `<small>${eur(sumOrders(os))}</small>${st}` : '<small>voľný</small>'}</button>`;
+  }).join('');
+  $('#app').innerHTML = readyBanner() + (S.tables.length ? `<div class="grid">${html}</div>`
+    : '<div class="empty">Zatiaľ žiadne stoly. Pridajte ich v Nastaveniach.</div>');
+}
+
+function openTable(id) { tableId = id; view = 'order'; cart = []; orderNote = ''; cat = null; q = ''; render(); scrollTo(0, 0); }
+
+function renderTable() {
+  const cats = [...new Set(S.menu.map(m => m.category))];
+  if (!cats.includes(cat)) cat = cats[0] ?? null;
+  const os = tableOrders(tableId);
+  const prev = os.length ? `<h2>Objednávky stola</h2><div class="bar-grid">${os.map(o => `
+    <div class="order ${o.status}"><h3>#${o.no} <span class="pill p-${o.status}">${STAV[o.status]}</span><small>${ago(o.createdAt)}</small></h3>
+    <ul>${o.items.map(i => `<li><b>${i.qty}×</b>${esc(i.name)}${i.note ? `<i>${esc(i.note)}</i>` : ''}</li>`).join('')}</ul>
+    ${o.status === 'hotova' ? `<button class="btn ok" onclick="setStatus('${o.id}','vydana')">Odnesené</button>` : ''}
+    ${o.status === 'nova' ? `<button class="btn ghost" onclick="cancelOrder('${o.id}')">Zrušiť objednávku</button>` : ''}
+    </div>`).join('')}</div>
+    <div style="margin-top:14px"><button class="btn ghost" onclick="view='bill';render()">Účet stola · ${eur(sumOrders(os))}</button></div>` : '';
+
+  $('#app').innerHTML = readyBanner() + (S.menu.length ? `
+    <div class="search"><input id="q" type="search" placeholder="🔍 Hľadať položku…" value="${esc(q)}" oninput="q=this.value;renderItems()" autocomplete="off">
+    ${q ? '<button onclick="q=\'\';render()">✕</button>' : ''}</div>
+    <div class="cats" id="cats">${cats.map(c => `<button class="${c === cat ? 'on' : ''}" onclick="cat=this.dataset.c;q='';render()" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+    <div class="items" id="items"></div>` : '<div class="empty">Menu je prázdne. Pridajte položky v Nastaveniach.</div>') + prev;
+  if (S.menu.length) renderItems();
+  renderCart();
+}
+
+// odstráni diakritiku, aby "kofola" našlo aj "Kófola" a "cierny" aj "čierny"
+const fold = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+function renderItems() {
+  const el = $('#items'); if (!el) return;
+  const words = fold(q.trim()).split(/\s+/).filter(Boolean);
+  const list = words.length ? S.menu.filter(m => words.every(w => fold(m.name).includes(w))).slice(0, 60)
+                            : S.menu.filter(m => m.category === cat);
+  $('#cats').classList.toggle('hide', words.length > 0);
+  const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
+  el.innerHTML = list.length ? list.map(m => `
+    <button class="item" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${eur(m.price)}${words.length ? ' · ' + esc(m.category) : ''}</span>
+    ${qty(m.id) ? `<div class="q">${qty(m.id)}</div>` : ''}</button>`).join('')
+    : '<div class="empty" style="grid-column:1/-1">Nič sa nenašlo</div>';
+}
+
+function addItem(id) {
+  const c = cart.find(x => x.menuId === id && !x.note);
+  c ? c.qty++ : cart.push({ menuId: id, qty: 1, note: '' });
+  renderItems(); renderCart();
+}
+function changeQty(i, d) { cart[i].qty += d; if (cart[i].qty < 1) cart.splice(i, 1); render(); }
+function setNote(i) {
+  const n = prompt('Poznámka k položke (napr. bez ľadu):', cart[i].note);
+  if (n !== null) { cart[i].note = n.trim(); render(); }
+}
+
+function renderCart() {
+  const el = $('#cart');
+  if (!cart.length) return el.classList.add('hide');
+  el.classList.remove('hide');
+  const m = id => S.menu.find(x => x.id === id) || { name: '?', price: 0 };
+  const total = cart.reduce((a, c) => a + m(c.menuId).price * c.qty, 0);
+  el.innerHTML = `<div class="cart-in"><div class="cart-list">${cart.map((c, i) => `
+    <div class="line"><div class="n">${esc(m(c.menuId).name)}
+      <small onclick="setNote(${i})" style="cursor:pointer">${c.note ? '✎ ' + esc(c.note) : '+ poznámka'}</small></div>
+      <button class="qb" onclick="changeQty(${i},-1)">−</button><b>${c.qty}</b>
+      <button class="qb" onclick="changeQty(${i},1)">+</button></div>`).join('')}</div>
+    <input id="onote" placeholder="Poznámka k objednávke (nepovinné)" value="${esc(orderNote)}" oninput="orderNote=this.value" style="margin-bottom:8px">
+    <button class="btn" id="sendBtn" onclick="sendOrder()">Odoslať na bar · ${eur(total)}</button></div>`;
+}
+
+async function sendOrder() {
+  $('#sendBtn').disabled = true;
+  try {
+    await call('POST', '/api/orders', { tableId, items: cart, note: orderNote, waiter: store.get('waiter', '') });
+    cart = []; orderNote = ''; toast('Odoslané na bar ✓'); render();
+  } catch { $('#sendBtn') && ($('#sendBtn').disabled = false); }
+}
+async function setStatus(id, status) { await call('POST', `/api/orders/${id}/status`, { status }); }
+async function cancelOrder(id) { if (confirm('Zrušiť túto objednávku?')) await call('DELETE', `/api/orders/${id}`); }
+
+function renderBill() {
+  const os = tableOrders(tableId);
+  const agg = {};
+  os.forEach(o => o.items.forEach(i => {
+    const k = i.name + '|' + i.price;
+    agg[k] = agg[k] || { name: i.name, price: i.price, qty: 0 }; agg[k].qty += i.qty;
+  }));
+  const rows = Object.values(agg);
+  $('#app').innerHTML = `<div class="card">
+    <p class="muted" style="margin-top:0">Tieto položky namarkujte do VRP2, vystavte doklad a potom stlačte <b>Zaplatené</b>.</p>
+    ${rows.length ? rows.map(r => `<div class="line"><div class="n"><b>${r.qty}×</b> ${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${eur(r.price * r.qty)}</b></div>`).join('')
+      : '<div class="empty">Stôl nemá žiadne otvorené objednávky.</div>'}
+    <div class="total"><span>Spolu</span><span>${eur(sumOrders(os))}</span></div></div>
+    <div style="display:grid;gap:8px;margin-top:12px">
+      ${rows.length ? `<button class="btn ok" onclick="pay()">Zaplatené (namarkované vo VRP2)</button>` : ''}
+      <button class="btn ghost" onclick="view='order';render()">Späť na objednávanie</button></div>`;
+}
+async function pay() {
+  if (!confirm('Označiť stôl ako zaplatený? Objednávky sa uzavrú.')) return;
+  await call('POST', `/api/tables/${tableId}/pay`); tableId = null; toast('Stôl uzavretý ✓'); render();
+}
+
+function renderBar() {
+  const nove = open().filter(o => o.status === 'nova').sort((a, b) => a.createdAt - b.createdAt);
+  const hot = open().filter(o => o.status === 'hotova');
+  $('#app').innerHTML = `
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" style="width:auto;padding:8px 12px" onclick="toggleSound()">${sound ? '🔔 Zvuk zapnutý' : '🔕 Zvuk vypnutý'}</button></div>
+    <h2>Pripraviť (${nove.length})</h2>
+    ${nove.length ? `<div class="bar-grid">${nove.map(o => `<div class="order nova">
+      <h3>${esc(o.tableName)} <span class="muted">#${o.no}</span><small>${ago(o.createdAt)}${o.waiter ? ' · ' + esc(o.waiter) : ''}</small></h3>
+      <ul>${o.items.map(i => `<li><b>${i.qty}×</b>${esc(i.name)}${i.note ? `<i>${esc(i.note)}</i>` : ''}</li>`).join('')}</ul>
+      ${o.note ? `<div class="note">${esc(o.note)}</div>` : ''}
+      <button class="btn ok" onclick="setStatus('${o.id}','hotova')">Hotové – na odnesenie</button></div>`).join('')}</div>`
+      : '<div class="empty">Žiadne nové objednávky ☕</div>'}
+    ${hot.length ? `<h2>Čaká na odnesenie (${hot.length})</h2><div class="bar-grid">${hot.map(o => `<div class="order hotova">
+      <h3>${esc(o.tableName)} <span class="muted">#${o.no}</span><small>${ago(o.hotovaAt || o.createdAt)}</small></h3>
+      <ul>${o.items.map(i => `<li><b>${i.qty}×</b>${esc(i.name)}</li>`).join('')}</ul>
+      <div class="row"><button class="btn ghost" onclick="setStatus('${o.id}','nova')">Vrátiť</button>
+      <button class="btn ok" onclick="setStatus('${o.id}','vydana')">Odnesené</button></div></div>`).join('')}</div>` : ''}`;
+}
+function toggleSound() { sound = !sound; store.set('sound', sound); if (sound) beep([880]); render(); }
+
+function renderSettings() {
+  const t = S.tables.map(x => `<div class="set-row t">
+    <input value="${esc(x.name)}" onchange="call('PUT','/api/tables/${x.id}',{name:this.value})">
+    <button class="del" onclick="delTable('${x.id}')">Zmazať</button></div>`).join('');
+  const cats = [...new Set(S.menu.map(m => m.category))];
+  const menu = cats.map(c => `<h3 style="margin:14px 0 6px">${esc(c)}</h3>` + S.menu.filter(m => m.category === c).map(m => `
+    <div class="set-row">
+      <input value="${esc(m.name)}" onchange="call('PUT','/api/menu/${m.id}',{name:this.value})">
+      <input type="number" step="0.01" min="0" inputmode="decimal" value="${m.price}" onchange="call('PUT','/api/menu/${m.id}',{price:this.value})">
+      <input class="cat" list="catlist" value="${esc(m.category)}" onchange="call('PUT','/api/menu/${m.id}',{category:this.value})">
+      <button class="del" onclick="delItem('${m.id}')">✕</button></div>`).join('')).join('');
+  $('#app').innerHTML = `
+    <h2>Toto zariadenie</h2><div class="card">
+      <label class="muted">Meno čašníka (zobrazí sa na bare)</label>
+      <input value="${esc(store.get('waiter', ''))}" oninput="store.set('waiter',this.value)" placeholder="napr. Peter">
+      <button class="btn ghost" style="margin-top:10px" onclick="logout()">Odhlásiť</button></div>
+    <h2>Stoly</h2><div class="card">${t}
+      <div class="set-row t" style="margin-top:10px"><input id="newT" placeholder="Názov nového stola, napr. Terasa 2">
+      <button class="btn" style="width:auto" onclick="addTable()">Pridať</button></div></div>
+    <h2>Menu</h2><div class="card">
+      <datalist id="catlist">${cats.map(c => `<option value="${esc(c)}">`).join('')}</datalist>
+      <div class="set-row muted" style="font-size:13px"><span>Názov</span><span>Cena €</span><span class="cat">Kategória</span><span></span></div>
+      ${menu || '<p class="muted">Menu je prázdne.</p>'}
+      <div class="set-row" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
+        <input id="nN" placeholder="Nová položka"><input id="nP" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00">
+        <input id="nC" class="cat" list="catlist" placeholder="Kategória"><button class="btn" style="width:auto" onclick="addItemMenu()">+</button></div></div>`;
+}
+async function addTable() { const v = $('#newT').value.trim(); if (v) await call('POST', '/api/tables', { name: v }); }
+async function delTable(id) { if (confirm('Zmazať stôl?')) await call('DELETE', '/api/tables/' + id); }
+async function addItemMenu() {
+  const name = $('#nN').value.trim(), price = $('#nP').value.replace(',', '.'), category = $('#nC').value.trim();
+  if (!name || price === '') return toast('Zadajte názov a cenu');
+  await call('POST', '/api/menu', { name, price, category });
+}
+async function delItem(id) { if (confirm('Zmazať položku z menu?')) await call('DELETE', '/api/menu/' + id); }
+
+// ---------- navigácia ----------
+document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
+  role = b.dataset.role; store.set('role', role); tableId = null; render(); scrollTo(0, 0);
+});
+$('#backBtn').onclick = () => { tableId = null; render(); };
+setInterval(() => { if (role !== 'nastavenia') safeRender(); }, 30000); // obnoví "pred X min"
+connect();
+</script>
+</body>
+</html>

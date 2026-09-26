@@ -1,0 +1,1952 @@
+[
+ {
+  "id": "v001",
+  "name": "Biliard",
+  "price": 0.1,
+  "category": "HRY"
+ },
+ {
+  "id": "v002",
+  "name": "Laser game dieťa do 15 r., ZŤP",
+  "price": 5.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v003",
+  "name": "Laser game dospelý",
+  "price": 6.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v004",
+  "name": "Laser game študent",
+  "price": 5.5,
+  "category": "HRY"
+ },
+ {
+  "id": "v005",
+  "name": "Pixel space 1 osoba 15 minút",
+  "price": 4.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v006",
+  "name": "Pixel space 1 osoba 30 minút",
+  "price": 8.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v007",
+  "name": "Pixel space 6 osôb 30 minút",
+  "price": 42.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v008",
+  "name": "PlayStation 5",
+  "price": 6.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v009",
+  "name": "PlayStation 5 30min",
+  "price": 3.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v010",
+  "name": "PlayStation 5 extra ovládač",
+  "price": 1.5,
+  "category": "HRY"
+ },
+ {
+  "id": "v011",
+  "name": "Šípky 1h",
+  "price": 4.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v012",
+  "name": "Stolný futbal",
+  "price": 0.5,
+  "category": "HRY"
+ },
+ {
+  "id": "v013",
+  "name": "Stolný tenis 1h",
+  "price": 6.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v014",
+  "name": "Stolný tenis 30 min",
+  "price": 3.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v015",
+  "name": "Virtuálna realita HTC Vive 1h",
+  "price": 20.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v016",
+  "name": "Virtuálna realita HTC Vive 30 min",
+  "price": 12.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v017",
+  "name": "XBOX Kinect 1h",
+  "price": 6.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v018",
+  "name": "XBOX Kinect 30 min",
+  "price": 3.0,
+  "category": "HRY"
+ },
+ {
+  "id": "v019",
+  "name": "Čapovaná sóda 0,3 l",
+  "price": 1.2,
+  "category": "Nealko"
+ },
+ {
+  "id": "v020",
+  "name": "Čapovaná sóda 0,5 l",
+  "price": 2.0,
+  "category": "Nealko"
+ },
+ {
+  "id": "v021",
+  "name": "Čapovaná sóda 1,5 l",
+  "price": 5.9,
+  "category": "Nealko"
+ },
+ {
+  "id": "v022",
+  "name": "Detské šumivé víno",
+  "price": 7.5,
+  "category": "Nealko"
+ },
+ {
+  "id": "v023",
+  "name": "Granini džús (podľa ponuky)",
+  "price": 2.2,
+  "category": "Nealko"
+ },
+ {
+  "id": "v024",
+  "name": "Kofola originál čapák 0.3l",
+  "price": 1.8,
+  "category": "Nealko"
+ },
+ {
+  "id": "v025",
+  "name": "Kofola originál čapák 0.5l",
+  "price": 2.4,
+  "category": "Nealko"
+ },
+ {
+  "id": "v026",
+  "name": "Kofola originál čapák 1.5l",
+  "price": 6.9,
+  "category": "Nealko"
+ },
+ {
+  "id": "v027",
+  "name": "Lipton ľadový čaj (citrón, broskyňa, zelený)",
+  "price": 2.1,
+  "category": "Nealko"
+ },
+ {
+  "id": "v028",
+  "name": "Mattoni",
+  "price": 1.9,
+  "category": "Nealko"
+ },
+ {
+  "id": "v029",
+  "name": "Pepsi, 7UP, Mirinda, Tonic",
+  "price": 2.2,
+  "category": "Nealko"
+ },
+ {
+  "id": "v030",
+  "name": "Red Bull",
+  "price": 3.2,
+  "category": "Nealko"
+ },
+ {
+  "id": "v031",
+  "name": "Bakalář 11 čapák 0.3l",
+  "price": 1.8,
+  "category": "Pivo"
+ },
+ {
+  "id": "v032",
+  "name": "Bakalář 11 čapák 0.5l",
+  "price": 2.5,
+  "category": "Pivo"
+ },
+ {
+  "id": "v033",
+  "name": "Bakalař 11 čapák 1l",
+  "price": 4.0,
+  "category": "Pivo"
+ },
+ {
+  "id": "v034",
+  "name": "Bakalář medový flaškové",
+  "price": 2.4,
+  "category": "Pivo"
+ },
+ {
+  "id": "v035",
+  "name": "Bakalář nealko flaškové",
+  "price": 2.4,
+  "category": "Pivo"
+ },
+ {
+  "id": "v036",
+  "name": "Bakalář za studena chmelený flaškové",
+  "price": 2.4,
+  "category": "Pivo"
+ },
+ {
+  "id": "v037",
+  "name": "Corona extra",
+  "price": 3.3,
+  "category": "Pivo"
+ },
+ {
+  "id": "v038",
+  "name": "Desperados",
+  "price": 3.3,
+  "category": "Pivo"
+ },
+ {
+  "id": "v039",
+  "name": "Radler nealko flaškové",
+  "price": 2.4,
+  "category": "Pivo"
+ },
+ {
+  "id": "v040",
+  "name": "Absolut Swedish coffee",
+  "price": 6.5,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v041",
+  "name": "Belgická horúca čokoláda",
+  "price": 3.8,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v042",
+  "name": "Čaj BonThé",
+  "price": 2.7,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v043",
+  "name": "Čaj z čerstvého zázvoru",
+  "price": 3.0,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v044",
+  "name": "Čaj z čerstvej mäty",
+  "price": 3.0,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v045",
+  "name": "Cappuccino",
+  "price": 2.7,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v046",
+  "name": "Doppio",
+  "price": 3.2,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v047",
+  "name": "Espresso",
+  "price": 2.1,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v048",
+  "name": "Espresso lungo",
+  "price": 2.1,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v049",
+  "name": "Flat white",
+  "price": 3.8,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v050",
+  "name": "Ľadová káva",
+  "price": 3.8,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v051",
+  "name": "Latte Macchiatto",
+  "price": 3.2,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v052",
+  "name": "Posýpka extra",
+  "price": 0.5,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v053",
+  "name": "Príchuť do kávy",
+  "price": 0.5,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v054",
+  "name": "Šľahačka",
+  "price": 0.6,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v055",
+  "name": "Viedenská káva",
+  "price": 3.2,
+  "category": "Teplé nápoje"
+ },
+ {
+  "id": "v056",
+  "name": "Beefeater 40%",
+  "price": 2.5,
+  "category": "Gin"
+ },
+ {
+  "id": "v057",
+  "name": "Beefeater Grapefruit 37,5%",
+  "price": 2.5,
+  "category": "Gin"
+ },
+ {
+  "id": "v058",
+  "name": "Beefeater Orange 37,5%",
+  "price": 2.5,
+  "category": "Gin"
+ },
+ {
+  "id": "v059",
+  "name": "Beefeater Peach 37,5%",
+  "price": 2.5,
+  "category": "Gin"
+ },
+ {
+  "id": "v060",
+  "name": "Beefeater Pink 37,5%",
+  "price": 2.5,
+  "category": "Gin"
+ },
+ {
+  "id": "v061",
+  "name": "Bombay Sapphire 40%",
+  "price": 3.1,
+  "category": "Gin"
+ },
+ {
+  "id": "v062",
+  "name": "Bulldog 40%",
+  "price": 4.1,
+  "category": "Gin"
+ },
+ {
+  "id": "v063",
+  "name": "Canaima 47%",
+  "price": 4.9,
+  "category": "Gin"
+ },
+ {
+  "id": "v064",
+  "name": "Citadelle Jardin d'Été 41,5%",
+  "price": 4.1,
+  "category": "Gin"
+ },
+ {
+  "id": "v065",
+  "name": "Citadelle Reserve 45,2%",
+  "price": 4.8,
+  "category": "Gin"
+ },
+ {
+  "id": "v066",
+  "name": "Citadelle Rouge 41,7%",
+  "price": 4.5,
+  "category": "Gin"
+ },
+ {
+  "id": "v067",
+  "name": "Dr Oscar Kramer 36%",
+  "price": 3.8,
+  "category": "Gin"
+ },
+ {
+  "id": "v068",
+  "name": "Gin Gin 43,2%",
+  "price": 4.1,
+  "category": "Gin"
+ },
+ {
+  "id": "v069",
+  "name": "Gin Mare 42,7%",
+  "price": 5.9,
+  "category": "Gin"
+ },
+ {
+  "id": "v070",
+  "name": "Gin shot",
+  "price": 3.0,
+  "category": "Gin"
+ },
+ {
+  "id": "v071",
+  "name": "Hendrick's 41,4%",
+  "price": 4.6,
+  "category": "Gin"
+ },
+ {
+  "id": "v072",
+  "name": "Hendrick's Flora Adora 43,4%",
+  "price": 5.4,
+  "category": "Gin"
+ },
+ {
+  "id": "v073",
+  "name": "Hendrick's Grand Cabaret 43,4%",
+  "price": 5.4,
+  "category": "Gin"
+ },
+ {
+  "id": "v074",
+  "name": "Hendrick's Oasium 43,4%",
+  "price": 5.4,
+  "category": "Gin"
+ },
+ {
+  "id": "v075",
+  "name": "KI NO BI 45,7%",
+  "price": 6.9,
+  "category": "Gin"
+ },
+ {
+  "id": "v076",
+  "name": "Larios 12 40%",
+  "price": 2.5,
+  "category": "Gin"
+ },
+ {
+  "id": "v077",
+  "name": "McQueen Violet Fog 40%",
+  "price": 4.9,
+  "category": "Gin"
+ },
+ {
+  "id": "v078",
+  "name": "Mermaid Pink",
+  "price": 5.8,
+  "category": "Gin"
+ },
+ {
+  "id": "v079",
+  "name": "Monkey 47 47%",
+  "price": 7.8,
+  "category": "Gin"
+ },
+ {
+  "id": "v080",
+  "name": "Roku 43%",
+  "price": 4.9,
+  "category": "Gin"
+ },
+ {
+  "id": "v081",
+  "name": "Tanqueray No.10 47,3%",
+  "price": 4.7,
+  "category": "Gin"
+ },
+ {
+  "id": "v082",
+  "name": "Tanqueray Sevilla 41,3%",
+  "price": 3.1,
+  "category": "Gin"
+ },
+ {
+  "id": "v083",
+  "name": "The Botanist 46%",
+  "price": 5.9,
+  "category": "Gin"
+ },
+ {
+  "id": "v084",
+  "name": "A.H. Riise Black Coral",
+  "price": 60.0,
+  "category": "Rum"
+ },
+ {
+  "id": "v085",
+  "name": "A.H. Riise Black Edition NPU",
+  "price": 13.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v086",
+  "name": "A.H. Riise Black Spinel",
+  "price": 60.0,
+  "category": "Rum"
+ },
+ {
+  "id": "v087",
+  "name": "A.H. Riise Royal Danish Navy Naval Cadet",
+  "price": 6.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v088",
+  "name": "A.H. Riise Signature",
+  "price": 21.0,
+  "category": "Rum"
+ },
+ {
+  "id": "v089",
+  "name": "A.H. Riise XO 175 Anniversary",
+  "price": 8.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v090",
+  "name": "A.H.Riise Ambre N.P.U. 42%",
+  "price": 13.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v091",
+  "name": "A.H.Riise Black Larimar 45,2%",
+  "price": 60.0,
+  "category": "Rum"
+ },
+ {
+  "id": "v092",
+  "name": "A.H.Riise La Galante N.P.U. 43.4%",
+  "price": 13.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v093",
+  "name": "A.H.Riise Very Rare N.P.U. 42%",
+  "price": 12.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v094",
+  "name": "Bacardi Carta Blanca 37,5%",
+  "price": 2.3,
+  "category": "Rum"
+ },
+ {
+  "id": "v095",
+  "name": "Barceló Gran Anejo 37,5%",
+  "price": 3.1,
+  "category": "Rum"
+ },
+ {
+  "id": "v096",
+  "name": "Barceló Imperial Onyx 38%",
+  "price": 6.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v097",
+  "name": "Blue Mauritius Gold 40%",
+  "price": 6.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v098",
+  "name": "Bumbu 40%",
+  "price": 4.2,
+  "category": "Rum"
+ },
+ {
+  "id": "v099",
+  "name": "Bumbu Cream 15%",
+  "price": 4.2,
+  "category": "Rum"
+ },
+ {
+  "id": "v100",
+  "name": "Bumbu XO 40%",
+  "price": 5.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v101",
+  "name": "Canerock 40%",
+  "price": 5.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v102",
+  "name": "Captain Morgan 35%",
+  "price": 2.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v103",
+  "name": "Centenario 20 YO 40%",
+  "price": 7.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v104",
+  "name": "Centenario 30 Edición Limitada 40%",
+  "price": 17.0,
+  "category": "Rum"
+ },
+ {
+  "id": "v105",
+  "name": "Cihuatán XAMAN XO 40%",
+  "price": 14.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v106",
+  "name": "Compaňero Orange 40%",
+  "price": 4.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v107",
+  "name": "Demon's Share 6 YO 40%",
+  "price": 3.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v108",
+  "name": "Dictador 12 YO 40%",
+  "price": 5.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v109",
+  "name": "Dictador 20 YO 40%",
+  "price": 7.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v110",
+  "name": "Diplomatico reserva 40%",
+  "price": 5.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v111",
+  "name": "Don Papa 10 YO 43%",
+  "price": 13.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v112",
+  "name": "Don Papa 40%",
+  "price": 5.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v113",
+  "name": "Don Papa Baroko 40%",
+  "price": 6.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v114",
+  "name": "Don Papa Gayuma 40%",
+  "price": 9.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v115",
+  "name": "Don Papa Masskara 40%",
+  "price": 5.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v116",
+  "name": "Dos Maderas 5+5 40%",
+  "price": 4.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v117",
+  "name": "El Dorado 15 YO 43%",
+  "price": 7.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v118",
+  "name": "El General 40%",
+  "price": 4.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v119",
+  "name": "Eminente reserva 41,3%",
+  "price": 7.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v120",
+  "name": "Eximo 40%",
+  "price": 13.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v121",
+  "name": "Havana Club Anejo 3 ročná 40%",
+  "price": 2.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v122",
+  "name": "Hell XO 40%",
+  "price": 4.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v123",
+  "name": "Kraken Black Spiced 40%",
+  "price": 3.75,
+  "category": "Rum"
+ },
+ {
+  "id": "v124",
+  "name": "La Hechicera Banana 41%",
+  "price": 8.3,
+  "category": "Rum"
+ },
+ {
+  "id": "v125",
+  "name": "Legendario de Cuba 34%",
+  "price": 3.1,
+  "category": "Rum"
+ },
+ {
+  "id": "v126",
+  "name": "Matusalem 15 YO 40%",
+  "price": 4.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v127",
+  "name": "Millonario 15 YO 40%",
+  "price": 7.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v128",
+  "name": "Millonario XO reserva 40%",
+  "price": 15.2,
+  "category": "Rum"
+ },
+ {
+  "id": "v129",
+  "name": "Pampero Aniversario Reserva 40%",
+  "price": 3.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v130",
+  "name": "Piquero 40%",
+  "price": 5.0,
+  "category": "Rum"
+ },
+ {
+  "id": "v131",
+  "name": "Piquero Rojo 40%",
+  "price": 5.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v132",
+  "name": "Plantation Isle Of Fiji 40%",
+  "price": 4.2,
+  "category": "Rum"
+ },
+ {
+  "id": "v133",
+  "name": "Plantation XO 40%",
+  "price": 7.6,
+  "category": "Rum"
+ },
+ {
+  "id": "v134",
+  "name": "Planteray Barbados reserve 40%",
+  "price": 3.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v135",
+  "name": "Planteray Cut & Dry 40%",
+  "price": 3.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v136",
+  "name": "Pyrat XO Reserve 40%",
+  "price": 5.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v137",
+  "name": "Rum Bacardí 10yo Reserva 40%",
+  "price": 4.8,
+  "category": "Rum"
+ },
+ {
+  "id": "v138",
+  "name": "Rum Diplomático Single Vintage 43%",
+  "price": 26.0,
+  "category": "Rum"
+ },
+ {
+  "id": "v139",
+  "name": "Rum Puntacana Club MUY Viejo 37,5%",
+  "price": 3.2,
+  "category": "Rum"
+ },
+ {
+  "id": "v140",
+  "name": "Santos Dumont Heritage 43,8%",
+  "price": 21.0,
+  "category": "Rum"
+ },
+ {
+  "id": "v141",
+  "name": "Santos Dumont XO 40%",
+  "price": 7.5,
+  "category": "Rum"
+ },
+ {
+  "id": "v142",
+  "name": "Toison 41,7%",
+  "price": 4.7,
+  "category": "Rum"
+ },
+ {
+  "id": "v143",
+  "name": "Toison Ruby 38%",
+  "price": 4.7,
+  "category": "Rum"
+ },
+ {
+  "id": "v144",
+  "name": "Zacapa Centenario 23 40%",
+  "price": 7.9,
+  "category": "Rum"
+ },
+ {
+  "id": "v145",
+  "name": "Zacapa Centenario XO 40%",
+  "price": 19.0,
+  "category": "Rum"
+ },
+ {
+  "id": "v146",
+  "name": "Citronáda 0.5l",
+  "price": 2.5,
+  "category": "Limonády"
+ },
+ {
+  "id": "v147",
+  "name": "Citronáda 1.5l",
+  "price": 4.9,
+  "category": "Limonády"
+ },
+ {
+  "id": "v148",
+  "name": "Citronáda 1l",
+  "price": 4.2,
+  "category": "Limonády"
+ },
+ {
+  "id": "v149",
+  "name": "Limonáda 0,5l",
+  "price": 3.9,
+  "category": "Limonády"
+ },
+ {
+  "id": "v150",
+  "name": "Limonáda 1.5l",
+  "price": 8.9,
+  "category": "Limonády"
+ },
+ {
+  "id": "v151",
+  "name": "Limonáda 1l",
+  "price": 6.9,
+  "category": "Limonády"
+ },
+ {
+  "id": "v152",
+  "name": "Absolut 40%",
+  "price": 2.4,
+  "category": "Vodka"
+ },
+ {
+  "id": "v153",
+  "name": "Absolut Elyx 42,3%",
+  "price": 7.5,
+  "category": "Vodka"
+ },
+ {
+  "id": "v154",
+  "name": "Belvedere 40%",
+  "price": 5.9,
+  "category": "Vodka"
+ },
+ {
+  "id": "v155",
+  "name": "Crystal Head 40%",
+  "price": 7.9,
+  "category": "Vodka"
+ },
+ {
+  "id": "v156",
+  "name": "Double Cross 40%",
+  "price": 9.9,
+  "category": "Vodka"
+ },
+ {
+  "id": "v157",
+  "name": "Finlandia 40%",
+  "price": 2.4,
+  "category": "Vodka"
+ },
+ {
+  "id": "v158",
+  "name": "Grey Goose 40%",
+  "price": 6.2,
+  "category": "Vodka"
+ },
+ {
+  "id": "v159",
+  "name": "Kurant 40%",
+  "price": 3.5,
+  "category": "Vodka"
+ },
+ {
+  "id": "v160",
+  "name": "Nicolaus 38%",
+  "price": 2.3,
+  "category": "Vodka"
+ },
+ {
+  "id": "v161",
+  "name": "Smirnoff Red 37,5%",
+  "price": 2.4,
+  "category": "Vodka"
+ },
+ {
+  "id": "v162",
+  "name": "Herradura Silver 40%",
+  "price": 5.9,
+  "category": "Tequila"
+ },
+ {
+  "id": "v163",
+  "name": "Olé Mexicana Gold 38%",
+  "price": 2.2,
+  "category": "Tequila"
+ },
+ {
+  "id": "v164",
+  "name": "Olé Mexicana Silver 38%",
+  "price": 2.2,
+  "category": "Tequila"
+ },
+ {
+  "id": "v165",
+  "name": "Olmeca Reposado 35%",
+  "price": 3.1,
+  "category": "Tequila"
+ },
+ {
+  "id": "v166",
+  "name": "Olmeca Silver 35%",
+  "price": 3.1,
+  "category": "Tequila"
+ },
+ {
+  "id": "v167",
+  "name": "Patron Anejo 40%",
+  "price": 7.9,
+  "category": "Tequila"
+ },
+ {
+  "id": "v168",
+  "name": "Teremana Anejo 40%",
+  "price": 5.9,
+  "category": "Tequila"
+ },
+ {
+  "id": "v169",
+  "name": "Teremana Blanco 40%",
+  "price": 4.7,
+  "category": "Tequila"
+ },
+ {
+  "id": "v170",
+  "name": "Teremana Reposado 40%",
+  "price": 5.3,
+  "category": "Tequila"
+ },
+ {
+  "id": "v171",
+  "name": "Aberlour 12 YO 40%",
+  "price": 6.3,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v172",
+  "name": "Ballantines 40%",
+  "price": 2.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v173",
+  "name": "Balvenie 12 YO 40%",
+  "price": 9.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v174",
+  "name": "Black Barrel 40%",
+  "price": 4.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v175",
+  "name": "Bushmills 40%",
+  "price": 2.9,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v176",
+  "name": "Chivas Regal 12 YO 40%",
+  "price": 3.7,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v177",
+  "name": "Chivas Regal Ultis 40%",
+  "price": 24.0,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v178",
+  "name": "Chivas Regal XV 40%",
+  "price": 5.9,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v179",
+  "name": "Glenfiddich 18yo Ancient 40%",
+  "price": 13.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v180",
+  "name": "Glenfiddich 21yo 40%",
+  "price": 23.0,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v181",
+  "name": "Glenlivet 15 YO 40%",
+  "price": 9.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v182",
+  "name": "Glenmorangie Lasanta 4cl",
+  "price": 7.2,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v183",
+  "name": "Glenmorangie Nectar 46%",
+  "price": 8.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v184",
+  "name": "Glenmorangie Nectar 4cl",
+  "price": 8.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v185",
+  "name": "Hyde No.6 Sherry 46%",
+  "price": 6.2,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v186",
+  "name": "Hyde No.8 Stout 43%",
+  "price": 3.8,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v187",
+  "name": "Jack Daniels 40%",
+  "price": 3.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v188",
+  "name": "Jack Daniels Apple 35%",
+  "price": 3.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v189",
+  "name": "Jack Daniels Fire 35%",
+  "price": 3.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v190",
+  "name": "Jack Daniels Gentleman 40%",
+  "price": 4.1,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v191",
+  "name": "Jack Daniels Honey 40%",
+  "price": 3.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v192",
+  "name": "Jack Daniels Single Barrel 45%",
+  "price": 6.9,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v193",
+  "name": "Jameson 18 YO 46%",
+  "price": 18.0,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v194",
+  "name": "Jameson 40%",
+  "price": 3.0,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v195",
+  "name": "Jameson Crested 40%",
+  "price": 4.1,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v196",
+  "name": "Jameson Orange 30%",
+  "price": 3.1,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v197",
+  "name": "Lagavulin 16 YO 43%",
+  "price": 16.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v198",
+  "name": "Laphroaig 10 YO 40%",
+  "price": 6.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v199",
+  "name": "Makers Mark Bourbon 45%",
+  "price": 4.9,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v200",
+  "name": "Monkey Shoulder 40%",
+  "price": 4.7,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v201",
+  "name": "Nikka from the barrel 51,4%",
+  "price": 9.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v202",
+  "name": "Redbreast 15 YO 46%",
+  "price": 9.9,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v203",
+  "name": "Redbreast Lastau 46%",
+  "price": 9.9,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v204",
+  "name": "Royal Salute 40%",
+  "price": 19.0,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v205",
+  "name": "Scapa Skiren 40%",
+  "price": 9.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v206",
+  "name": "Seagrams 7 Crown 40%",
+  "price": 2.5,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v207",
+  "name": "Tullamore Dew 40%",
+  "price": 3.0,
+  "category": "Whiskey"
+ },
+ {
+  "id": "v208",
+  "name": "Chipsy Lays",
+  "price": 3.5,
+  "category": "Pochutiny"
+ },
+ {
+  "id": "v209",
+  "name": "Chrumky",
+  "price": 1.6,
+  "category": "Pochutiny"
+ },
+ {
+  "id": "v210",
+  "name": "DRU tyčinky",
+  "price": 1.3,
+  "category": "Pochutiny"
+ },
+ {
+  "id": "v211",
+  "name": "Šenkvické tyčinky",
+  "price": 1.6,
+  "category": "Pochutiny"
+ },
+ {
+  "id": "v212",
+  "name": "Aperol spritz",
+  "price": 6.1,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v213",
+  "name": "B52",
+  "price": 4.9,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v214",
+  "name": "Baworak",
+  "price": 5.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v215",
+  "name": "BKM",
+  "price": 5.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v216",
+  "name": "Blue Hawaiian",
+  "price": 7.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v217",
+  "name": "Bubble mango",
+  "price": 5.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v218",
+  "name": "Cuba libre",
+  "price": 6.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v219",
+  "name": "Daiquiri",
+  "price": 6.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v220",
+  "name": "Expresso martini",
+  "price": 7.1,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v221",
+  "name": "Gin sour",
+  "price": 6.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v222",
+  "name": "Gin tonic",
+  "price": 6.0,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v223",
+  "name": "Hugo spritz",
+  "price": 6.1,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v224",
+  "name": "Hurrican",
+  "price": 7.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v225",
+  "name": "Jäger bomb",
+  "price": 4.9,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v226",
+  "name": "Jäger mojito",
+  "price": 8.0,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v227",
+  "name": "Lady in Red",
+  "price": 7.2,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v228",
+  "name": "Long Island Iced Tea",
+  "price": 8.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v229",
+  "name": "Lynchburg lemonade",
+  "price": 7.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v230",
+  "name": "Malibu pineapple",
+  "price": 4.9,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v231",
+  "name": "Margarita",
+  "price": 7.2,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v232",
+  "name": "Mário",
+  "price": 6.8,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v233",
+  "name": "Mojito klasické",
+  "price": 6.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v234",
+  "name": "Mojito ochutené",
+  "price": 7.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v235",
+  "name": "Moscow mule",
+  "price": 7.9,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v236",
+  "name": "Negroni",
+  "price": 6.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v237",
+  "name": "Oscar tonic",
+  "price": 6.0,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v238",
+  "name": "Paloma",
+  "price": 7.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v239",
+  "name": "Pina colada",
+  "price": 7.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v240",
+  "name": "Pornstar martini",
+  "price": 8.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v241",
+  "name": "Rozmarín collins",
+  "price": 6.9,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v242",
+  "name": "S*x on the beach",
+  "price": 6.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v243",
+  "name": "Screaming cream",
+  "price": 8.4,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v244",
+  "name": "Screwdriver",
+  "price": 5.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v245",
+  "name": "Side car",
+  "price": 7.2,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v246",
+  "name": "Skinny b*tch",
+  "price": 5.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v247",
+  "name": "Tequila sunrise",
+  "price": 6.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v248",
+  "name": "Virgin Gin tonic",
+  "price": 5.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v249",
+  "name": "Virgin Mojito klasické",
+  "price": 5.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v250",
+  "name": "Virgin Mojito ochutené",
+  "price": 6.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v251",
+  "name": "Virgin Pina colada",
+  "price": 6.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v252",
+  "name": "Virgin Summer holiday",
+  "price": 5.5,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v253",
+  "name": "Whiskey old Fashioned",
+  "price": 7.2,
+  "category": "Miešané nápoje"
+ },
+ {
+  "id": "v254",
+  "name": "Žufánek Absinthe 70%",
+  "price": 6.5,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v255",
+  "name": "Žufánek Bodamská Malina 42%",
+  "price": 5.1,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v256",
+  "name": "Žufánek Borovička 45%",
+  "price": 4.1,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v257",
+  "name": "Žufánek Hruškovica 45%",
+  "price": 4.85,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v258",
+  "name": "Žufánek Hruškovica z dubového suda 40%",
+  "price": 6.55,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v259",
+  "name": "Žufánek Jablkovica 45%",
+  "price": 3.9,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v260",
+  "name": "Žufánek Kontusovka 40%",
+  "price": 4.8,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v261",
+  "name": "Žufánek Máta Hari 20%",
+  "price": 4.8,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v262",
+  "name": "Žufánek Meruňkovica 45%",
+  "price": 4.3,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v263",
+  "name": "Žufánek Oh My Gin 45%",
+  "price": 6.1,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v264",
+  "name": "Žufánek Orechovka 35%",
+  "price": 3.7,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v265",
+  "name": "Žufánek Reine Claude 45%",
+  "price": 4.6,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v266",
+  "name": "Žufánek Slivovica 50%",
+  "price": 4.6,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v267",
+  "name": "Žufánek Višňovka 20%",
+  "price": 3.2,
+  "category": "Žufánek"
+ },
+ {
+  "id": "v268",
+  "name": "Amaretto Disaronno Originale 28%",
+  "price": 3.2,
+  "category": "Likéry"
+ },
+ {
+  "id": "v269",
+  "name": "Aperol 11%",
+  "price": 2.7,
+  "category": "Likéry"
+ },
+ {
+  "id": "v270",
+  "name": "Ararat Apricot 35%",
+  "price": 3.1,
+  "category": "Likéry"
+ },
+ {
+  "id": "v271",
+  "name": "Baileys 17%",
+  "price": 2.2,
+  "category": "Likéry"
+ },
+ {
+  "id": "v272",
+  "name": "Baileys Strawberries&Cream 17%",
+  "price": 2.8,
+  "category": "Likéry"
+ },
+ {
+  "id": "v273",
+  "name": "Baileys Tiramisu 17%",
+  "price": 2.8,
+  "category": "Likéry"
+ },
+ {
+  "id": "v274",
+  "name": "Becherovka 38%",
+  "price": 2.5,
+  "category": "Likéry"
+ },
+ {
+  "id": "v275",
+  "name": "Bentianna 13%",
+  "price": 2.5,
+  "category": "Likéry"
+ },
+ {
+  "id": "v276",
+  "name": "Campari 25%",
+  "price": 2.6,
+  "category": "Likéry"
+ },
+ {
+  "id": "v277",
+  "name": "Cointreau 40%",
+  "price": 2.9,
+  "category": "Likéry"
+ },
+ {
+  "id": "v278",
+  "name": "Fernet citrus 27%",
+  "price": 2.4,
+  "category": "Likéry"
+ },
+ {
+  "id": "v279",
+  "name": "Fernet stock 38%",
+  "price": 2.4,
+  "category": "Likéry"
+ },
+ {
+  "id": "v280",
+  "name": "Grand Marnier 40%",
+  "price": 4.9,
+  "category": "Likéry"
+ },
+ {
+  "id": "v281",
+  "name": "Jägermeister 35%",
+  "price": 2.6,
+  "category": "Likéry"
+ },
+ {
+  "id": "v282",
+  "name": "Jägermeister Orange 33%",
+  "price": 2.6,
+  "category": "Likéry"
+ },
+ {
+  "id": "v283",
+  "name": "Kahlúa 20%",
+  "price": 2.3,
+  "category": "Likéry"
+ },
+ {
+  "id": "v284",
+  "name": "Limoncello likér 25%",
+  "price": 2.2,
+  "category": "Likéry"
+ },
+ {
+  "id": "v285",
+  "name": "Liqueur makový 28%",
+  "price": 3.5,
+  "category": "Likéry"
+ },
+ {
+  "id": "v286",
+  "name": "Liqueur Orechový 28%",
+  "price": 3.5,
+  "category": "Likéry"
+ },
+ {
+  "id": "v287",
+  "name": "Malibu 21%",
+  "price": 2.4,
+  "category": "Likéry"
+ },
+ {
+  "id": "v288",
+  "name": "Passoa 17%",
+  "price": 2.5,
+  "category": "Likéry"
+ },
+ {
+  "id": "v289",
+  "name": "Sambuca 38%",
+  "price": 2.6,
+  "category": "Likéry"
+ },
+ {
+  "id": "v290",
+  "name": "Unicum 40%",
+  "price": 3.1,
+  "category": "Likéry"
+ },
+ {
+  "id": "v291",
+  "name": "Ararat Akhtamar 10 YO 40%",
+  "price": 3.9,
+  "category": "Cognac"
+ },
+ {
+  "id": "v292",
+  "name": "Calvados Boulard 40%",
+  "price": 3.9,
+  "category": "Cognac"
+ },
+ {
+  "id": "v293",
+  "name": "Courvoisier V.S.O.P. 40%",
+  "price": 4.45,
+  "category": "Cognac"
+ },
+ {
+  "id": "v294",
+  "name": "Courvoisier XO 40%",
+  "price": 21.0,
+  "category": "Cognac"
+ },
+ {
+  "id": "v295",
+  "name": "Hennessey V.S. 40%",
+  "price": 4.9,
+  "category": "Cognac"
+ },
+ {
+  "id": "v296",
+  "name": "Hennessey XO 40%",
+  "price": 28.0,
+  "category": "Cognac"
+ },
+ {
+  "id": "v297",
+  "name": "Karpatské brandy špeciál 40%",
+  "price": 3.9,
+  "category": "Cognac"
+ },
+ {
+  "id": "v298",
+  "name": "Martell XO 40%",
+  "price": 36.0,
+  "category": "Cognac"
+ },
+ {
+  "id": "v299",
+  "name": "Metaxa 12* 40%",
+  "price": 4.8,
+  "category": "Cognac"
+ },
+ {
+  "id": "v300",
+  "name": "Metaxa 5* 38%",
+  "price": 2.2,
+  "category": "Cognac"
+ },
+ {
+  "id": "v301",
+  "name": "Metaxa Orama 40%",
+  "price": 11.5,
+  "category": "Cognac"
+ },
+ {
+  "id": "v302",
+  "name": "Rémy Martin V.S.O.P. 40%",
+  "price": 6.9,
+  "category": "Cognac"
+ },
+ {
+  "id": "v303",
+  "name": "Rémy Martin X.O. 40%",
+  "price": 25.0,
+  "category": "Cognac"
+ },
+ {
+  "id": "v304",
+  "name": "Sarajishvili Brendijs XO 40%",
+  "price": 9.5,
+  "category": "Cognac"
+ },
+ {
+  "id": "v305",
+  "name": "Absinth Jelínek 70%",
+  "price": 2.8,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v306",
+  "name": "Bošácka slivovica 52%",
+  "price": 2.8,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v307",
+  "name": "Čerešňovica 42%",
+  "price": 2.8,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v308",
+  "name": "Hruškovica Williams 52%",
+  "price": 2.8,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v309",
+  "name": "Koniferum borovička 37,5%",
+  "price": 2.2,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v310",
+  "name": "Koniferum borovička pink 37,5%",
+  "price": 2.2,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v311",
+  "name": "Marhulovica Maruna 45%",
+  "price": 2.8,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v312",
+  "name": "Spišská borovička 40%",
+  "price": 2.2,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v313",
+  "name": "Tatranský čaj 52%",
+  "price": 2.6,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v314",
+  "name": "Tatranský čaj 72%",
+  "price": 3.4,
+  "category": "Destiláty"
+ },
+ {
+  "id": "v315",
+  "name": "Hubert de Luxe 0,75l",
+  "price": 14.2,
+  "category": "Víno"
+ },
+ {
+  "id": "v316",
+  "name": "Moet & Chandon nectar Imperial",
+  "price": 70.0,
+  "category": "Víno"
+ },
+ {
+  "id": "v317",
+  "name": "Prosseco 0,75l",
+  "price": 16.5,
+  "category": "Víno"
+ },
+ {
+  "id": "v318",
+  "name": "Prosseco 1dl",
+  "price": 2.0,
+  "category": "Víno"
+ },
+ {
+  "id": "v319",
+  "name": "Rozlievané víno",
+  "price": 2.0,
+  "category": "Víno"
+ },
+ {
+  "id": "v320",
+  "name": "Bing Bang Chill",
+  "price": 330.0,
+  "category": "Ostatné"
+ },
+ {
+  "id": "v321",
+  "name": "Darčeková poukazka",
+  "price": 15.0,
+  "category": "Ostatné"
+ },
+ {
+  "id": "v322",
+  "name": "Monster Chill 185",
+  "price": 185.0,
+  "category": "Ostatné"
+ },
+ {
+  "id": "v323",
+  "name": "Prenájom Priestorov 1h",
+  "price": 246.0,
+  "category": "Ostatné"
+ },
+ {
+  "id": "v324",
+  "name": "Prenájom priestorov škola 1h",
+  "price": 175.0,
+  "category": "Ostatné"
+ },
+ {
+  "id": "v325",
+  "name": "Storno poplatok",
+  "price": 30.0,
+  "category": "Ostatné"
+ }
+]
