@@ -158,6 +158,9 @@ let uzavDate = new Date();   // deň zobrazený v Dennej uzávierke
 let showHist = false;        // história platieb podľa dátumu, dostupná pre všetkých čašníkov (nielen vedúceho)
 let histDate = new Date();
 let showQueue = false;       // poradovník (napr. na biliard) - kto je ďalší na rade
+let showQueueHist = false;   // história poradovníka (kto čakal, ako dlho, či bol odbavený) - dostupné pre všetkých
+let showQuickCash = false;   // rýchla platba - len suma do tržby, bez viazania na stôl/položku
+let queueHistDate = new Date();
 let payroll = store.get('payroll', { pct: '', days: {} });  // výplatná kalkulačka v uzávierke: % z tržby + odpracované hodiny za deň
 // ochrana pred starým tvarom uložených dát v localStorage (zo staršej verzie appky) - inak by Uzávierka spadla na chybe
 if (!payroll || typeof payroll !== 'object') payroll = { pct: '', days: {} };
@@ -286,6 +289,21 @@ async function callInner(m, [col, id, action], body) {
       return db.ref('orders/' + id).remove();
     }
   }
+  // Rýchla platba do tržby bez viazania na konkrétny stôl či položku menu - napr. keď niekto rýchlo
+  // zaplatí a netreba presne rozpisovať, čo to bolo, len sumu zapísať do kasy/tržby.
+  if (col === 'quickcash') {
+    if (m === 'POST' && !id) {
+      const price = num(body.amount); if (!(price > 0)) fail('Zadaj sumu');
+      const note = str(body.note, 60);
+      const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
+      return db.ref('orders').push({
+        no: r.snapshot.val(), tableId: null, tableName: '💶 Rýchla platba',
+        waiter: str(body.waiter, 30), note: '',
+        items: [{ menuId: null, name: note || 'Rýchla platba', price, qty: 1, note: '', cat: 'Rýchla platba' }],
+        status: 'zaplatena', createdAt: now(), paidAt: now()
+      });
+    }
+  }
   // Poradovník (napr. na biliard, ping-pong) - kto čaká a kto je ďalší na rade
   if (col === 'queue') {
     if (m === 'POST' && !id) {
@@ -294,7 +312,17 @@ async function callInner(m, [col, id, action], body) {
       if (body.tableId) { const t = S.tables.find(x => x.id === body.tableId); if (t) rec.tableId = t.id; }
       return db.ref('queue').push(rec);
     }
-    if (m === 'DELETE') return db.ref('queue/' + id).remove();
+    if (m === 'DELETE') {
+      // Pred odstránením sa zápis uloží do histórie poradovníka (kto čakal, ako dlho, či bol odbavený alebo zmazaný)
+      const q = S.queue.find(x => x.id === id);
+      if (q) {
+        await db.ref('queueLog').push({
+          name: q.name, type: q.type || '', tableId: q.tableId || null,
+          createdAt: q.createdAt, endedAt: now(), action: (body && body.action === 'served') ? 'served' : 'removed'
+        });
+      }
+      return db.ref('queue/' + id).remove();
+    }
   }
   // Atrakcie (biliard, PlayStation, ping-pong, šípky, jazz dance...) - definície staníc, mení len vedúci
   if (col === 'attractions') {
@@ -352,7 +380,8 @@ function onData(v) {
         access: v.access || {},
         queue: list(v.queue).sort((a, b) => a.createdAt - b.createdAt),
         attractions: list(v.attractions).sort((a, b) => a.order - b.order),
-        sessions: list(v.sessions).sort((a, b) => a.startedAt - b.startedAt) };
+        sessions: list(v.sessions).sort((a, b) => a.startedAt - b.startedAt),
+        queueLog: list(v.queueLog).sort((a, b) => a.endedAt - b.endedAt) };
   const st = Object.fromEntries(S.orders.map(o => [o.id, o.status]));
   if (prevStatus) {
     if (role === 'bar' && S.orders.some(o => o.status === 'nova' && !prevStatus[o.id])) beep([880, 1320]);
@@ -391,11 +420,11 @@ function prune() {
 let listening = false;
 // Databáza je zdieľaná so smenami, takže pravidlá povoľujú čítanie len po jednotlivých
 // uzloch (tables/menu/orders), nie naraz z koreňa - preto samostatné listenery.
-let live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null, attractions: null, sessions: null };
+let live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null, attractions: null, sessions: null, queueLog: null };
 let pruned = false;
 function tryRender() {
-  if (live.tables === null || live.menu === null || live.orders === null || live.categories === null || live.employees === null || live.access === null || live.queue === null || live.attractions === null || live.sessions === null) return;
-  onData({ tables: live.tables, menu: live.menu, orders: live.orders, categories: live.categories, employees: live.employees, access: live.access, queue: live.queue, attractions: live.attractions, sessions: live.sessions });
+  if (live.tables === null || live.menu === null || live.orders === null || live.categories === null || live.employees === null || live.access === null || live.queue === null || live.attractions === null || live.sessions === null || live.queueLog === null) return;
+  onData({ tables: live.tables, menu: live.menu, orders: live.orders, categories: live.categories, employees: live.employees, access: live.access, queue: live.queue, attractions: live.attractions, sessions: live.sessions, queueLog: live.queueLog });
   if (!pruned) { pruned = true; prune(); }
 }
 function connect() {
@@ -409,8 +438,8 @@ function connect() {
     if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (role === 'uzavierka' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (!user) {
-      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); db.ref('employees/list').off(); db.ref('access').off(); db.ref('queue').off(); db.ref('attractions').off(); db.ref('sessions').off(); listening = false; }
-      live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null, attractions: null, sessions: null }; pruned = false;
+      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); db.ref('employees/list').off(); db.ref('access').off(); db.ref('queue').off(); db.ref('attractions').off(); db.ref('sessions').off(); db.ref('queueLog').off(); listening = false; }
+      live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null, attractions: null, sessions: null, queueLog: null }; pruned = false;
       return;
     }
     try { await seedIfEmpty(); } catch (e) { console.warn(e); }
@@ -424,6 +453,7 @@ function connect() {
     db.ref('queue').on('value', s => { live.queue = s.val() || {}; tryRender(); }, () => { live.queue = {}; tryRender(); errH(); });
     db.ref('attractions').on('value', s => { live.attractions = s.val() || {}; tryRender(); }, () => { live.attractions = {}; tryRender(); errH(); });
     db.ref('sessions').on('value', s => { live.sessions = s.val() || {}; tryRender(); }, () => { live.sessions = {}; tryRender(); errH(); });
+    db.ref('queueLog').on('value', s => { live.queueLog = s.val() || {}; tryRender(); }, () => { live.queueLog = {}; tryRender(); errH(); });
     listening = true;
   });
 }
@@ -489,17 +519,19 @@ function render() {
   $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova'));
   const inTable = role === 'casnik' && tableId && S.tables.some(t => t.id === tableId);
   if (role === 'casnik' && tableId && !inTable) tableId = null;
-  if (role !== 'casnik') { showHist = false; showQueue = false; }
-  if (inTable) { showHist = false; showQueue = false; }
+  if (role !== 'casnik') { showHist = false; showQueue = false; showQuickCash = false; }
+  if (role !== 'atrakcie') showQueueHist = false;
+  if (inTable) { showHist = false; showQueue = false; showQuickCash = false; }
   $('#backBtn').classList.toggle('hide', !inTable);
   $('#title').textContent = inTable ? S.tables.find(t => t.id === tableId).name
     : (role === 'casnik' && showHist) ? 'História platieb'
     : (role === 'casnik' && showQueue) ? 'Poradovník'
+    : (role === 'atrakcie' && showQueueHist) ? 'História poradovníka'
     : { casnik: 'Stoly', bar: 'Bar – objednávky', atrakcie: 'Atrakcie', uzavierka: 'Denná uzávierka', nastavenia: 'Nastavenia' }[role];
   $('#cart').classList.add('hide');
   if (role === 'casnik') inTable ? (view === 'bill' ? renderBill() : renderTable()) : (showHist ? renderHistory() : showQueue ? renderQueue() : renderTables());
   else if (role === 'bar') renderBar();
-  else if (role === 'atrakcie') renderAtrakcie();
+  else if (role === 'atrakcie') showQueueHist ? renderQueueHistory() : renderAtrakcie();
   else if (role === 'uzavierka') renderUzavierka();
   else renderSettings();
 }
@@ -532,12 +564,36 @@ function renderTables() {
     <span>🟢 ${freeCount} voľných</span><span>🔴 ${busyCount} obsadených</span></div>` : '';
   const topRow = `<div class="row" style="justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
     ${summary || '<span></span>'}
-    <div class="row" style="gap:8px">
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button class="btn ghost" style="width:auto" onclick="showQuickCash=!showQuickCash;render()">💶 Rýchla platba</button>
       <button class="btn ghost" style="width:auto" onclick="showQueue=true;render()">🎱 Poradovník${S.queue.length ? ' (' + S.queue.length + ')' : ''}</button>
       <button class="btn ghost" style="width:auto" onclick="showHist=true;render()">📅 História</button>
     </div></div>`;
-  $('#app').innerHTML = readyBanner() + topRow + (S.tables.length ? html
+  $('#app').innerHTML = readyBanner() + topRow + quickCashBlock() + (S.tables.length ? html
     : '<div class="empty">Zatiaľ žiadne stoly. Pridajte ich v Nastaveniach.</div>');
+}
+// Rýchla platba - keď treba len zapísať sumu do tržby (do kasy), bez toho aby sa rozpisovalo ku ktorému
+// stolu alebo položke menu patrí (napr. rýchly hotovostný predaj mimo bežnej objednávky).
+function quickCashBlock() {
+  if (!showQuickCash) return '';
+  return `<div class="card" style="margin-bottom:14px">
+    <label class="muted" style="font-size:13px">Rýchla platba - suma sa pripočíta do dnešnej tržby, bez viazania na stôl</label>
+    <div class="row" style="margin-top:6px;gap:8px">
+      <input id="qcAmount" type="number" step="0.01" min="0.01" inputmode="decimal" placeholder="Suma €, napr. 11,30" style="max-width:160px">
+      <input id="qcNote" placeholder="Poznámka (nepovinné)">
+    </div>
+    <button class="btn" style="margin-top:8px" onclick="addQuickCash()">Pridať do tržby</button>
+  </div>`;
+}
+async function addQuickCash() {
+  const amountStr = $('#qcAmount') ? $('#qcAmount').value : '';
+  const amount = parseFloat(String(amountStr).replace(',', '.'));
+  if (!(amount > 0)) return toast('Zadaj platnú sumu');
+  const note = $('#qcNote') ? $('#qcNote').value.trim() : '';
+  await call('POST', '/api/quickcash', { amount, note, waiter: store.get('waiter', '') });
+  showQuickCash = false;
+  toast('Pridané do tržby ✓');
+  render();
 }
 
 // Poradovník - napr. na biliard: kto čaká a kto je ďalší na rade. Dostupné pre všetkých čašníkov.
@@ -562,8 +618,18 @@ async function addQueue() {
   await call('POST', '/api/queue', { name, note: $('#qNote').value.trim() });
   $('#qName').value = ''; $('#qNote').value = '';
 }
-async function serveQueue(id) { await call('DELETE', '/api/queue/' + id); toast('Odbavené ✓'); }
-async function delQueue(id) { if (confirm('Odstrániť z poradovníka?')) await call('DELETE', '/api/queue/' + id); }
+// Zámok proti omylom - aj odbavenie toho, kto je "na rade", sa musí potvrdiť (predtým sa dalo omylom zmazať jedným klikom)
+async function serveQueue(id) {
+  const q = S.queue.find(x => x.id === id);
+  if (!confirm(`Odbaviť${q ? ` "${q.name}"` : ''}? Bude odstránený/á z poradovníka.`)) return;
+  await call('DELETE', '/api/queue/' + id, { action: 'served' });
+  toast('Odbavené ✓');
+}
+async function delQueue(id) {
+  const q = S.queue.find(x => x.id === id);
+  if (!confirm(`Odstrániť${q ? ` "${q.name}"` : ''} z poradovníka?`)) return;
+  await call('DELETE', '/api/queue/' + id, { action: 'removed' });
+}
 
 // Atrakcie (biliard, PlayStation, ping-pong, šípky, jazz dance...) - stanice sa označia ako "hrá"
 // bez ceny, cena sa zapíše ručne až pri ukončení. Dostupné pre všetkých čašníkov.
@@ -587,8 +653,9 @@ function stationTile(st) {
         <option value="">💶 Zaplatiť hneď (hotovosť)</option>
         ${S.tables.map(tb => `<option value="${tb.id}">🧾 Pripísať na účet: ${esc(tb.name)}</option>`).join('')}
       </select>
-      <div class="row" style="gap:6px;margin-top:2px">
+      <div class="row" style="gap:6px;margin-top:2px;flex-wrap:wrap">
         <button class="btn ok" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();confirmFinishSession('${s.id}')">Potvrdiť</button>
+        <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();confirmFinishSession('${s.id}',true)">🔁 Potvrdiť a spustiť znova</button>
         <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();finishSessionId=null;render()">Zrušiť</button>
       </div></div>`;
   }
@@ -625,6 +692,8 @@ function renderAtrakcie() {
   const groups = {};
   S.attractions.forEach(a => { (groups[a.type || 'Ostatné'] = groups[a.type || 'Ostatné'] || []).push(a); });
   const types = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'sk'));
+  const topRow = `<div class="row" style="justify-content:flex-end;margin-bottom:6px">
+    <button class="btn ghost" style="width:auto;padding:8px 12px" onclick="showQueueHist=true;render()">📜 História poradovníka</button></div>`;
   const html = types.map(t => `
     <h2 style="margin-top:18px">${esc(t)}</h2>
     <div class="grid">${groups[t].map(stationTile).join('')}</div>
@@ -633,12 +702,35 @@ function renderAtrakcie() {
     </div>
     ${queueFormBlock(t)}
     ${stationQueueBlock(t)}`).join('');
-  $('#app').innerHTML = types.length ? html : '<div class="empty">Zatiaľ žiadne atrakcie. Pridajte ich v Nastaveniach.</div>';
+  $('#app').innerHTML = topRow + (types.length ? html : '<div class="empty">Zatiaľ žiadne atrakcie. Pridajte ich v Nastaveniach.</div>');
 }
+// História poradovníka podľa dátumu - kto čakal, ako dlho a či bol odbavený alebo zmazaný. Dostupné pre všetkých čašníkov.
+function renderQueueHistory() {
+  const dayStart = new Date(queueHistDate.getFullYear(), queueHistDate.getMonth(), queueHistDate.getDate()).getTime();
+  const dayEnd = dayStart + 86400000;
+  const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+  const isToday = dayStart === todayStart;
+  const rows = S.queueLog.filter(q => q.endedAt >= dayStart && q.endedAt < dayEnd).sort((a, b) => b.endedAt - a.endedAt);
+  const fmtTime = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  $('#app').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:6px">
+      <button class="btn ghost" style="width:auto" onclick="shiftQueueHist(-1)">‹ Deň</button>
+      <b style="text-align:center;flex:1">${fmtDay(queueHistDate)}</b>
+      <button class="btn ghost" style="width:auto" onclick="shiftQueueHist(1)" ${isToday ? 'disabled' : ''}>Deň ›</button>
+    </div>
+    ${!isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="queueHistDate=new Date();render()">Dnes</button></div>` : ''}
+    ${rows.length ? `<div class="card" style="padding:0">${rows.map(q => `<div class="line">
+        <div class="n"><b>${fmtTime(q.endedAt)}</b> · ${esc(q.name)}${q.type ? ` <small>· ${esc(q.type)}</small>` : ''}
+          <small>čakal ${fmtDur(Math.max(0, q.endedAt - q.createdAt))}</small></div>
+        <span>${q.action === 'served' ? '✓ odbavené' : '✕ zmazané'}</span>
+      </div>`).join('')}</div>` : '<div class="empty">Za tento deň zatiaľ nikto v poradovníku nebol.</div>'}
+    <button class="btn ghost" style="margin-top:14px;width:100%" onclick="showQueueHist=false;render()">← Späť na atrakcie</button>`;
+}
+function shiftQueueHist(n) { queueHistDate = new Date(queueHistDate.getFullYear(), queueHistDate.getMonth(), queueHistDate.getDate() + n); render(); }
 async function startSession(stationId) {
   await call('POST', '/api/sessions', { stationId, waiter: store.get('waiter', '') });
 }
-async function confirmFinishSession(id) {
+async function confirmFinishSession(id, restart) {
   const s = S.sessions.find(x => x.id === id); if (!s) return;
   const sid = slug(id);
   const priceStr = $('#finPrice-' + sid) ? $('#finPrice-' + sid).value : '';
@@ -651,6 +743,11 @@ async function confirmFinishSession(id) {
   });
   finishSessionId = null;
   toast(targetTableId ? 'Pripísané na účet stola ✓' : 'Zaplatené ✓');
+  // Rýchle opakované spustenie - hneď po ukončení naskočí nová hra na tej istej stanici (šetrí klikanie pri stálych hráčoch)
+  if (restart) {
+    try { await call('POST', '/api/sessions', { stationId: s.stationId, waiter: store.get('waiter', '') }); toast('Nová hra spustená ✓'); }
+    catch (e) { /* napr. stanicu medzitým spustil niekto iný - toast o chybe už dal call() */ }
+  }
   render();
 }
 async function cancelSession(id) { if (confirm('Zrušiť bez platby? (napr. omylom spustené)')) await call('DELETE', '/api/sessions/' + id); }
