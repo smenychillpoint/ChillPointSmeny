@@ -40,6 +40,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px}
 .back{background:#ffffff1f;color:#fff;padding:7px 12px}
 .search{display:flex;gap:6px;margin-bottom:10px}.search input{flex:1;padding:12px 14px}.search button{background:var(--card);border:1px solid var(--line);padding:0 14px}
+#micBtn.listening{background:var(--warn);color:#fff;border-color:var(--warn)}
 .cats{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px;scrollbar-width:none}
 .cats button{background:var(--card);border:1px solid var(--line);padding:8px 14px;white-space:nowrap}
 .cats button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
@@ -134,7 +135,7 @@ const eur = n => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',') + ' �
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } },
                 set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} } };
 
-let S = { tables: [], menu: [], orders: [], categories: [], employees: [], access: {} };
+let S = { tables: [], menu: [], orders: [], categories: [], employees: [], access: {}, queue: [] };
 let role = store.get('role', 'casnik');
 let tableId = null;          // otvorený stôl (čašník)
 let view = 'order';          // 'order' | 'bill'
@@ -149,6 +150,9 @@ const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
 let isManager = false;
 let uzavierkaUnlocked = false;   // niekto iný ako vedúci si toto zariadenie odomkol PIN-om pre Dennú uzávierku
 let uzavDate = new Date();   // deň zobrazený v Dennej uzávierke
+let showHist = false;        // história platieb podľa dátumu, dostupná pre všetkých čašníkov (nielen vedúceho)
+let histDate = new Date();
+let showQueue = false;       // poradovník (napr. na biliard) - kto je ďalší na rade
 let payroll = store.get('payroll', { pct: '', days: {} });  // výplatná kalkulačka v uzávierke: % z tržby + odpracované hodiny za deň
 let sound = store.get('sound', true);
 let seenReady = new Set(store.get('seenReady', []));
@@ -237,6 +241,7 @@ async function callInner(m, [col, id, action], body) {
       if (body.name !== undefined && str(body.name, 60)) u.name = str(body.name, 60);
       if (body.price !== undefined && num(body.price) >= 0) u.price = num(body.price);
       if (body.category !== undefined) u.category = str(body.category, 40) || 'Ostatné';
+      if (body.fav !== undefined) u.fav = !!body.fav;
       return db.ref('menu/' + id).update(u); }
     if (m === 'DELETE') return db.ref('menu/' + id).remove();
   }
@@ -259,8 +264,11 @@ async function callInner(m, [col, id, action], body) {
       }).filter(Boolean);
       if (!items.length) fail('Objednávka je prázdna');
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
-      return db.ref('orders').push({ no: r.snapshot.val(), tableId: table.id, tableName: table.name,
-        waiter: str(body.waiter, 30), note: str(body.note, 120), items, status: 'nova', createdAt: now() });
+      // skipBar: rovno zapísané na účet stola bez posielania na bar (napr. položky, ktoré netreba pripraviť)
+      const rec = { no: r.snapshot.val(), tableId: table.id, tableName: table.name,
+        waiter: str(body.waiter, 30), note: str(body.note, 120), items, status: body.skipBar ? 'vydana' : 'nova', createdAt: now() };
+      if (body.skipBar) rec.vydanaAt = now();
+      return db.ref('orders').push(rec);
     }
     const o = S.orders.find(x => x.id === id); if (!o) fail('Objednávka neexistuje');
     if (m === 'POST' && action === 'status') return db.ref('orders/' + id).update({ status: body.status, [body.status + 'At']: now() });
@@ -268,6 +276,14 @@ async function callInner(m, [col, id, action], body) {
       if (o.status === 'zaplatena') { if (!isManager) fail('Zaplatenú objednávku smie zmazať len vedúci'); return db.ref('orders/' + id).remove(); }
       return db.ref('orders/' + id).remove();
     }
+  }
+  // Poradovník (napr. na biliard) - kto čaká a kto je ďalší na rade
+  if (col === 'queue') {
+    if (m === 'POST' && !id) {
+      const name = str(body.name, 40); if (!name) fail('Zadaj meno');
+      return db.ref('queue').push({ name, note: str(body.note, 60), createdAt: now() });
+    }
+    if (m === 'DELETE') return db.ref('queue/' + id).remove();
   }
   fail('Neznáma akcia');
 }
@@ -281,7 +297,8 @@ function onData(v) {
         orders: list(v.orders).map(o => ({ ...o, items: o.items || [] })).sort((a, b) => a.createdAt - b.createdAt),
         categories: list(v.categories),
         employees: Array.isArray(v.employees) ? v.employees.filter(Boolean) : Object.values(v.employees || {}).filter(Boolean),
-        access: v.access || {} };
+        access: v.access || {},
+        queue: list(v.queue).sort((a, b) => a.createdAt - b.createdAt) };
   const st = Object.fromEntries(S.orders.map(o => [o.id, o.status]));
   if (prevStatus) {
     if (role === 'bar' && S.orders.some(o => o.status === 'nova' && !prevStatus[o.id])) beep([880, 1320]);
@@ -312,11 +329,11 @@ function prune() {
 let listening = false;
 // Databáza je zdieľaná so smenami, takže pravidlá povoľujú čítanie len po jednotlivých
 // uzloch (tables/menu/orders), nie naraz z koreňa - preto samostatné listenery.
-let live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null };
+let live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null };
 let pruned = false;
 function tryRender() {
-  if (live.tables === null || live.menu === null || live.orders === null || live.categories === null || live.employees === null || live.access === null) return;
-  onData({ tables: live.tables, menu: live.menu, orders: live.orders, categories: live.categories, employees: live.employees, access: live.access });
+  if (live.tables === null || live.menu === null || live.orders === null || live.categories === null || live.employees === null || live.access === null || live.queue === null) return;
+  onData({ tables: live.tables, menu: live.menu, orders: live.orders, categories: live.categories, employees: live.employees, access: live.access, queue: live.queue });
   if (!pruned) { pruned = true; prune(); }
 }
 function connect() {
@@ -330,8 +347,8 @@ function connect() {
     if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (role === 'uzavierka' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (!user) {
-      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); db.ref('employees/list').off(); db.ref('access').off(); listening = false; }
-      live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null }; pruned = false;
+      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); db.ref('employees/list').off(); db.ref('access').off(); db.ref('queue').off(); listening = false; }
+      live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null }; pruned = false;
       return;
     }
     try { await seedIfEmpty(); } catch (e) { console.warn(e); }
@@ -342,6 +359,7 @@ function connect() {
     db.ref('orders').on('value', s => { live.orders = s.val() || {}; tryRender(); }, errH);
     db.ref('employees/list').on('value', s => { live.employees = s.val() || []; tryRender(); }, () => { live.employees = []; tryRender(); });
     db.ref('access').on('value', s => { live.access = s.val() || {}; tryRender(); }, () => { live.access = {}; tryRender(); });
+    db.ref('queue').on('value', s => { live.queue = s.val() || {}; tryRender(); }, errH);
     listening = true;
   });
 }
@@ -407,11 +425,15 @@ function render() {
   $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova'));
   const inTable = role === 'casnik' && tableId && S.tables.some(t => t.id === tableId);
   if (role === 'casnik' && tableId && !inTable) tableId = null;
+  if (role !== 'casnik') { showHist = false; showQueue = false; }
+  if (inTable) { showHist = false; showQueue = false; }
   $('#backBtn').classList.toggle('hide', !inTable);
   $('#title').textContent = inTable ? S.tables.find(t => t.id === tableId).name
+    : (role === 'casnik' && showHist) ? 'História platieb'
+    : (role === 'casnik' && showQueue) ? 'Poradovník'
     : { casnik: 'Stoly', bar: 'Bar – objednávky', uzavierka: 'Denná uzávierka', nastavenia: 'Nastavenia' }[role];
   $('#cart').classList.add('hide');
-  if (role === 'casnik') inTable ? (view === 'bill' ? renderBill() : renderTable()) : renderTables();
+  if (role === 'casnik') inTable ? (view === 'bill' ? renderBill() : renderTable()) : (showHist ? renderHistory() : showQueue ? renderQueue() : renderTables());
   else if (role === 'bar') renderBar();
   else if (role === 'uzavierka') renderUzavierka();
   else renderSettings();
@@ -439,9 +461,72 @@ function renderTables() {
   const html = names.map(g => `
     ${g ? `<h2 style="margin-top:18px">${esc(g)}</h2>` : (names.length > 1 ? '<h2 style="margin-top:18px">Bez skupiny</h2>' : '')}
     <div class="grid">${groups[g].map(tableTile).join('')}</div>`).join('');
-  $('#app').innerHTML = readyBanner() + (S.tables.length ? html
+  const freeCount = S.tables.filter(t => !tableOrders(t.id).length).length;
+  const busyCount = S.tables.length - freeCount;
+  const summary = S.tables.length ? `<div class="row" style="gap:14px;margin-bottom:10px;font-size:14px">
+    <span>🟢 ${freeCount} voľných</span><span>🔴 ${busyCount} obsadených</span></div>` : '';
+  const topRow = `<div class="row" style="justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+    ${summary || '<span></span>'}
+    <div class="row" style="gap:8px">
+      <button class="btn ghost" style="width:auto" onclick="showQueue=true;render()">🎱 Poradovník${S.queue.length ? ' (' + S.queue.length + ')' : ''}</button>
+      <button class="btn ghost" style="width:auto" onclick="showHist=true;render()">📅 História</button>
+    </div></div>`;
+  $('#app').innerHTML = readyBanner() + topRow + (S.tables.length ? html
     : '<div class="empty">Zatiaľ žiadne stoly. Pridajte ich v Nastaveniach.</div>');
 }
+
+// Poradovník - napr. na biliard: kto čaká a kto je ďalší na rade. Dostupné pre všetkých čašníkov.
+function renderQueue() {
+  const rows = S.queue.map((q, i) => `<div class="line" style="align-items:center">
+    <div class="n">${i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `}${esc(q.name)}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
+    ${i === 0 ? `<button class="btn ok" style="width:auto" onclick="serveQueue('${q.id}')">Odbaviť ✓</button>`
+               : `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="delQueue('${q.id}')">✕</button>`}
+  </div>`).join('');
+  $('#app').innerHTML = `
+    ${S.queue.length ? `<div class="card" style="padding:0">${rows}</div>` : '<div class="empty">Poradovník je prázdny.</div>'}
+    <div class="card" style="margin-top:14px">
+      <label class="muted" style="font-size:13px">Pridať do poradovníka</label>
+      <input id="qName" placeholder="Meno / číslo objednávky" style="margin-top:6px">
+      <input id="qNote" placeholder="Poznámka (nepovinné, napr. biliard 2)" style="margin-top:6px">
+      <button class="btn" style="margin-top:8px" onclick="addQueue()">Pridať</button>
+    </div>
+    <button class="btn ghost" style="margin-top:14px;width:100%" onclick="showQueue=false;render()">← Späť na stoly</button>`;
+}
+async function addQueue() {
+  const name = $('#qName').value.trim(); if (!name) return toast('Zadaj meno');
+  await call('POST', '/api/queue', { name, note: $('#qNote').value.trim() });
+  $('#qName').value = ''; $('#qNote').value = '';
+}
+async function serveQueue(id) { await call('DELETE', '/api/queue/' + id); toast('Odbavené ✓'); }
+async function delQueue(id) { if (confirm('Odstrániť z poradovníka?')) await call('DELETE', '/api/queue/' + id); }
+
+// História platieb podľa dátumu - dostupná pre všetkých čašníkov (nie len vedúceho), napr. keď sa
+// pýtajú na účet zaplatený tesne po polnoci z predošlej zmeny.
+function renderHistory() {
+  const dayStart = new Date(histDate.getFullYear(), histDate.getMonth(), histDate.getDate()).getTime();
+  const dayEnd = dayStart + 86400000;
+  const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+  const isToday = dayStart === todayStart;
+  const paid = S.orders.filter(o => o.status === 'zaplatena' && o.paidAt >= dayStart && o.paidAt < dayEnd).sort((a, b) => b.paidAt - a.paidAt);
+  const total = sumOrders(paid);
+  const fmtTime = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  $('#app').innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:6px">
+      <button class="btn ghost" style="width:auto" onclick="shiftHist(-1)">‹ Deň</button>
+      <b style="text-align:center;flex:1">${fmtDay(histDate)}</b>
+      <button class="btn ghost" style="width:auto" onclick="shiftHist(1)" ${isToday ? 'disabled' : ''}>Deň ›</button>
+    </div>
+    ${!isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="histDate=new Date();render()">Dnes</button></div>` : ''}
+    <div class="card"><div class="total"><span>Tržba za deň</span><span>${eur(total)}</span></div>
+      <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p></div>
+    ${paid.length ? `<div class="card" style="padding:0;margin-top:12px">${paid.map(o => `<div class="line">
+        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)} · #${o.no}
+          <small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small></div>
+        <span>${eur(sumOrders([o]))}</span>
+      </div>`).join('')}</div>` : '<div class="empty">Za tento deň zatiaľ nič nebolo zaplatené.</div>'}
+    <button class="btn ghost" style="margin-top:14px;width:100%" onclick="showHist=false;render()">← Späť na stoly</button>`;
+}
+function shiftHist(n) { histDate = new Date(histDate.getFullYear(), histDate.getMonth(), histDate.getDate() + n); render(); }
 
 function openTable(id) { tableId = id; view = 'order'; cart = []; orderNote = ''; cat = null; q = ''; render(); scrollTo(0, 0); }
 
@@ -458,22 +543,75 @@ function renderTable() {
     <div class="order ${o.status}"><h3>#${o.no} <span class="pill p-${o.status}">${STAV[o.status]}</span><small>${ago(o.createdAt)}</small></h3>
     <ul>${o.items.map(i => `<li><b>${i.qty}×</b>${esc(i.name)}${i.note ? `<i>${esc(i.note)}</i>` : ''}</li>`).join('')}</ul>
     ${o.status === 'hotova' ? `<button class="btn ok" onclick="setStatus('${o.id}','vydana')">Odnesené</button>` : ''}
-    ${o.status === 'nova' ? `<button class="btn ghost" onclick="cancelOrder('${o.id}')">Zrušiť objednávku</button>` : ''}
+    ${(o.status === 'nova' || o.status === 'vydana') ? `<button class="btn ghost" onclick="cancelOrder('${o.id}')">Zrušiť objednávku</button>` : ''}
     </div>`).join('')}</div>
     <div style="margin-top:14px"><button class="btn ghost" onclick="billSel={};view='bill';render()">Účet stola · ${eur(sumOrders(os))}</button></div>` : '';
 
   $('#app').innerHTML = readyBanner() + moveUi + prev + (S.menu.length ? `
     <h2 style="${os.length ? 'margin-top:22px' : ''}">Nová objednávka</h2>
+    <div id="favs" style="margin-bottom:14px"></div>
     <div class="search"><input id="q" type="search" placeholder="🔍 Hľadať položku…" value="${esc(q)}" oninput="q=this.value;renderItems()" autocomplete="off">
-    ${q ? '<button onclick="q=\'\';render()">✕</button>' : ''}</div>
+    ${q ? '<button onclick="q=\'\';render()">✕</button>' : ''}
+    ${hasVoice ? '<button id="micBtn" title="Nadiktovať objednávku" onclick="startVoiceOrder()">🎤</button>' : ''}</div>
     <div class="cats" id="cats">${cats.map(c => `<button class="${c === cat ? 'on' : ''}" onclick="cat=this.dataset.c;q='';render()" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
     <div class="items" id="items"></div>` : '<div class="empty">Menu je prázdne. Pridajte položky v Nastaveniach.</div>');
-  if (S.menu.length) renderItems();
+  if (S.menu.length) { renderItems(); renderFavs(); }
   renderCart();
 }
 
 // odstráni diakritiku, aby "kofola" našlo aj "Kófola" a "cierny" aj "čierny"
 const fold = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+// ---------- diktovanie objednávky hlasom (Android/Chrome - Web Speech API) ----------
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const hasVoice = !!SR;
+const NUM_WORDS = { jeden: 1, jedna: 1, jedno: 1, dva: 2, dve: 2, dvaja: 2, tri: 3, styri: 4, styria: 4, pat: 5, sest: 6, sedem: 7, osem: 8, devat: 9, desat: 10 };
+// slovenčina skloňuje koncovky ("pivo"/"pivá", "vodka"/"vodky") - porovnávame slová bez poslednej hlásky
+const stem = w => w.length > 3 ? w.slice(0, -1) : w;
+const wordMatch = (a, b) => stem(a) === stem(b) || a.includes(b) || b.includes(a);
+function startVoiceOrder() {
+  if (!SR) return toast('Rozpoznávanie hlasu tento prehliadač nepodporuje');
+  const btn = $('#micBtn');
+  const rec = new SR();
+  rec.lang = 'sk-SK'; rec.interimResults = false; rec.maxAlternatives = 1;
+  if (btn) { btn.classList.add('listening'); btn.textContent = '🎤…'; }
+  rec.onresult = e => applyVoiceOrder(e.results[0][0].transcript);
+  rec.onerror = () => toast('Nerozumel som, skús znova');
+  rec.onend = () => { if (btn) { btn.classList.remove('listening'); btn.textContent = '🎤'; } };
+  try { rec.start(); } catch { toast('Mikrofón sa nepodarilo spustiť'); }
+}
+// Rozdelí nadiktovaný text na časti (počet + názov položky) a pridá zhody do košíka.
+// Nič sa neposiela automaticky - výsledok si čašník pred odoslaním skontroluje v košíku.
+function applyVoiceOrder(text) {
+  const heard = (text || '').trim();
+  if (!heard) return;
+  const parts = heard.split(/,| a (?=\d|\p{L})/giu).map(s => s.trim()).filter(Boolean);
+  const added = [], unmatched = [];
+  parts.forEach(part => {
+    const words = fold(part).split(/\s+/).filter(Boolean);
+    let qty = 1;
+    if (/^\d+$/.test(words[0])) { qty = Math.max(1, parseInt(words[0], 10)); words.shift(); }
+    else if (words[0] in NUM_WORDS) { qty = NUM_WORDS[words[0]]; words.shift(); }
+    const rest = words.join(' ');
+    if (!rest) { unmatched.push(part); return; }
+    let match = S.menu.find(m => {
+      const nameWords = fold(m.name).split(/\s+/).filter(Boolean);
+      return nameWords.every(nw => words.some(w => wordMatch(nw, w)));
+    });
+    if (!match) match = S.menu.find(m => fold(m.name).includes(rest) || rest.includes(fold(m.name)));
+    if (match) {
+      const c = cart.find(x => x.menuId === match.id && !x.note);
+      c ? c.qty += qty : cart.push({ menuId: match.id, qty, note: '' });
+      added.push(`${qty}× ${match.name}`);
+    } else unmatched.push(part);
+  });
+  if (added.length) { renderItems(); renderFavs(); renderCart(); }
+  const msg = (added.length ? 'Pridané: ' + added.join(', ') : '') +
+              (added.length && unmatched.length ? ' · ' : '') +
+              (unmatched.length ? 'Nerozpoznané: „' + unmatched.join(', ') + '“' : '');
+  toast(msg || ('Počul som: „' + heard + '“, ale nič som nenašiel'));
+}
+
 function renderItems() {
   const el = $('#items'); if (!el) return;
   const words = fold(q.trim()).split(/\s+/).filter(Boolean);
@@ -487,10 +625,19 @@ function renderItems() {
     : '<div class="empty" style="grid-column:1/-1">Nič sa nenašlo</div>';
 }
 
+function renderFavs() {
+  const el = $('#favs'); if (!el) return;
+  const favs = S.menu.filter(m => m.fav);
+  if (!favs.length) { el.innerHTML = ''; return; }
+  const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
+  el.innerHTML = `<h3 style="margin:0 0 6px">⭐ Obľúbené</h3><div class="items">${favs.map(m => `
+    <button class="item" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${eur(m.price)}</span>
+    ${qty(m.id) ? `<div class="q">${qty(m.id)}</div>` : ''}</button>`).join('')}</div>`;
+}
 function addItem(id) {
   const c = cart.find(x => x.menuId === id && !x.note);
   c ? c.qty++ : cart.push({ menuId: id, qty: 1, note: '' });
-  renderItems(); renderCart();
+  renderItems(); renderFavs(); renderCart();
 }
 function changeQty(i, d) { cart[i].qty += d; if (cart[i].qty < 1) cart.splice(i, 1); render(); }
 function setNote(i) {
@@ -518,7 +665,10 @@ function renderCart() {
       <button class="qb" onclick="changeQty(${i},-1)">−</button><b>${c.qty}</b>
       <button class="qb" onclick="changeQty(${i},1)">+</button></div>`).join('')}</div>
     <input id="onote" placeholder="Poznámka k objednávke (nepovinné)" value="${esc(orderNote)}" oninput="orderNote=this.value" style="margin-bottom:8px">
-    <button class="btn" id="sendBtn" onclick="sendOrder()">Odoslať na bar · ${eur(total)}</button></div>`;
+    <div style="display:grid;gap:6px">
+      <button class="btn" id="sendBtn" onclick="sendOrder()">📤 Odoslať na bar · ${eur(total)}</button>
+      <button class="btn ghost" id="writeBtn" onclick="writeOrder()">📝 Len zapísať do účtu (bez baru) · ${eur(total)}</button>
+    </div></div>`;
 }
 
 async function sendOrder() {
@@ -527,6 +677,14 @@ async function sendOrder() {
     await call('POST', '/api/orders', { tableId, items: cart, note: orderNote, waiter: store.get('waiter', '') });
     cart = []; orderNote = ''; toast('Odoslané na bar ✓'); render();
   } catch { $('#sendBtn') && ($('#sendBtn').disabled = false); }
+}
+// Zapíše položky rovno do účtu stola bez toho, aby prešli cez bar (napr. keď sa netreba pripravovať)
+async function writeOrder() {
+  $('#writeBtn').disabled = true;
+  try {
+    await call('POST', '/api/orders', { tableId, items: cart, note: orderNote, waiter: store.get('waiter', ''), skipBar: true });
+    cart = []; orderNote = ''; toast('Zapísané do účtu ✓'); render();
+  } catch { $('#writeBtn') && ($('#writeBtn').disabled = false); }
 }
 async function setStatus(id, status) { await call('POST', `/api/orders/${id}/status`, { status }); }
 async function cancelOrder(id) { if (confirm('Zrušiť túto objednávku?')) await call('DELETE', `/api/orders/${id}`); }
@@ -658,13 +816,19 @@ function renderUzavierka() {
   const dayHours = payroll.days[dayKey] || {};
   const pct = num(payroll.pct) || 0;
   const pctAmount = total * pct / 100;
+  const checkedNames = Object.keys(dayHours);
+  const splitShare = checkedNames.length ? pctAmount / checkedNames.length : 0;
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
-  const empRows = (S.employees || []).map(e => { const on = e.name in dayHours; const h = dayHours[e.name] || '';
-    return `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px">
-      <label style="flex:1;display:flex;align-items:center;gap:6px"><input type="checkbox" ${on ? 'checked' : ''} onchange="togglePayrollEmp('${e.name.replace(/'/g, "\\'")}',this.checked)">${esc(e.name)}
-        <small class="muted">(${e.wage ? eur(e.wage) + '/h' : 'bez sadzby'})</small></label>
-      <input type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="hodín" value="${h}" ${on ? '' : 'disabled'}
-        oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)">
+  const empRows = (S.employees || []).map((e, i) => { const on = e.name in dayHours; const h = dayHours[e.name] || '';
+    const hourly = (num(h) || 0) * (e.wage || 0), empTotal = hourly + (on ? splitShare : 0);
+    return `<div style="margin-bottom:10px;${on ? 'padding-bottom:10px;border-bottom:1px solid var(--line)' : ''}">
+      <div class="row" style="gap:8px;align-items:center">
+        <label style="flex:1;display:flex;align-items:center;gap:6px"><input type="checkbox" ${on ? 'checked' : ''} onchange="togglePayrollEmp('${e.name.replace(/'/g, "\\'")}',this.checked)">${esc(e.name)}
+          <small class="muted">(${e.wage ? eur(e.wage) + '/h' : 'bez sadzby'})</small></label>
+        <input type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="hodín" value="${h}" ${on ? '' : 'disabled'}
+          oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)">
+      </div>
+      ${on ? `<p class="muted" style="font-size:12px;margin:4px 0 0" id="payEmpNote-${i}">hodinovka ${eur(hourly)} + podiel z tržby ${eur(splitShare)} = <b id="payEmpTotal-${i}">${eur(empTotal)}</b></p>` : ''}
     </div>`; }).join('');
   $('#app').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:6px">
@@ -697,7 +861,7 @@ function renderUzavierka() {
         <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)} · #${o.no}
           <small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small></div>
         <span>${eur(sumOrders([o]))}</span>
-        <button class="btn ghost" style="width:auto;padding:6px 10px;margin-left:8px" onclick="delPaidOrder('${o.id}')">✕</button>
+        ${isManager ? `<button class="btn ghost" style="width:auto;padding:6px 10px;margin-left:8px" onclick="delPaidOrder('${o.id}')">✕</button>` : ''}
       </div>`).join('')}
     </div>` : ''}`;
 }
@@ -710,11 +874,19 @@ function recomputePayroll() {
   const dayHours = payroll.days[payDayKey()] || {};
   const pct = num(payroll.pct) || 0;
   const pctAmount = total * pct / 100;
+  const checkedNames = Object.keys(dayHours);
+  const splitShare = checkedNames.length ? pctAmount / checkedNames.length : 0;
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
   if ($('#payHourly')) $('#payHourly').textContent = eur(hourlyTotal);
   if ($('#payPct')) $('#payPct').textContent = eur(pctAmount);
   if ($('#payPctLabel')) $('#payPctLabel').textContent = `Percentá z tržby (${pct}%)`;
   if ($('#payGrand')) $('#payGrand').textContent = eur(hourlyTotal + pctAmount);
+  (S.employees || []).forEach((e, i) => {
+    if (!(e.name in dayHours)) return;
+    const hourly = (num(dayHours[e.name]) || 0) * (e.wage || 0), empTotal = hourly + splitShare;
+    const note = $('#payEmpNote-' + i);
+    if (note) note.innerHTML = `hodinovka ${eur(hourly)} + podiel z tržby ${eur(splitShare)} = <b id="payEmpTotal-${i}">${eur(empTotal)}</b>`;
+  });
 }
 function togglePayrollEmp(name, on) {
   const k = payDayKey(); payroll.days[k] = payroll.days[k] || {};
@@ -756,7 +928,8 @@ function renderSettings() {
       <input value="${esc(m.name)}" onchange="call('PUT','/api/menu/${m.id}',{name:this.value})">
       <input type="number" step="0.01" min="0" inputmode="decimal" value="${m.price}" onchange="call('PUT','/api/menu/${m.id}',{price:this.value})">
       <select class="cat" onchange="call('PUT','/api/menu/${m.id}',{category:this.value})">${cats.map(c2 => `<option value="${esc(c2)}" ${c2 === m.category ? 'selected' : ''}>${esc(c2)}</option>`).join('')}</select>
-      <button class="del" onclick="delItem('${m.id}')">✕</button></div>`).join('') || '<p class="muted" style="font-size:13px">Zatiaľ žiadne položky.</p>')).join('');
+      <div style="display:flex;gap:4px"><button class="btn ghost" style="width:auto;padding:4px 8px" title="${m.fav ? 'Obľúbené – klikni pre zrušenie' : 'Označiť ako obľúbené'}" onclick="call('PUT','/api/menu/${m.id}',{fav:${!m.fav}})">${m.fav ? '⭐' : '☆'}</button>
+      <button class="del" onclick="delItem('${m.id}')">✕</button></div></div>`).join('') || '<p class="muted" style="font-size:13px">Zatiaľ žiadne položky.</p>')).join('');
   const empRows = (S.employees || []).map(e => `<div class="set-row t">
     <input value="${esc(e.name)}" disabled style="opacity:.75">
     <div class="row" style="gap:4px;align-items:center"><input type="number" min="0" step="0.1" inputmode="decimal" style="width:80px" value="${e.wage || ''}" placeholder="€/h"
@@ -777,6 +950,14 @@ function renderSettings() {
     <h2>Zamestnanci – mzda</h2><div class="card">
       ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách.</p>'}
       <p class="muted" style="font-size:12px;margin-top:8px">Sadzba sa použije vo Výplatnej kalkulačke v Dennej uzávierke.</p></div>
+    <h2>Prístup do uzávierky</h2><div class="card">
+      <label class="muted" style="font-size:13px">PIN, ktorým sa do Dennej uzávierky dostane aj niekto iný ako vedúci (napr. keď nie si na prevádzke)</label>
+      <div class="row" style="margin-top:6px;gap:8px">
+        <input id="uzPinSet" inputmode="numeric" placeholder="napr. 2468" value="${esc(S.access.uzavierkaPin || '')}" style="max-width:160px">
+        <button class="btn ghost" style="width:auto" onclick="saveUzavierkaPin()">Uložiť</button>
+        ${S.access.uzavierkaPin ? `<button class="btn ghost" style="width:auto" onclick="clearUzavierkaPin()">Zrušiť PIN</button>` : ''}
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:8px">${S.access.uzavierkaPin ? 'PIN je nastavený – kto ho pozná, dostane sa do Uzávierky (bez prístupu do Nastavení a bez mazania platieb).' : 'Zatiaľ nie je nastavený – Uzávierku vidí len vedúci.'}</p></div>
     <h2>Kategórie</h2><div class="card">
       ${cats.map(c => `<div class="set-row t"><input value="${esc(c)}" disabled style="opacity:.75">
         <button class="del" onclick="delCategory('${c.replace(/'/g, "\\'")}')">Zmazať</button></div>`).join('') || '<p class="muted">Zatiaľ žiadne kategórie.</p>'}
@@ -811,6 +992,16 @@ async function setEmployeeWage(name, wage) {
   const list = (S.employees || []).map(e => e.name === name ? { ...e, wage: num(wage) || 0 } : e);
   try { await db.ref('employees/list').set(list); } catch (e) { toast('Chyba: nemáte prístup k mzdám'); }
 }
+async function saveUzavierkaPin() {
+  const v = str($('#uzPinSet').value, 12);
+  if (!v) return toast('Zadaj PIN');
+  await call('PUT', '/api/access', { uzavierkaPin: v });
+  toast('PIN uložený ✓');
+}
+async function clearUzavierkaPin() {
+  if (!confirm('Zrušiť PIN pre uzávierku? Prístup bude mať už len vedúci.')) return;
+  await call('PUT', '/api/access', { uzavierkaPin: '' });
+}
 async function addItemMenu() {
   const name = $('#nN').value.trim(), price = $('#nP').value.replace(',', '.'), category = $('#nC').value;
   if (!name || price === '') return toast('Zadajte názov a cenu');
@@ -820,7 +1011,7 @@ async function delItem(id) { if (confirm('Zmazať položku z menu?')) await call
 
 // ---------- navigácia ----------
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
-  role = b.dataset.role; store.set('role', role); tableId = null; render(); scrollTo(0, 0);
+  role = b.dataset.role; store.set('role', role); tableId = null; showHist = false; showQueue = false; render(); scrollTo(0, 0);
 });
 $('#backBtn').onclick = () => { tableId = null; render(); };
 setInterval(() => { if (role !== 'nastavenia') safeRender(); }, 30000); // obnoví "pred X min"
