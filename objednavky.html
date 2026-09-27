@@ -166,7 +166,7 @@ let payroll = store.get('payroll', { pct: '', days: {} });  // výplatná kalkul
 if (!payroll || typeof payroll !== 'object') payroll = { pct: '', days: {} };
 if (!payroll.days || typeof payroll.days !== 'object') payroll.days = {};
 if (payroll.pct === undefined || payroll.pct === null) payroll.pct = '';
-if (!Array.isArray(payroll.noPctCategories)) payroll.noPctCategories = [];  // kategórie (napr. Pixel game), z ktorých sa personálu neráta % z tržby
+if (!Array.isArray(payroll.noPctItems)) payroll.noPctItems = [...(Array.isArray(payroll.noPctCategories) ? payroll.noPctCategories : [])];  // konkrétne položky (napr. Pixel), z ktorých sa personálu neráta % z tržby
 let sound = store.get('sound', true);
 let seenReady = new Set(store.get('seenReady', []));
 
@@ -1237,12 +1237,15 @@ function renderUzavierka() {
   const dayKey = `${uzavDate.getFullYear()}-${String(uzavDate.getMonth() + 1).padStart(2, '0')}-${String(uzavDate.getDate()).padStart(2, '0')}`;
   const dayHours = payroll.days[dayKey] || {};
   const pct = num(payroll.pct) || 0;
-  // Z niektorých kategórií (napr. Pixel game) sa personálu neráta percentuálny podiel - základ pre % je tržba bez nich
-  const noPctSet = new Set(payroll.noPctCategories || []);
+  // Z niektorých konkrétnych položiek (napr. len Pixel, nie celá kategória Hry) sa personálu neráta percentuálny
+  // podiel - základ pre % je tržba bez nich.
+  const noPctItemSet = new Set(payroll.noPctItems || []);
   const { pctBase, excludedRevenue } = pctBaseFor(paid, total);
+  // Položky dnešného dňa, ktoré ešte nemajú vlastný riadok v byCat (napr. boli zaškrtnuté v minulosti, ale dnes
+  // z nich nebola tržba) sa ukážu zvlášť, nech ich vieš odškrtnúť aj bez toho, aby mali dnes tržbu.
+  const todayItemNames = new Set(Object.values(agg).map(r => r.name));
+  const extraNoPctItems = (payroll.noPctItems || []).filter(n => !todayItemNames.has(n));
   const pctAmount = pctBase * pct / 100;
-  // Zoznam kategórií na zaškrtnutie - dnešné kategórie + tie, čo už boli predtým označené (aj keby dnes nemali tržbu)
-  const payrollCatList = [...new Set([...cats, ...(payroll.noPctCategories || [])])].sort((a, b) => a.localeCompare(b, 'sk'));
   const checkedNames = Object.keys(dayHours);
   const splitShare = checkedNames.length ? pctAmount / checkedNames.length : 0;
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
@@ -1278,10 +1281,16 @@ function renderUzavierka() {
         <input id="pPct" type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" value="${esc(String(payroll.pct))}" oninput="setPayrollPct(this.value)">
         <span class="muted">%</span>
       </div>
-      ${payrollCatList.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
-        <label class="muted" style="font-size:13px">Z týchto kategórií neberieme % (napr. Pixel game)</label>
-        <div style="margin-top:6px">${payrollCatList.map(c => `<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:14px">
-          <input type="checkbox" ${noPctSet.has(c) ? 'checked' : ''} onchange="toggleNoPctCategory('${c.replace(/'/g, "\\'")}',this.checked)">${esc(c)}</label>`).join('')}</div>
+      ${(cats.length || extraNoPctItems.length) ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <label class="muted" style="font-size:13px">Z týchto konkrétnych položiek neberieme % (napr. len Pixel, nie celé Hry)</label>
+        <div style="margin-top:6px;max-height:240px;overflow:auto">
+          ${cats.map(c => `<div class="muted" style="font-size:12px;margin:8px 0 2px">${esc(c)}</div>
+            ${byCat[c].map(r => `<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:14px">
+              <input type="checkbox" ${noPctItemSet.has(r.name) ? 'checked' : ''} onchange="toggleNoPctItem('${r.name.replace(/'/g, "\\'")}',this.checked)">${esc(r.name)}</label>`).join('')}`).join('')}
+          ${extraNoPctItems.length ? `<div class="muted" style="font-size:12px;margin:8px 0 2px">Iné (dnes bez tržby)</div>
+            ${extraNoPctItems.map(n => `<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:14px">
+              <input type="checkbox" checked onchange="toggleNoPctItem('${n.replace(/'/g, "\\'")}',this.checked)">${esc(n)}</label>`).join('')}` : ''}
+        </div>
       </div>` : ''}
       <div class="total" style="margin-top:10px"><span>Hodinovky spolu</span><span id="payHourly">${eur(hourlyTotal)}</span></div>
       <div class="total"><span id="payPctLabel">Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''})</span><span id="payPct">${eur(pctAmount)}</span></div>
@@ -1305,27 +1314,24 @@ function dayPaidOrders(date) {
   const dayEnd = dayStart + 86400000;
   return S.orders.filter(o => o.status === 'zaplatena' && o.paidAt >= dayStart && o.paidAt < dayEnd);
 }
-// Tržba rozpočítaná po kategóriách (na výpočet, koľko z toho je vylúčené z percent, aj pre CSV export)
-function categoryRevenue(paidOrders) {
-  const byC = {};
-  paidOrders.forEach(o => o.items.forEach(i => {
-    const mi = S.menu.find(m => m.id === i.menuId);
-    const cat = i.cat || (mi && mi.category) || 'Ostatné';
-    byC[cat] = (byC[cat] || 0) + i.price * i.qty;
-  }));
-  return byC;
+// Tržba rozpočítaná po jednotlivých položkách (podľa názvu) - na výpočet, koľko z toho je vylúčené z percent
+// (konkrétna položka, napr. len "Pixel", nie celá kategória "Hry"), aj pre CSV export.
+function itemRevenue(paidOrders) {
+  const byItem = {};
+  paidOrders.forEach(o => o.items.forEach(i => { byItem[i.name] = (byItem[i.name] || 0) + i.price * i.qty; }));
+  return byItem;
 }
-// Základ pre výpočet percent = tržba mínus kategórie, z ktorých si personál percentá neberie (napr. Pixel game)
+// Základ pre výpočet percent = tržba mínus konkrétne položky, z ktorých si personál percentá neberie (napr. Pixel)
 function pctBaseFor(paidOrders, total) {
-  const byC = categoryRevenue(paidOrders);
-  const noPctSet = new Set(payroll.noPctCategories || []);
-  const excludedRevenue = Object.entries(byC).filter(([c]) => noPctSet.has(c)).reduce((s, [, v]) => s + v, 0);
+  const byItem = itemRevenue(paidOrders);
+  const noPctSet = new Set(payroll.noPctItems || []);
+  const excludedRevenue = Object.entries(byItem).filter(([name]) => noPctSet.has(name)).reduce((s, [, v]) => s + v, 0);
   return { pctBase: Math.max(0, total - excludedRevenue), excludedRevenue };
 }
-function toggleNoPctCategory(cat, on) {
-  const set = new Set(payroll.noPctCategories || []);
-  if (on) set.add(cat); else set.delete(cat);
-  payroll.noPctCategories = [...set];
+function toggleNoPctItem(name, on) {
+  const set = new Set(payroll.noPctItems || []);
+  if (on) set.add(name); else set.delete(name);
+  payroll.noPctItems = [...set];
   savePayroll(); render();
 }
 function recomputePayroll() {
@@ -1381,7 +1387,7 @@ function downloadPayrollCsv() {
   });
   rows.push([]);
   rows.push(['Tržba za deň €', total.toFixed(2)]);
-  if (excludedRevenue > 0) rows.push(['z toho bez percent (' + (payroll.noPctCategories || []).join(', ') + ') €', excludedRevenue.toFixed(2)]);
+  if (excludedRevenue > 0) rows.push(['z toho bez percent (' + (payroll.noPctItems || []).join(', ') + ') €', excludedRevenue.toFixed(2)]);
   rows.push(['Základ pre percentá €', pctBase.toFixed(2)]);
   rows.push(['Percentá %', pct]);
   rows.push(['Percentá spolu €', pctAmount.toFixed(2)]);
