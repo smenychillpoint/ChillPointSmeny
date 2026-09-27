@@ -134,7 +134,7 @@ const eur = n => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',') + ' �
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } },
                 set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} } };
 
-let S = { tables: [], menu: [], orders: [], categories: [] };
+let S = { tables: [], menu: [], orders: [], categories: [], employees: [], access: {} };
 let role = store.get('role', 'casnik');
 let tableId = null;          // otvorený stôl (čašník)
 let view = 'order';          // 'order' | 'bill'
@@ -147,8 +147,9 @@ let q = '';                  // hľadanie v menu
 // Nastavenia (stoly/menu) smie meniť len vedúci - rovnaký účet ako v appke na smeny.
 const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
 let isManager = false;
+let uzavierkaUnlocked = false;   // niekto iný ako vedúci si toto zariadenie odomkol PIN-om pre Dennú uzávierku
 let uzavDate = new Date();   // deň zobrazený v Dennej uzávierke
-let payroll = store.get('payroll', { people: '', hours: '', rate: '' });  // výplatná kalkulačka v uzávierke
+let payroll = store.get('payroll', { pct: '', days: {} });  // výplatná kalkulačka v uzávierke: % z tržby + odpracované hodiny za deň
 let sound = store.get('sound', true);
 let seenReady = new Set(store.get('seenReady', []));
 
@@ -173,12 +174,16 @@ async function callInner(m, [col, id, action], body) {
   if (col === 'tables') {
     if (m === 'POST' && !id) { if (!isManager) fail('Stoly smie pridávať len vedúci');
       const name = str(body.name, 40); if (!name) fail('Chýba názov stola');
-      return db.ref('tables').push({ name, order: now() }); }
+      const rec = { name, order: now() };
+      if (body.group !== undefined) rec.group = str(body.group, 10);
+      if (body.color !== undefined) rec.color = str(body.color, 20);
+      return db.ref('tables').push(rec); }
     const t = S.tables.find(x => x.id === id); if (!t) fail('Stôl neexistuje');
     if (m === 'PUT') { if (!isManager) fail('Stoly smie meniť len vedúci');
       const u = {};
       if (body.name !== undefined) { const name = str(body.name, 40); if (name) u.name = name; }
       if (body.color !== undefined) u.color = str(body.color, 20);
+      if (body.group !== undefined) u.group = str(body.group, 10);
       return db.ref('tables/' + id).update(u); }
     if (m === 'DELETE') { if (!isManager) fail('Stoly smie mazať len vedúci');
       if (tableOrders(id).length) fail('Stôl má nezaplatené objednávky'); return db.ref('tables/' + id).remove(); }
@@ -218,6 +223,10 @@ async function callInner(m, [col, id, action], body) {
       os.forEach(o => { u[o.id + '/tableId'] = target.id; u[o.id + '/tableName'] = target.name; });
       return db.ref('orders').update(u);
     }
+  }
+  if (col === 'access') {
+    if (!isManager) fail('PIN pre uzávierku smie meniť len vedúci');
+    if (m === 'PUT') return db.ref('access').update({ uzavierkaPin: str(body.uzavierkaPin, 12) });
   }
   if (col === 'menu') {
     if (!isManager) fail('Nastavenia menu smie meniť len vedúci');
@@ -270,7 +279,9 @@ function onData(v) {
   S = { tables: list(v.tables).sort((a, b) => a.order - b.order),
         menu: list(v.menu).sort((a, b) => a.order - b.order),
         orders: list(v.orders).map(o => ({ ...o, items: o.items || [] })).sort((a, b) => a.createdAt - b.createdAt),
-        categories: list(v.categories) };
+        categories: list(v.categories),
+        employees: Array.isArray(v.employees) ? v.employees.filter(Boolean) : Object.values(v.employees || {}).filter(Boolean),
+        access: v.access || {} };
   const st = Object.fromEntries(S.orders.map(o => [o.id, o.status]));
   if (prevStatus) {
     if (role === 'bar' && S.orders.some(o => o.status === 'nova' && !prevStatus[o.id])) beep([880, 1320]);
@@ -300,12 +311,12 @@ function prune() {
 
 let listening = false;
 // Databáza je zdieľaná so smenami, takže pravidlá povoľujú čítanie len po jednotlivých
-// uzloch (tables/menu/orders), nie naraz z koreňa - preto tri samostatné listenery.
-let live = { tables: null, menu: null, orders: null, categories: null };
+// uzloch (tables/menu/orders), nie naraz z koreňa - preto samostatné listenery.
+let live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null };
 let pruned = false;
 function tryRender() {
-  if (live.tables === null || live.menu === null || live.orders === null || live.categories === null) return;
-  onData({ tables: live.tables, menu: live.menu, orders: live.orders, categories: live.categories });
+  if (live.tables === null || live.menu === null || live.orders === null || live.categories === null || live.employees === null || live.access === null) return;
+  onData({ tables: live.tables, menu: live.menu, orders: live.orders, categories: live.categories, employees: live.employees, access: live.access });
   if (!pruned) { pruned = true; prune(); }
 }
 function connect() {
@@ -315,10 +326,12 @@ function connect() {
   auth.onAuthStateChanged(async user => {
     $('#login').classList.toggle('hide', !!user);
     isManager = !!user && (user.email || '').toLowerCase() === MANAGER_EMAIL.toLowerCase();
-    if ((role === 'nastavenia' || role === 'uzavierka') && !isManager) { role = 'casnik'; store.set('role', role); }
+    uzavierkaUnlocked = false;
+    if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
+    if (role === 'uzavierka' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (!user) {
-      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); listening = false; }
-      live = { tables: null, menu: null, orders: null, categories: null }; pruned = false;
+      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); db.ref('employees/list').off(); db.ref('access').off(); listening = false; }
+      live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null }; pruned = false;
       return;
     }
     try { await seedIfEmpty(); } catch (e) { console.warn(e); }
@@ -327,6 +340,8 @@ function connect() {
     db.ref('menu').on('value', s => { live.menu = s.val() || {}; tryRender(); }, errH);
     db.ref('categories').on('value', s => { live.categories = s.val() || {}; tryRender(); }, errH);
     db.ref('orders').on('value', s => { live.orders = s.val() || {}; tryRender(); }, errH);
+    db.ref('employees/list').on('value', s => { live.employees = s.val() || []; tryRender(); }, () => { live.employees = []; tryRender(); });
+    db.ref('access').on('value', s => { live.access = s.val() || {}; tryRender(); }, () => { live.access = {}; tryRender(); });
     listening = true;
   });
 }
@@ -337,6 +352,11 @@ async function login(ev) {
   catch { $('#lerr').textContent = 'Nesprávny e-mail alebo heslo'; }
 }
 function logout() { if (confirm('Odhlásiť toto zariadenie?')) auth.signOut(); }
+function unlockUzavierka() {
+  const pin = ($('#uzPin')?.value || '').trim();
+  if (pin && S.access && pin === S.access.uzavierkaPin) { uzavierkaUnlocked = true; render(); }
+  else { const e = $('#uzPinErr'); if (e) e.textContent = 'Nesprávny PIN'; }
+}
 
 // Neprekresľovať, kým niekto píše do políčka (inak by stratil text)
 let pending = false;
@@ -378,9 +398,11 @@ const STAV = { nova: 'Na bare', hotova: 'Hotová – odniesť', vydana: 'Vydaná
 
 // ---------- render ----------
 function render() {
+  const canUzavierka = isManager || !!(S.access && S.access.uzavierkaPin);
   $('#tabNastavenia').classList.toggle('hide', !isManager);
-  $('#tabUzavierka').classList.toggle('hide', !isManager);
-  if ((role === 'nastavenia' || role === 'uzavierka') && !isManager) { role = 'casnik'; store.set('role', role); }
+  $('#tabUzavierka').classList.toggle('hide', !canUzavierka);
+  if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
+  if (role === 'uzavierka' && !canUzavierka) { role = 'casnik'; store.set('role', role); }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
   $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova'));
   const inTable = role === 'casnik' && tableId && S.tables.some(t => t.id === tableId);
@@ -402,15 +424,22 @@ function readyBanner() {
     <button onclick="setStatus('${o.id}','vydana')">Odnesené</button></div>`).join('')}</div>`;
 }
 
+function tableTile(t) {
+  const os = tableOrders(t.id);
+  const st = os.some(o => o.status === 'hotova') ? '<span class="pill p-hotova">Hotové</span>'
+           : os.some(o => o.status === 'nova') ? '<span class="pill p-nova">Na bare</span>' : '';
+  return `<button class="tbl ${os.length ? 'busy' : ''}" style="${t.color ? `border-left:6px solid ${t.color}` : ''}" onclick="openTable('${t.id}')">
+    <b>${esc(t.name)}</b>${os.length ? `<small>${eur(sumOrders(os))}</small>${st}` : '<small>voľný</small>'}</button>`;
+}
 function renderTables() {
-  const html = S.tables.map(t => {
-    const os = tableOrders(t.id);
-    const st = os.some(o => o.status === 'hotova') ? '<span class="pill p-hotova">Hotové</span>'
-             : os.some(o => o.status === 'nova') ? '<span class="pill p-nova">Na bare</span>' : '';
-    return `<button class="tbl ${os.length ? 'busy' : ''}" style="${t.color ? `border-left:6px solid ${t.color}` : ''}" onclick="openTable('${t.id}')">
-      <b>${esc(t.name)}</b>${os.length ? `<small>${eur(sumOrders(os))}</small>${st}` : '<small>voľný</small>'}</button>`;
-  }).join('');
-  $('#app').innerHTML = readyBanner() + (S.tables.length ? `<div class="grid">${html}</div>`
+  const groups = {};
+  S.tables.forEach(t => { const g = t.group || ''; (groups[g] = groups[g] || []).push(t); });
+  const names = Object.keys(groups).filter(g => g).sort((a, b) => a.localeCompare(b, 'sk'));
+  if (groups['']) names.push('');
+  const html = names.map(g => `
+    ${g ? `<h2 style="margin-top:18px">${esc(g)}</h2>` : (names.length > 1 ? '<h2 style="margin-top:18px">Bez skupiny</h2>' : '')}
+    <div class="grid">${groups[g].map(tableTile).join('')}</div>`).join('');
+  $('#app').innerHTML = readyBanner() + (S.tables.length ? html
     : '<div class="empty">Zatiaľ žiadne stoly. Pridajte ich v Nastaveniach.</div>');
 }
 
@@ -433,11 +462,12 @@ function renderTable() {
     </div>`).join('')}</div>
     <div style="margin-top:14px"><button class="btn ghost" onclick="billSel={};view='bill';render()">Účet stola · ${eur(sumOrders(os))}</button></div>` : '';
 
-  $('#app').innerHTML = readyBanner() + moveUi + (S.menu.length ? `
+  $('#app').innerHTML = readyBanner() + moveUi + prev + (S.menu.length ? `
+    <h2 style="${os.length ? 'margin-top:22px' : ''}">Nová objednávka</h2>
     <div class="search"><input id="q" type="search" placeholder="🔍 Hľadať položku…" value="${esc(q)}" oninput="q=this.value;renderItems()" autocomplete="off">
     ${q ? '<button onclick="q=\'\';render()">✕</button>' : ''}</div>
     <div class="cats" id="cats">${cats.map(c => `<button class="${c === cat ? 'on' : ''}" onclick="cat=this.dataset.c;q='';render()" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
-    <div class="items" id="items"></div>` : '<div class="empty">Menu je prázdne. Pridajte položky v Nastaveniach.</div>') + prev;
+    <div class="items" id="items"></div>` : '<div class="empty">Menu je prázdne. Pridajte položky v Nastaveniach.</div>');
   if (S.menu.length) renderItems();
   renderCart();
 }
@@ -595,7 +625,18 @@ const DAY_NAMES = ['Nedeľa', 'Pondelok', 'Utorok', 'Streda', 'Štvrtok', 'Piato
 const fmtDay = d => `${DAY_NAMES[d.getDay()]} ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
 function shiftDay(n) { uzavDate = new Date(uzavDate.getFullYear(), uzavDate.getMonth(), uzavDate.getDate() + n); render(); }
 function renderUzavierka() {
-  if (!isManager) { $('#app').innerHTML = '<div class="empty" style="padding:60px 20px">Uzávierka je dostupná len pre vedúceho.</div>'; return; }
+  if (!isManager && !uzavierkaUnlocked) {
+    const hasPin = !!(S.access && S.access.uzavierkaPin);
+    $('#app').innerHTML = hasPin ? `<div class="card" style="max-width:320px;margin:40px auto">
+        <h2 style="margin-top:0">Denná uzávierka</h2>
+        <label class="muted">Zadaj PIN pre prístup</label>
+        <input id="uzPin" type="password" inputmode="numeric" placeholder="PIN" style="text-align:center;font-size:20px;letter-spacing:4px" autofocus onkeydown="if(event.key==='Enter')unlockUzavierka()">
+        <button class="btn" style="margin-top:10px" onclick="unlockUzavierka()">Odomknúť</button>
+        <p id="uzPinErr" class="muted" style="color:#e5484d;min-height:18px;margin-top:6px"></p>
+      </div>`
+      : '<div class="empty" style="padding:60px 20px">Uzávierka je dostupná len pre vedúceho. PIN pre ostatných zatiaľ nie je nastavený (Nastavenia).</div>';
+    return;
+  }
   const dayStart = new Date(uzavDate.getFullYear(), uzavDate.getMonth(), uzavDate.getDate()).getTime();
   const dayEnd = dayStart + 86400000;
   const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
@@ -613,7 +654,18 @@ function renderUzavierka() {
   const cats = Object.keys(byCat).sort();
   const txns = [...paid].sort((a, b) => b.paidAt - a.paidAt);
   const fmtTime = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
-  const p = payroll, pTotal = (num(p.people) || 0) * (num(p.hours) || 0) * (num(p.rate) || 0);
+  const dayKey = `${uzavDate.getFullYear()}-${String(uzavDate.getMonth() + 1).padStart(2, '0')}-${String(uzavDate.getDate()).padStart(2, '0')}`;
+  const dayHours = payroll.days[dayKey] || {};
+  const pct = num(payroll.pct) || 0;
+  const pctAmount = total * pct / 100;
+  const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
+  const empRows = (S.employees || []).map(e => { const on = e.name in dayHours; const h = dayHours[e.name] || '';
+    return `<div class="row" style="gap:8px;align-items:center;margin-bottom:6px">
+      <label style="flex:1;display:flex;align-items:center;gap:6px"><input type="checkbox" ${on ? 'checked' : ''} onchange="togglePayrollEmp('${e.name.replace(/'/g, "\\'")}',this.checked)">${esc(e.name)}
+        <small class="muted">(${e.wage ? eur(e.wage) + '/h' : 'bez sadzby'})</small></label>
+      <input type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="hodín" value="${h}" ${on ? '' : 'disabled'}
+        oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)">
+    </div>`; }).join('');
   $('#app').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:6px">
       <button class="btn ghost" style="width:auto" onclick="shiftDay(-1)">‹ Deň</button>
@@ -627,18 +679,17 @@ function renderUzavierka() {
       <div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span></div>`).join('')}</div>`).join('')
       : '<div class="empty">Za tento deň zatiaľ nič nebolo zaplatené.</div>'}
 
-    <h2 style="margin-top:22px">Výplatná kalkulačka</h2>
+    <h2 style="margin-top:22px">Výplatná kalkulačka – ${fmtDay(uzavDate)}</h2>
     <div class="card">
-      <div class="row" style="gap:8px;flex-wrap:wrap">
-        <div style="flex:1;min-width:90px"><label class="muted" style="font-size:12px">Počet ľudí</label>
-          <input id="pPeople" type="number" min="0" step="1" inputmode="decimal" value="${esc(String(p.people))}" oninput="updatePayroll()"></div>
-        <div style="flex:1;min-width:90px"><label class="muted" style="font-size:12px">Hodín spolu</label>
-          <input id="pHours" type="number" min="0" step="0.5" inputmode="decimal" value="${esc(String(p.hours))}" oninput="updatePayroll()"></div>
-        <div style="flex:1;min-width:90px"><label class="muted" style="font-size:12px">€ / hodinu</label>
-          <input id="pRate" type="number" min="0" step="0.1" inputmode="decimal" value="${esc(String(p.rate))}" oninput="updatePayroll()"></div>
+      ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách a nastav im sadzbu v Nastaveniach.</p>'}
+      <div class="row" style="margin-top:10px;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
+        <label class="muted" style="flex:1;font-size:13px">Percentá z tržby pre personál</label>
+        <input id="pPct" type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" value="${esc(String(payroll.pct))}" oninput="setPayrollPct(this.value)">
+        <span class="muted">%</span>
       </div>
-      <div class="total" style="margin-top:10px"><span>Výplata spolu</span><span id="payrollTotal">${eur(pTotal)}</span></div>
-      <p class="muted" style="margin:4px 0 0;font-size:12px">počet ľudí × hodiny × sadzba na hodinu</p>
+      <div class="total" style="margin-top:10px"><span>Hodinovky spolu</span><span id="payHourly">${eur(hourlyTotal)}</span></div>
+      <div class="total"><span id="payPctLabel">Percentá z tržby (${pct}%)</span><span id="payPct">${eur(pctAmount)}</span></div>
+      <div class="total" style="border-top:2px solid var(--ink);padding-top:8px;margin-top:6px"><b>Výplaty spolu</b><b id="payGrand">${eur(hourlyTotal + pctAmount)}</b></div>
     </div>
 
     ${txns.length ? `<h2 style="margin-top:22px">Jednotlivé platby</h2><div class="card" style="padding:0">
@@ -650,12 +701,31 @@ function renderUzavierka() {
       </div>`).join('')}
     </div>` : ''}`;
 }
-function updatePayroll() {
-  payroll = { people: $('#pPeople').value, hours: $('#pHours').value, rate: $('#pRate').value };
-  store.set('payroll', payroll);
-  const total = (num(payroll.people) || 0) * (num(payroll.hours) || 0) * (num(payroll.rate) || 0);
-  $('#payrollTotal').textContent = eur(total);
+function payDayKey() { return `${uzavDate.getFullYear()}-${String(uzavDate.getMonth() + 1).padStart(2, '0')}-${String(uzavDate.getDate()).padStart(2, '0')}`; }
+function savePayroll() { store.set('payroll', payroll); }
+function recomputePayroll() {
+  const dayStart = new Date(uzavDate.getFullYear(), uzavDate.getMonth(), uzavDate.getDate()).getTime();
+  const dayEnd = dayStart + 86400000;
+  const total = sumOrders(S.orders.filter(o => o.status === 'zaplatena' && o.paidAt >= dayStart && o.paidAt < dayEnd));
+  const dayHours = payroll.days[payDayKey()] || {};
+  const pct = num(payroll.pct) || 0;
+  const pctAmount = total * pct / 100;
+  const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
+  if ($('#payHourly')) $('#payHourly').textContent = eur(hourlyTotal);
+  if ($('#payPct')) $('#payPct').textContent = eur(pctAmount);
+  if ($('#payPctLabel')) $('#payPctLabel').textContent = `Percentá z tržby (${pct}%)`;
+  if ($('#payGrand')) $('#payGrand').textContent = eur(hourlyTotal + pctAmount);
 }
+function togglePayrollEmp(name, on) {
+  const k = payDayKey(); payroll.days[k] = payroll.days[k] || {};
+  if (on) payroll.days[k][name] = payroll.days[k][name] || ''; else delete payroll.days[k][name];
+  savePayroll(); render();
+}
+function setPayrollHours(name, val) {
+  const k = payDayKey(); payroll.days[k] = payroll.days[k] || {};
+  payroll.days[k][name] = val; savePayroll(); recomputePayroll();
+}
+function setPayrollPct(val) { payroll.pct = val; savePayroll(); recomputePayroll(); }
 async function delPaidOrder(id) {
   if (!confirm('Zmazať túto platbu z uzávierky? Toto nastálo odstráni záznam.')) return;
   await call('DELETE', '/api/orders/' + id); render();
@@ -672,8 +742,10 @@ function renderSettings() {
     return;
   }
   const TABLE_COLORS = ['', '#e5484d', '#f2994a', '#f2c94c', '#27ae60', '#17a398', '#2f80ed', '#9b51e0', '#eb5296'];
-  const t = S.tables.map(x => `<div class="set-row t" style="grid-template-columns:1fr auto auto">
+  const groupNames = [...new Set(S.tables.map(x => x.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'sk'));
+  const t = S.tables.map(x => `<div class="set-row t" style="grid-template-columns:1fr 64px auto auto">
     <input value="${esc(x.name)}" onchange="call('PUT','/api/tables/${x.id}',{name:this.value})">
+    <input value="${esc(x.group || '')}" placeholder="skup." title="Skupina, napr. P alebo L" onchange="call('PUT','/api/tables/${x.id}',{group:this.value})">
     <div style="display:flex;gap:4px">${TABLE_COLORS.map(c => `
       <button title="${c ? '' : 'Bez farby'}" onclick="call('PUT','/api/tables/${x.id}',{color:'${c}'})"
         style="width:26px;height:26px;border-radius:50%;flex:none;background:${c || 'var(--bg)'};border:2px solid ${(x.color || '') === c ? 'var(--ink)' : 'var(--line)'}"></button>`).join('')}</div>
@@ -685,10 +757,26 @@ function renderSettings() {
       <input type="number" step="0.01" min="0" inputmode="decimal" value="${m.price}" onchange="call('PUT','/api/menu/${m.id}',{price:this.value})">
       <select class="cat" onchange="call('PUT','/api/menu/${m.id}',{category:this.value})">${cats.map(c2 => `<option value="${esc(c2)}" ${c2 === m.category ? 'selected' : ''}>${esc(c2)}</option>`).join('')}</select>
       <button class="del" onclick="delItem('${m.id}')">✕</button></div>`).join('') || '<p class="muted" style="font-size:13px">Zatiaľ žiadne položky.</p>')).join('');
+  const empRows = (S.employees || []).map(e => `<div class="set-row t">
+    <input value="${esc(e.name)}" disabled style="opacity:.75">
+    <div class="row" style="gap:4px;align-items:center"><input type="number" min="0" step="0.1" inputmode="decimal" style="width:80px" value="${e.wage || ''}" placeholder="€/h"
+      onchange="setEmployeeWage('${e.name.replace(/'/g, "\\'")}',this.value)"><span class="muted" style="font-size:12px">€/h</span></div>
+    </div>`).join('');
   $('#app').innerHTML = device + `
     <h2>Stoly</h2><div class="card">${t}
       <div class="set-row t" style="margin-top:10px"><input id="newT" placeholder="Názov nového stola, napr. Terasa 2">
-      <button class="btn" style="width:auto" onclick="addTable()">Pridať</button></div></div>
+      <button class="btn" style="width:auto" onclick="addTable()">Pridať</button></div>
+      <div class="row" style="margin-top:10px;gap:6px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
+        <label class="muted" style="font-size:13px">Rýchle pridanie podľa skupiny:</label>
+        <input id="qaGroup" list="qaGroups" placeholder="skup. napr. P" style="width:70px">
+        <datalist id="qaGroups">${groupNames.map(g => `<option value="${esc(g)}">`).join('')}</datalist>
+        <input id="qaNum" placeholder="číslo, napr. 1" style="width:90px">
+        <button class="btn ghost" style="width:auto" onclick="quickAddTable()">Pridať</button>
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:6px">Stoly s rovnakou skupinou (napr. P) sa zobrazia spolu v jednom riadku. Nová farba skupiny sa prevezme z už existujúceho stola v tej skupine.</p></div>
+    <h2>Zamestnanci – mzda</h2><div class="card">
+      ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách.</p>'}
+      <p class="muted" style="font-size:12px;margin-top:8px">Sadzba sa použije vo Výplatnej kalkulačke v Dennej uzávierke.</p></div>
     <h2>Kategórie</h2><div class="card">
       ${cats.map(c => `<div class="set-row t"><input value="${esc(c)}" disabled style="opacity:.75">
         <button class="del" onclick="delCategory('${c.replace(/'/g, "\\'")}')">Zmazať</button></div>`).join('') || '<p class="muted">Zatiaľ žiadne kategórie.</p>'}
@@ -711,6 +799,18 @@ async function addCategory() { const v = $('#newC').value.trim(); if (v) { await
 async function delCategory(name) { if (confirm(`Zmazať kategóriu "${name}"?`)) await call('DELETE', '/api/categories/' + encodeURIComponent(name)); }
 async function addTable() { const v = $('#newT').value.trim(); if (v) await call('POST', '/api/tables', { name: v }); }
 async function delTable(id) { if (confirm('Zmazať stôl?')) await call('DELETE', '/api/tables/' + id); }
+async function quickAddTable() {
+  const g = $('#qaGroup').value.trim(), n = $('#qaNum').value.trim();
+  if (!g || !n) return toast('Zadaj skupinu aj číslo');
+  const existing = S.tables.find(t => (t.group || '') === g && t.color);
+  await call('POST', '/api/tables', { name: g + n, group: g, color: existing ? existing.color : '' });
+  $('#qaNum').value = '';
+}
+async function setEmployeeWage(name, wage) {
+  if (!isManager) return;
+  const list = (S.employees || []).map(e => e.name === name ? { ...e, wage: num(wage) || 0 } : e);
+  try { await db.ref('employees/list').set(list); } catch (e) { toast('Chyba: nemáte prístup k mzdám'); }
+}
 async function addItemMenu() {
   const name = $('#nN').value.trim(), price = $('#nP').value.replace(',', '.'), category = $('#nC').value;
   if (!name || price === '') return toast('Zadajte názov a cenu');
