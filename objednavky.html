@@ -359,7 +359,7 @@ function connect() {
     db.ref('orders').on('value', s => { live.orders = s.val() || {}; tryRender(); }, errH);
     db.ref('employees/list').on('value', s => { live.employees = s.val() || []; tryRender(); }, () => { live.employees = []; tryRender(); });
     db.ref('access').on('value', s => { live.access = s.val() || {}; tryRender(); }, () => { live.access = {}; tryRender(); });
-    db.ref('queue').on('value', s => { live.queue = s.val() || {}; tryRender(); }, errH);
+    db.ref('queue').on('value', s => { live.queue = s.val() || {}; tryRender(); }, () => { live.queue = {}; tryRender(); errH(); });
     listening = true;
   });
 }
