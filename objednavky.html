@@ -48,9 +48,9 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:left;min-height:70px;position:relative}
 .item span{display:block;color:var(--muted);font-size:14px}
 .item .q{position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;border-radius:99px;min-width:24px;height:24px;font-size:13px;font-weight:700;display:grid;place-items:center;padding:0 6px}
-.item .qwrap{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;align-items:center;gap:4px}
+.item .qwrap{position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:2px}
 .item .qwrap .q{position:static}
-.item .qminus{width:22px;height:22px;border-radius:50%;border:none;background:var(--line);color:var(--ink);font-size:14px;line-height:1;font-weight:700;padding:0;display:grid;place-items:center;cursor:pointer}
+.item .qminus{width:15px;height:24px;border:none;background:transparent;color:var(--muted);font-size:15px;line-height:1;font-weight:900;padding:0;display:grid;place-items:center;cursor:pointer}
 .cart{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));z-index:6;box-shadow:0 -6px 20px #0000001a}
 .cart-in{max-width:1100px;margin:0 auto}
 .row{display:flex;align-items:center;gap:8px}
@@ -211,7 +211,7 @@ async function callInner(m, [col, id, action], body) {
         const items = o.items.map(it => {
           const k = it.name + '|' + it.price; const take = Math.min(need[k] || 0, it.qty);
           if (take > 0) { need[k] -= take; changed = true;
-            paidItems.push({ menuId: it.menuId, name: it.name, price: it.price, qty: take, note: it.note || '' });
+            paidItems.push({ menuId: it.menuId, name: it.name, price: it.price, qty: take, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}) });
             return { ...it, qty: it.qty - take }; }
           return it;
         }).filter(it => it.qty > 0);
@@ -290,7 +290,9 @@ async function callInner(m, [col, id, action], body) {
   if (col === 'queue') {
     if (m === 'POST' && !id) {
       const name = str(body.name, 40); if (!name) fail('Zadaj meno');
-      return db.ref('queue').push({ name, note: str(body.note, 60), type: str(body.type, 30), createdAt: now() });
+      const rec = { name, note: str(body.note, 60), type: str(body.type, 30), createdAt: now() };
+      if (body.tableId) { const t = S.tables.find(x => x.id === body.tableId); if (t) rec.tableId = t.id; }
+      return db.ref('queue').push(rec);
     }
     if (m === 'DELETE') return db.ref('queue/' + id).remove();
   }
@@ -318,14 +320,19 @@ async function callInner(m, [col, id, action], body) {
     if (m === 'DELETE' && action === 'finish') {
       const s = S.sessions.find(x => x.id === id); if (!s) fail('Sedenie neexistuje');
       const price = num(body.price); if (!(price >= 0)) fail('Zadaj sumu');
+      // Ak je zadaný stôl, suma sa nezaplatí hneď, ale pripíše sa na otvorený účet stola (zaplatí sa neskôr spolu so zvyškom)
+      let tbl = null;
+      if (body.tableId) { tbl = S.tables.find(x => x.id === body.tableId); if (!tbl) fail('Stôl neexistuje'); }
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
       const newKey = db.ref('orders').push().key;
-      await db.ref('orders/' + newKey).set({
-        no: r.snapshot.val(), tableId: null, tableName: '🎮 ' + s.name, waiter: str(body.waiter, 30),
+      const rec = {
+        no: r.snapshot.val(), tableId: tbl ? tbl.id : null, tableName: tbl ? tbl.name : '🎮 ' + s.name, waiter: str(body.waiter, 30),
         note: body.durationText ? 'Trvanie: ' + str(body.durationText, 40) : '',
-        items: [{ menuId: null, name: s.name, price, qty: 1, note: '', cat: s.type || 'Atrakcie' }],
-        status: 'zaplatena', createdAt: s.startedAt, paidAt: now()
-      });
+        items: [{ menuId: null, name: '🎮 ' + s.name, price, qty: 1, note: '', cat: s.type || 'Atrakcie' }],
+        status: tbl ? 'vydana' : 'zaplatena', createdAt: s.startedAt
+      };
+      if (!tbl) rec.paidAt = now();
+      await db.ref('orders/' + newKey).set(rec);
       return db.ref('sessions/' + id).remove();
     }
     if (m === 'DELETE') return db.ref('sessions/' + id).remove(); // zrušenie bez platby (omylom spustené)
@@ -565,13 +572,30 @@ const fmtDur = ms => {
   const h = Math.floor(min / 60), m = min % 60;
   return h ? `${h} h ${m} min` : `${m} min`;
 };
+const slug = s => String(s).replace(/[^a-zA-Z0-9]/g, '_');
+let finishSessionId = null;   // id sedenia, ktoré sa práve ukončuje (zobrazí inline formulár so sumou)
+let queueFormType = null;     // typ atrakcie, pre ktorý je otvorený formulár "+ Do poradovníka"
 function stationTile(st) {
   const s = S.sessions.find(x => x.stationId === st.id);
   if (!s) return `<button class="tbl" onclick="startSession('${st.id}')"><b>${esc(st.name)}</b><small>voľná</small></button>`;
+  if (finishSessionId === s.id) {
+    const sid = slug(s.id);
+    return `<div class="tbl busy" style="display:flex;flex-direction:column;gap:6px;text-align:left;cursor:default">
+      <b>${esc(st.name)}</b><small>odohraté ${fmtDur(now() - s.startedAt)}</small>
+      <input id="finPrice-${sid}" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Suma €" style="margin-top:2px">
+      <select id="finTable-${sid}" style="margin-top:2px">
+        <option value="">💶 Zaplatiť hneď (hotovosť)</option>
+        ${S.tables.map(tb => `<option value="${tb.id}">🧾 Pripísať na účet: ${esc(tb.name)}</option>`).join('')}
+      </select>
+      <div class="row" style="gap:6px;margin-top:2px">
+        <button class="btn ok" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();confirmFinishSession('${s.id}')">Potvrdiť</button>
+        <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();finishSessionId=null;render()">Zrušiť</button>
+      </div></div>`;
+  }
   return `<div class="tbl busy" style="display:flex;flex-direction:column;gap:6px;text-align:left;cursor:default">
     <b>${esc(st.name)}</b><small>hrá · ${fmtDur(now() - s.startedAt)}</small>
     <div class="row" style="gap:6px;margin-top:4px">
-      <button class="btn ok" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();finishSession('${s.id}')">Ukončiť</button>
+      <button class="btn ok" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();finishSessionId='${s.id}';render()">Ukončiť</button>
       <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();cancelSession('${s.id}')">Zrušiť</button>
     </div></div>`;
 }
@@ -584,6 +608,19 @@ function stationQueueBlock(type) {
                : `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="delQueue('${q.id}')">✕</button>`}
   </div>`).join('')}</div>`;
 }
+function queueFormBlock(type) {
+  if (queueFormType !== type) return '';
+  const tid = slug(type);
+  return `<div class="card" style="margin-top:8px">
+    <label class="muted" style="font-size:13px">Pridať do poradovníka – ${esc(type)}</label>
+    <select id="qfTable-${tid}" style="margin-top:6px">
+      <option value="">— vyber stôl —</option>
+      ${S.tables.map(tb => `<option value="${tb.id}">${esc(tb.name)}</option>`).join('')}
+    </select>
+    <input id="qfName-${tid}" placeholder="alebo napíš meno (ak nesedí k žiadnemu stolu)" style="margin-top:6px">
+    <button class="btn" style="margin-top:8px" onclick="addStationQueue('${esc(type).replace(/'/g, "\\'")}')">Pridať</button>
+  </div>`;
+}
 function renderAtrakcie() {
   const groups = {};
   S.attractions.forEach(a => { (groups[a.type || 'Ostatné'] = groups[a.type || 'Ostatné'] || []).push(a); });
@@ -592,27 +629,41 @@ function renderAtrakcie() {
     <h2 style="margin-top:18px">${esc(t)}</h2>
     <div class="grid">${groups[t].map(stationTile).join('')}</div>
     <div class="row" style="justify-content:flex-end;margin-top:6px">
-      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="addStationQueue('${esc(t).replace(/'/g, "\\'")}')">+ Do poradovníka (${esc(t)})</button>
+      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queueFormType=(queueFormType==='${esc(t).replace(/'/g, "\\'")}'?null:'${esc(t).replace(/'/g, "\\'")}');render()">+ Do poradovníka (${esc(t)})</button>
     </div>
+    ${queueFormBlock(t)}
     ${stationQueueBlock(t)}`).join('');
   $('#app').innerHTML = types.length ? html : '<div class="empty">Zatiaľ žiadne atrakcie. Pridajte ich v Nastaveniach.</div>';
 }
 async function startSession(stationId) {
   await call('POST', '/api/sessions', { stationId, waiter: store.get('waiter', '') });
 }
-async function finishSession(id) {
+async function confirmFinishSession(id) {
   const s = S.sessions.find(x => x.id === id); if (!s) return;
-  const priceStr = prompt(`${s.name} · odohraté ${fmtDur(now() - s.startedAt)}\n\nZadaj sumu (€):`);
-  if (priceStr === null) return;
-  const price = parseFloat(priceStr.replace(',', '.'));
-  if (!(price >= 0)) return toast('Neplatná suma');
-  await call('DELETE', '/api/sessions/' + id + '/finish', { price, waiter: store.get('waiter', ''), durationText: fmtDur(now() - s.startedAt) });
-  toast('Zaplatené ✓');
+  const sid = slug(id);
+  const priceStr = $('#finPrice-' + sid) ? $('#finPrice-' + sid).value : '';
+  const price = parseFloat(String(priceStr).replace(',', '.'));
+  if (!(price >= 0)) return toast('Zadaj platnú sumu');
+  const tableSel = $('#finTable-' + sid);
+  const targetTableId = tableSel ? tableSel.value : '';
+  await call('DELETE', '/api/sessions/' + id + '/finish', {
+    price, waiter: store.get('waiter', ''), durationText: fmtDur(now() - s.startedAt), tableId: targetTableId || null
+  });
+  finishSessionId = null;
+  toast(targetTableId ? 'Pripísané na účet stola ✓' : 'Zaplatené ✓');
+  render();
 }
 async function cancelSession(id) { if (confirm('Zrušiť bez platby? (napr. omylom spustené)')) await call('DELETE', '/api/sessions/' + id); }
 async function addStationQueue(type) {
-  const name = prompt('Meno / číslo objednávky pre poradovník – ' + type + ':'); if (!name) return;
-  await call('POST', '/api/queue', { name: name.trim(), note: '', type });
+  const tid = slug(type);
+  const sel = $('#qfTable-' + tid), nameInput = $('#qfName-' + tid);
+  const tableId = sel ? sel.value : '';
+  const table = tableId ? S.tables.find(t => t.id === tableId) : null;
+  const typedName = nameInput ? nameInput.value.trim() : '';
+  const name = table ? table.name : typedName;
+  if (!name) return toast('Vyber stôl alebo napíš meno');
+  await call('POST', '/api/queue', { name, note: '', type, tableId: table ? table.id : null });
+  queueFormType = null; toast('Pridané do poradovníka ✓'); render();
 }
 
 // História platieb podľa dátumu - dostupná pre všetkých čašníkov (nie len vedúceho), napr. keď sa
