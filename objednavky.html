@@ -142,6 +142,7 @@ let view = 'order';          // 'order' | 'bill'
 let cat = null;
 let cart = [];               // [{menuId, qty, note}]
 let cartOpen = false;        // košík dole je predvolene zbalený, aby neprekážal pri hľadaní
+let acctOpen = false;        // "Účet stola" (zoznam už objednaného) je predvolene zbalený
 let billSel = {};            // { "názov|cena": počet kusov, čo sa platí teraz } - na rozdelenie účtu
 let orderNote = '';
 let q = '';                  // hľadanie v menu
@@ -528,7 +529,7 @@ function renderHistory() {
 }
 function shiftHist(n) { histDate = new Date(histDate.getFullYear(), histDate.getMonth(), histDate.getDate() + n); render(); }
 
-function openTable(id) { tableId = id; view = 'order'; cart = []; orderNote = ''; cat = null; q = ''; render(); scrollTo(0, 0); }
+function openTable(id) { tableId = id; view = 'order'; cart = []; orderNote = ''; cat = null; q = ''; acctOpen = false; render(); scrollTo(0, 0); }
 
 function renderTable() {
   const cats = [...new Set(S.menu.map(m => m.category))];
@@ -539,13 +540,34 @@ function renderTable() {
     <label class="muted" style="font-size:13px">Presadli si sa? Presuň celý účet na iný stôl</label>
     <div class="row" style="margin-top:6px"><select id="moveSel">${others.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
     <button class="btn ghost" style="width:auto" onclick="moveTable()">Presunúť</button></div></div>` : '';
-  const prev = os.length ? `<h2>Objednávky stola</h2><div class="bar-grid">${os.map(o => `
-    <div class="order ${o.status}"><h3>#${o.no} <span class="pill p-${o.status}">${STAV[o.status]}</span><small>${ago(o.createdAt)}</small></h3>
-    <ul>${o.items.map(i => `<li><b>${i.qty}×</b>${esc(i.name)}${i.note ? `<i>${esc(i.note)}</i>` : ''}</li>`).join('')}</ul>
-    ${o.status === 'hotova' ? `<button class="btn ok" onclick="setStatus('${o.id}','vydana')">Odnesené</button>` : ''}
-    ${(o.status === 'nova' || o.status === 'vydana') ? `<button class="btn ghost" onclick="cancelOrder('${o.id}')">Zrušiť objednávku</button>` : ''}
-    </div>`).join('')}</div>
-    <div style="margin-top:14px"><button class="btn ghost" onclick="billSel={};view='bill';render()">Účet stola · ${eur(sumOrders(os))}</button></div>` : '';
+  // Namiesto samostatných kariet pre každú objednávku ukážeme jeden rozkliknuteľný "Účet stola"
+  // so všetkými položkami spolu, zoradenými pod sebou.
+  const acctAgg = {};
+  os.forEach(o => o.items.forEach(i => {
+    const k = i.name + '|' + i.price;
+    if (!acctAgg[k]) acctAgg[k] = { name: i.name, price: i.price, qty: 0 };
+    acctAgg[k].qty += i.qty;
+  }));
+  const acctRows = Object.values(acctAgg).sort((a, b) => a.name.localeCompare(b.name, 'sk'));
+  const acctTotal = sumOrders(os);
+  const pending = os.filter(o => o.status !== 'vydana');
+  const prev = os.length ? `<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
+    <button onclick="acctOpen=!acctOpen;render()" style="width:100%;display:flex;justify-content:space-between;align-items:center;background:none;border:none;padding:14px;font:inherit;color:inherit;cursor:pointer">
+      <span>🧾 Účet stola · ${acctRows.reduce((s, r) => s + r.qty, 0)} položiek</span><span>${eur(acctTotal)} · ${acctOpen ? 'skryť ▲' : 'zobraziť ▼'}</span>
+    </button>
+    ${acctOpen ? `<div style="padding:0 14px 14px">
+      <div class="cart-list">${acctRows.map(r => `
+        <div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span></div>`).join('')}</div>
+      ${pending.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">${pending.map(o => `
+        <div class="row" style="justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
+          <span class="pill p-${o.status}">#${o.no} · ${STAV[o.status]}</span>
+          <div class="row" style="gap:6px">
+            ${o.status === 'hotova' ? `<button class="btn ok" style="width:auto;padding:6px 10px" onclick="setStatus('${o.id}','vydana')">Odnesené</button>` : ''}
+            ${(o.status === 'nova' || o.status === 'vydana') ? `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="cancelOrder('${o.id}')">Zrušiť</button>` : ''}
+          </div></div>`).join('')}</div>` : ''}
+      <div style="margin-top:14px"><button class="btn ghost" onclick="billSel={};view='bill';render()">💶 Platba · ${eur(acctTotal)}</button></div>
+    </div>` : ''}
+  </div>` : '';
 
   $('#app').innerHTML = readyBanner() + moveUi + prev + (S.menu.length ? `
     <h2 style="${os.length ? 'margin-top:22px' : ''}">Nová objednávka</h2>
