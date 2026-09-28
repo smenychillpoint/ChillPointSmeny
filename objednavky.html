@@ -115,12 +115,25 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 <main id="app"></main>
 <div id="cart" class="cart hide"></div>
 
+<div id="employeeGate" class="login hide">
+  <div class="card">
+    <h2 style="margin-top:0">Kto si?</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 8px">Vyber sa zo zoznamu a zadaj svoj kód (rovnaký, aký máš aj vo Smenách).</p>
+    <select id="gateName"></select>
+    <input id="gatePin" type="password" inputmode="numeric" placeholder="Tvoj kód" autocomplete="off" onkeydown="if(event.key==='Enter')confirmGateLogin()">
+    <div id="gateErr" style="color:var(--warn);min-height:20px"></div>
+    <button class="btn" onclick="confirmGateLogin()">Pokračovať</button>
+    <p style="text-align:center;margin-top:14px"><a href="#" onclick="wantManagerLogin=true;render();return false" style="font-size:13px">Prihlásiť ako vedúci</a></p>
+  </div>
+</div>
 <div id="login" class="login hide"><form onsubmit="login(event)" class="card">
-  <h2 style="margin-top:0">Prihlásenie</h2>
+  <h2 style="margin-top:0">Prihlásenie vedúceho</h2>
   <input id="lmail" type="email" placeholder="E-mail" autocomplete="username" required>
   <input id="lpass" type="password" placeholder="Heslo" autocomplete="current-password" required>
   <div id="lerr" style="color:var(--warn);min-height:20px"></div>
-  <button class="btn">Prihlásiť</button></form></div>
+  <button class="btn">Prihlásiť</button>
+  <p style="text-align:center;margin-top:14px"><a href="#" onclick="backToGate();return false" style="font-size:13px">← Späť</a></p>
+  </form></div>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
@@ -157,6 +170,15 @@ let q = '';                  // hľadanie v menu
 // Nastavenia (stoly/menu) smie meniť len vedúci - rovnaký účet ako v appke na smeny.
 const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
 let isManager = false;
+// Spoločný "zariadenie" účet - appka sa ním prihlási do Firebase automaticky na pozadí, aby zamestnanci
+// nemuseli poznať žiadny e-mail/heslo. Oni sa potom identifikujú len svojím menom + PIN kódom (rovnaký
+// kód, aký majú aj vo Smenách). Tento účet treba raz vytvoriť vo Firebase konzole (Authentication → Users
+// → Add user) presne s týmto e-mailom a heslom.
+const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';
+const DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
+let wantManagerLogin = false;   // true = zobraziť pôvodný formulár na prihlásenie vedúceho (e-mail/heslo)
+let deviceLoginFailed = false;  // automatické prihlásenie zariadenia zlyhalo (účet ešte nie je vo Firebase vytvorený)
+let deviceLoginAttempted = false;
 let uzavierkaUnlocked = false;   // niekto iný ako vedúci si toto zariadenie odomkol PIN-om pre Dennú uzávierku
 let uzavDate = new Date();   // deň zobrazený v Dennej uzávierke
 let showHist = false;        // história platieb podľa dátumu, dostupná pre všetkých čašníkov (nielen vedúceho)
@@ -494,12 +516,23 @@ function tryRender() {
   onData({ tables: live.tables, menu: live.menu, orders: live.orders, categories: live.categories, employees: live.employees, access: live.access, queue: live.queue, attractions: live.attractions, sessions: live.sessions, queueLog: live.queueLog, board: live.board });
   if (!pruned) { pruned = true; prune(); }
 }
+// Neskúša to znova dookola, ak to raz zlyhá (napr. spoločný účet ešte nie je vo Firebase vytvorený) -
+// vtedy sa automaticky ponúkne prihlásenie vedúceho namiesto donekonečna opakovaných neúspešných pokusov.
+async function attemptDeviceLogin() {
+  deviceLoginAttempted = true;
+  try { await auth.signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); }
+  catch (e) { deviceLoginFailed = true; wantManagerLogin = true; render(); }
+}
+function backToGate() {
+  wantManagerLogin = false;
+  if (!auth.currentUser) { deviceLoginAttempted = false; attemptDeviceLogin(); }
+  render();
+}
 function connect() {
   db.ref('.info/connected').on('value', s => {
     $('#conn').className = s.val() ? 'conn' : 'conn off'; $('#conn').textContent = s.val() ? '● online' : '● offline';
   });
   auth.onAuthStateChanged(async user => {
-    $('#login').classList.toggle('hide', !!user);
     isManager = !!user && (user.email || '').toLowerCase() === MANAGER_EMAIL.toLowerCase();
     uzavierkaUnlocked = false;
     if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
@@ -507,8 +540,14 @@ function connect() {
     if (!user) {
       if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); db.ref('employees/list').off(); db.ref('access').off(); db.ref('queue').off(); db.ref('attractions').off(); db.ref('sessions').off(); db.ref('queueLog').off(); db.ref('board').off(); listening = false; }
       live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null, attractions: null, sessions: null, queueLog: null, board: null }; pruned = false;
+      // Nikto nie je prihlásený - skús automaticky prihlásiť toto zariadenie na spoločný účet, nech
+      // zamestnanec nemusí poznať žiadne heslo (identifikuje sa až potom menom + svojím kódom).
+      if (!wantManagerLogin && !deviceLoginAttempted) attemptDeviceLogin();
+      else render();
       return;
     }
+    deviceLoginAttempted = false; deviceLoginFailed = false; wantManagerLogin = false;
+    render();
     try { await seedIfEmpty(); } catch (e) { console.warn(e); }
     const errH = () => toast('Nemáte prístup k dátam – skontrolujte pravidlá databázy');
     db.ref('tables').on('value', s => { live.tables = s.val() || {}; tryRender(); }, errH);
@@ -531,7 +570,12 @@ async function login(ev) {
   try { await auth.signInWithEmailAndPassword($('#lmail').value.trim(), $('#lpass').value); }
   catch { $('#lerr').textContent = 'Nesprávny e-mail alebo heslo'; }
 }
-function logout() { if (confirm('Odhlásiť toto zariadenie?')) auth.signOut(); }
+function logout() {
+  if (!confirm('Odhlásiť toto zariadenie?')) return;
+  store.set('waiter', '');
+  wantManagerLogin = false;
+  auth.signOut();
+}
 function unlockUzavierka() {
   const pin = ($('#uzPin')?.value || '').trim();
   if (pin && S.access && pin === S.access.uzavierkaPin) { uzavierkaUnlocked = true; render(); }
@@ -578,6 +622,23 @@ const STAV = { nova: 'Na bare', hotova: 'Hotová – odniesť', vydana: 'Vydaná
 
 // ---------- render ----------
 function render() {
+  // Prihlasovacie "brány": kým nie je nikto prihlásený (zariadenie ešte len skúša automatický vstup),
+  // alebo kým vedúci chce zadať svoj e-mail/heslo, alebo kým bežný zamestnanec ešte nezadal svoje meno
+  // + kód, zobrazí sa vždy len jedna z troch vrstiev nižšie (cez CSS position:fixed prekryjú celú appku).
+  const user = auth.currentUser;
+  const showManagerForm = wantManagerLogin && !isManager;
+  const curWaiter = store.get('waiter', '');
+  const waiterVerified = curWaiter && (S.employees || []).some(e => e.name === curWaiter);
+  const showGate = !!user && !isManager && !showManagerForm && !waiterVerified;
+  $('#login').classList.toggle('hide', !showManagerForm);
+  $('#employeeGate').classList.toggle('hide', !showGate);
+  if (showGate) {
+    const sel = $('#gateName');
+    if (sel && document.activeElement !== sel) {
+      const names = (S.employees || []).map(e => e.name).sort((a, b) => a.localeCompare(b, 'sk'));
+      sel.innerHTML = names.length ? names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') : '<option value="">(žiadni zamestnanci)</option>';
+    }
+  }
   const canUzavierka = isManager || !!(S.access && S.access.uzavierkaPin);
   $('#tabNastavenia').classList.toggle('hide', !isManager);
   $('#tabUzavierka').classList.toggle('hide', !canUzavierka);
@@ -1556,11 +1617,7 @@ function renderSettings() {
     ? `<label class="muted">Meno čašníka (zobrazí sa na bare)</label>
        <p style="font-weight:600;margin:2px 0 8px">${esc(curWaiter)}</p>
        <button class="btn ghost" style="width:auto;padding:4px 10px" onclick="store.set('waiter','');render()">Zmeniť</button>`
-    : `<label class="muted">Meno čašníka (zobrazí sa na bare)</label>
-       <p class="muted" style="font-size:13px;margin:0 0 6px">Vyber sa zo zoznamu a zadaj svoj PIN.</p>
-       <select id="waiterName">${(S.employees || []).map(e => `<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('') || '<option value="">(žiadni zamestnanci)</option>'}</select>
-       <input id="waiterPin" type="password" inputmode="numeric" placeholder="PIN" style="margin-top:6px">
-       <button class="primary small" style="margin-top:8px;width:auto;padding:0 16px" onclick="verifyWaiter()">Potvrdiť</button>`;
+    : `<p class="muted" style="font-size:13px;margin:0">Nie si prihlásený menom - zadaj si meno a kód pri ďalšom obnovení stránky.</p>`;
   const device = `<h2>Toto zariadenie</h2><div class="card">
       ${waiterBlock}
       <p class="muted" style="font-size:13px;margin-top:10px">Prihlásený ako: ${esc(auth.currentUser?.email || '')}${isManager ? ' (vedúci)' : ''}</p>
@@ -1688,13 +1745,24 @@ async function addItemMenu() {
 }
 async function delItem(id) { if (confirm('Zmazať položku z menu?')) await call('DELETE', '/api/menu/' + id); }
 
-function verifyWaiter() {
-  const name = $('#waiterName')?.value || '';
-  const pin = ($('#waiterPin')?.value || '').trim();
-  if (!name) { toast('Vyber svoje meno'); return; }
-  if (!pin) { toast('Zadaj PIN'); return; }
+let gateLoginFails = 0;
+function confirmGateLogin() {
+  const err = $('#gateErr');
+  const lockUntil = Number(localStorage.getItem('cp_gate_lockuntil') || 0);
+  if (Date.now() < lockUntil) { if (err) err.textContent = `Príliš veľa pokusov. Skús to o ${Math.ceil((lockUntil - Date.now()) / 1000)} s.`; return; }
+  const name = $('#gateName')?.value || '';
+  const pin = ($('#gatePin')?.value || '').trim();
+  if (!name) { if (err) err.textContent = 'Vyber svoje meno'; return; }
+  if (!pin) { if (err) err.textContent = 'Zadaj svoj kód'; return; }
   const emp = (S.employees || []).find(e => e.name === name);
-  if (!emp || !emp.code || String(emp.code) !== pin) { toast('Nesprávny PIN'); return; }
+  if (!emp || !emp.code || String(emp.code) !== pin) {
+    gateLoginFails++;
+    if (gateLoginFails >= 5) { gateLoginFails = 0; localStorage.setItem('cp_gate_lockuntil', String(Date.now() + 60000)); if (err) err.textContent = 'Príliš veľa pokusov. Skús to o minútu.'; return; }
+    if (err) err.textContent = 'Nesprávny kód';
+    return;
+  }
+  gateLoginFails = 0;
+  if (err) err.textContent = '';
   store.set('waiter', name);
   toast('Prihlásený ako ' + name + ' ✓');
   render();
