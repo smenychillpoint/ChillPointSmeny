@@ -777,6 +777,51 @@
     </div>
   </div>
 
+  <div class="modal" id="boardModal">
+    <div class="box" style="max-width:680px;">
+      <button class="close" data-close>×</button>
+      <h2>Chýba / Kúpiť</h2>
+      <p class="sub">Napíš, čo chýba alebo čo by bolo fajn kúpiť. Vidia to všetci, mazať môže iba vedúci.</p>
+      <div class="form">
+        <label>ČO</label><input type="text" id="boardText" maxlength="120" placeholder="napr. citrón">
+        <label>MNOŽSTVO (NEPOVINNÉ)</label><input type="text" id="boardQty" maxlength="30" placeholder="napr. 2 kg">
+        <div class="manage-row" style="margin-top:8px;gap:16px;">
+          <label class="switch-row" style="margin:0;"><input type="radio" name="boardType" value="missing" checked><span>🧺 Chýba</span></label>
+          <label class="switch-row" style="margin:0;"><input type="radio" name="boardType" value="buy"><span>🛒 Kúpiť</span></label>
+        </div>
+        <button class="primary small" id="boardAdd" style="margin-top:10px;width:auto;padding:0 16px;">Pridať</button>
+      </div>
+      <div id="boardList" style="margin-top:16px;"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="extraModal">
+    <div class="box" style="max-width:680px;">
+      <button class="close" data-close>×</button>
+      <h2>Čo som spravil/a navyše</h2>
+      <p class="sub">Záznamy za posledných 30 dní, kto čo spravil navyše počas smeny. Pridáš to na svoj dnešný deň cez „Checklist a záznam zo smeny“ (voľba ✨).</p>
+      <div id="extraList"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="todoModal">
+    <div class="box" style="max-width:680px;">
+      <button class="close" data-close>×</button>
+      <h2>To-do zoznam</h2>
+      <p class="sub" id="todoSub"></p>
+      <div class="form" id="todoForm" style="display:none;">
+        <label>ÚLOHA</label><input type="text" id="todoText" maxlength="200" placeholder="napr. umyť okná">
+        <label>PRIRADIŤ (NEPOVINNÉ)</label><select id="todoAssignee"></select>
+        <label>OPAKOVAŤ (NEPOVINNÉ)</label><select id="todoRecur"></select>
+        <button class="primary small" id="todoAdd" style="margin-top:10px;width:auto;padding:0 16px;">Pridať úlohu</button>
+      </div>
+      <div class="manage-row" id="todoShuffleRow" style="margin:12px 0;display:none;">
+        <button class="outline" id="todoShuffle">🔀 Náhodne premiešať priradenia</button>
+      </div>
+      <div id="todoList"></div>
+    </div>
+  </div>
+
   <div class="modal" id="pnoteModal">
     <div class="box">
       <button class="close" data-close>×</button>
@@ -1078,6 +1123,8 @@
   let personPanels=[], highlightPerson='', ppZTop=60, ppIdSeq=0;   // personPanels: {id, name, offset, x, y, z}[] – viacero súčasne otvorených, ťahateľných plávajúcich okien s prepínaním mena
   const newPanelId=()=>'pp'+(++ppIdSeq);
   let notices={}, noticesRef=null, noticeAcks={}, noticeAcksRef=null;
+  let board={}, boardRef=null;   // nástenka "Chýba / Kúpiť" - zdieľaná aj s appkou Objednávky (rovnaká Firebase)
+  let todos={}, todosRef=null;   // to-do zoznam úloh (vedúci pridáva a priraďuje, prípadne premieša priradenia)
   let joinOpen=false;
   let flex={}, flexRef=null;
   let rosterOffset=0, rosterOnlyClosed=false;
@@ -1271,6 +1318,8 @@
       historyRef = rtdb.ref('history');
       recurringRef = rtdb.ref('recurring');
       targetsRef = rtdb.ref('targets');
+      boardRef = rtdb.ref('board');
+      todosRef = rtdb.ref('todos');
       dbAvailable = true; dbReady = true;
       try{ rtdb.ref('.info/connected').on('value', snap=>onConnectionChange(snap.val()===true)); }catch(e){}
       try{ if(window.addEventListener) window.addEventListener('offline', ()=>{ netConnected=false; goOffline(); }); }catch(e){}
@@ -1325,6 +1374,8 @@
     noticesRef.on('value', snap=>{ notices=snap.val()||{}; renderAll(); }, err=>{ notices={}; });
     noticeAcksRef.on('value', snap=>{ noticeAcks=snap.val()||{}; renderAll(); }, err=>{ noticeAcks={}; });
     flexRef.on('value', snap=>{ flex=snap.val()||{}; renderAll(); }, err=>{ flex={}; });
+    boardRef.on('value', snap=>{ board=snap.val()||{}; pruneBoard(); renderAll(); }, err=>{ board={}; });
+    todosRef.on('value', snap=>{ todos=snap.val()||{}; renderAll(); }, err=>{ todos={}; });
     weekWantRef.on('value', snap=>{ weekWant=snap.val()||{}; renderAll(); }, err=>{ weekWant={}; });
     // Vypínanie funkcií
     featRef.on('value', snap=>{ featCfg=snap.val()||{}; renderAll(); }, err=>{});
@@ -3185,7 +3236,9 @@
     { id:'avail',      label:'Môžem / Nemôžem / Chcem (dostupnosť)' },
     { id:'notices',    label:'Nástenka oznamov' },
     { id:'confirm',    label:'Potvrdenie smeny zamestnancom' },
-    { id:'checklists', label:'Checklisty a záznam zo smeny' }
+    { id:'checklists', label:'Checklisty a záznam zo smeny' },
+    { id:'board',      label:'Nástenka „Chýba / Kúpiť“' },
+    { id:'todos',      label:'To-do zoznam úloh' }
   ];
   const feat=id=>featCfg[id]!==false;
   async function setFeature(id, on){
@@ -3571,12 +3624,12 @@
     if(!canCheck(key)||!dbAvailable) return false;
     text=String(text||'').trim().slice(0,400);
     if(!text){ showToast('Napíš, čo sa stalo.'); return false; }
-    if(kind!=='defect') kind='note';
+    if(kind!=='defect' && kind!=='extra') kind='note';
     try{
       await scheduleRef.child(key).child('dl').push({ n:ckWho(), t:serverTs(), x:text, k:kind });
       ckDraft='';
-      showToast(kind==='defect' ? 'Závada nahlásená 🛠' : 'Záznam pridaný 📝');
-      logEvent(key, `${kind==='defect'?'Nahlásená závada':'Záznam zo smeny'}: ${text.slice(0,120)}`, ckWho());
+      showToast(kind==='defect' ? 'Závada nahlásená 🛠' : (kind==='extra' ? 'Pridané do „Navyše“ ✨' : 'Záznam pridaný 📝'));
+      logEvent(key, `${kind==='defect'?'Nahlásená závada':(kind==='extra'?'Spravil/a navyše':'Záznam zo smeny')}: ${text.slice(0,120)}`, ckWho());
       return true;
     }catch(e){ showToast('Nepodarilo sa uložiť (nastav nové pravidlá vo Firebase).', 4000); return false; }
   }
@@ -3602,8 +3655,9 @@
     };
     const cfg = sec('open','Otvorenie') + sec('close','Zatvorenie');
     const logs=Object.keys(d.dl||{}).map(id=>({ id, ...d.dl[id] })).filter(e=>e && e.x).sort((a,b)=>(a.t||0)-(b.t||0));
-    const logHtml=logs.map(e=>`<div class="ck-log ${e.k==='defect'?'defect':''}">${e.k==='defect'?'🛠':'📝'} <b>${esc(e.n||'')}</b> · ${esc(fmtClock(e.t))} – ${esc(e.x)}${e.r?' <em>(vyriešené)</em>':''}${manager?` <button class="cfm" data-ldone="${esc(e.id)}">${e.r?'↺ znovu otvoriť':'✓ vyriešené'}</button><button class="cfm" data-ldel="${esc(e.id)}">🗑</button>`:''}</div>`).join('');
-    const form = can ? `<div class="ckform"><select id="ckKind"><option value="note">📝 Poznámka</option><option value="defect">🛠 Závada</option></select><textarea id="ckLogText" maxlength="400" placeholder="Čo sa stalo? (napr. nefunguje zbraň č. 4)">${esc(ckDraft)}</textarea><button class="primary small" id="ckLogAdd">Pridať záznam</button></div>` : '';
+    const logIcon=k=>k==='defect'?'🛠':(k==='extra'?'✨':'📝');
+    const logHtml=logs.map(e=>`<div class="ck-log ${e.k==='defect'?'defect':''}">${logIcon(e.k)} <b>${esc(e.n||'')}</b> · ${esc(fmtClock(e.t))} – ${esc(e.x)}${e.r?' <em>(vyriešené)</em>':''}${manager?` <button class="cfm" data-ldone="${esc(e.id)}">${e.r?'↺ znovu otvoriť':'✓ vyriešené'}</button><button class="cfm" data-ldel="${esc(e.id)}">🗑</button>`:''}</div>`).join('');
+    const form = can ? `<div class="ckform"><select id="ckKind"><option value="note">📝 Poznámka</option><option value="extra">✨ Spravil/a som navyše</option><option value="defect">🛠 Závada</option></select><textarea id="ckLogText" maxlength="400" placeholder="Čo sa stalo? (napr. nefunguje zbraň č. 4, alebo čo si spravil/a navyše)">${esc(ckDraft)}</textarea><button class="primary small" id="ckLogAdd">Pridať záznam</button></div>` : '';
     const hint = (!cfg && manager) ? '<p class="sub" style="margin:0 0 6px;font-size:12px;">Checklisty otvorenia a zatvorenia nastavíš v Nastaveniach (✅ Checklisty).</p>' : '';
     box.innerHTML=`<div class="section-title">Checklist a záznam zo smeny</div>${hint}${cfg}<div style="margin-top:8px;">${logHtml||'<p class="sub" style="margin:0;font-size:12px;">Zatiaľ žiadne záznamy.</p>'}</div>${form}`;
     document.querySelectorAll('#ckBox [data-ck]').forEach(x=>x.onchange=()=>{ const [type,i]=x.dataset.ck.split('|'); tickItem(date, type, ckItems(type)[Number(i)], x.checked); });
@@ -3645,6 +3699,187 @@
     document.querySelectorAll('#defectList [data-rdone]').forEach(x=>x.onclick=()=>{ const [k,id]=x.dataset.rdone.split('|'); resolveLog(k, id, !(((dayObj(k).dl||{})[id]||{}).r)); });
   }
   function openDefects(){ if(!manager) return; renderDefects(); $('defectModal').classList.add('open'); }
+
+  // čo kto spravil navyše (posledných 30 dní) - rovnaký "dl" záznam ako poznámka/závada, len iný druh (k:'extra').
+  // Na rozdiel od závad to vidia VŠETCI zamestnanci, nie iba vedúci.
+  function extraList(){
+    const out=[]; const cut=(()=>{ const d=new Date(); d.setDate(d.getDate()-30); return iso(d); })();
+    Object.keys(schedule.days||{}).forEach(k=>{
+      if(k<cut) return;
+      const dl=(schedule.days[k]||{}).dl||{};
+      Object.keys(dl).forEach(id=>{ const e=dl[id]; if(e && e.k==='extra' && e.x) out.push({ key:k, id, n:e.n, t:e.t, x:e.x }); });
+    });
+    return out.sort((a,b)=>(b.t||0)-(a.t||0));
+  }
+  // rebríček za aktuálny kalendárny mesiac - kto najviac pridáva "navyše" (jednoduchá motivácia, nič presné)
+  function extraLeaderboard(){
+    const now=new Date(); const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    const counts={};
+    Object.keys(schedule.days||{}).forEach(k=>{
+      if(k.slice(0,7)!==ym) return;
+      const dl=(schedule.days[k]||{}).dl||{};
+      Object.values(dl).forEach(e=>{ if(e && e.k==='extra' && e.x && e.n) counts[e.n]=(counts[e.n]||0)+1; });
+    });
+    return Object.entries(counts).map(([n,c])=>({n,c})).sort((a,b)=>b.c-a.c || a.n.localeCompare(b.n,'sk'));
+  }
+  function renderExtra(){
+    const list=extraList();
+    const lb=extraLeaderboard();
+    const lbHtml = lb.length ? `<div class="ck-log" style="border-bottom:2px solid #2c2f33;margin-bottom:8px;padding-bottom:10px;"><b>🏆 Tento mesiac najviac „navyše“</b><br>${lb.map((r,i)=>`${i+1}. ${esc(r.n)} – ${r.c}×`).join('<br>')}</div>` : '';
+    $('extraList').innerHTML = lbHtml + (list.length ? list.map(e=>`<div class="ck-log">✨ <b>${esc(fmtDay(e.key))}</b> · ${esc(e.n||'')} · ${esc(fmtClock(e.t))} – ${esc(e.x)}</div>`).join('') : '<p class="sub">Zatiaľ žiadne záznamy.</p>');
+  }
+  function openExtra(){ renderExtra(); $('extraModal').classList.add('open'); }
+
+  // ---------- nástenka "Chýba / Kúpiť" (zdieľaná aj s appkou Objednávky) ----------
+  function boardList(){
+    return Object.keys(board||{}).map(id=>({ id, ...board[id] })).filter(b=>b && typeof b.text==='string').sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  }
+  function boardMissingCount(){ return boardList().filter(b=>b.type!=='buy' && !b.done).length; }
+  let boardPruned=false;
+  // vybavené položky z nástenky staršie ako 7 dní sa potichu zmažú (mazanie smie len vedúci, preto len tu)
+  function pruneBoard(){
+    if(boardPruned || !manager || !dbAvailable) return;
+    boardPruned=true;
+    const limit=Date.now()-7*86400000, patch={};
+    boardList().forEach(b=>{ if(b.done && b.doneAt && b.doneAt<limit) patch[b.id]=null; });
+    if(Object.keys(patch).length) boardRef.update(patch).catch(()=>{});
+  }
+  async function setBoardDone(id, val){
+    if(!dbAvailable) return;
+    try{ await boardRef.child(id).update({ done: !!val, doneAt: val ? serverTs() : null }); }
+    catch(e){ showToast('Nepodarilo sa uložiť.'); }
+  }
+  async function addBoardItem(){
+    if(!dbAvailable) return;
+    const who = manager ? 'Vedúci' : myName;
+    if(!who){ showToast('Najprv sa prihlás.'); return; }
+    const text=($('boardText').value||'').trim().slice(0,120);
+    if(!text){ showToast('Napíš, čo chýba alebo čo kúpiť.'); return; }
+    const qty=($('boardQty').value||'').trim().slice(0,30);
+    const typeEl=document.querySelector('input[name="boardType"]:checked');
+    const type=(typeEl && typeEl.value==='buy') ? 'buy' : 'missing';
+    try{
+      const doc={ text, type, author: who, createdAt: serverTs() };
+      if(qty) doc.qty=qty;
+      await boardRef.push(doc);
+      $('boardText').value=''; $('boardQty').value='';
+      showToast(type==='buy' ? 'Pridané na nákupný zoznam 🛒' : 'Pridané - chýba 🧺');
+      logEvent('', `${who} pridal/a na nástenku: ${text}`, who);
+    }catch(e){ showToast('Nepodarilo sa uložiť (nastav nové pravidlá vo Firebase).', 4000); }
+  }
+  async function deleteBoardItem(id){
+    if(!manager||!dbAvailable) return;
+    if(!confirm('Zmazať túto položku z nástenky?')) return;
+    try{ await boardRef.child(id).remove(); }catch(e){ showToast('Nepodarilo sa zmazať.'); }
+  }
+  function renderBoard(){
+    const list=boardList();
+    const missing=list.filter(b=>b.type!=='buy' && !b.done), buy=list.filter(b=>b.type==='buy' && !b.done);
+    const done=list.filter(b=>b.done).sort((a,b)=>(b.doneAt||0)-(a.doneAt||0));
+    const row=b=>`<div class="ck-log">${b.type==='buy'?'🛒':'🧺'} <b>${esc(b.text)}</b>${b.qty?` · ${esc(b.qty)}`:''} <span class="ckby">${esc(b.author||'')}${b.createdAt?' · '+esc(fmtClock(b.createdAt)):''}</span> <button class="cfm" data-bdone="${esc(b.id)}">${b.type==='buy'?'✓ kúpené':'✓ doplnené'}</button>${manager?` <button class="cfm" data-bdel="${esc(b.id)}">🗑</button>`:''}</div>`;
+    const doneRow=b=>`<div class="ck-log" style="opacity:.55"><s>${b.type==='buy'?'🛒':'🧺'} ${esc(b.text)}${b.qty?` · ${esc(b.qty)}`:''}</s> <span class="ckby">${esc(b.author||'')}</span> <button class="cfm" data-bundone="${esc(b.id)}">↺ vrátiť</button>${manager?` <button class="cfm" data-bdel="${esc(b.id)}">🗑</button>`:''}</div>`;
+    $('boardList').innerHTML =
+      `<h5 style="margin:12px 0 4px;font-size:11px;letter-spacing:.08em;color:#8f9297;">🧺 CHÝBA</h5>` +
+      (missing.length ? missing.map(row).join('') : '<p class="sub" style="margin:0;font-size:12px;">Nič nechýba.</p>') +
+      `<h5 style="margin:16px 0 4px;font-size:11px;letter-spacing:.08em;color:#8f9297;">🛒 KÚPIŤ</h5>` +
+      (buy.length ? buy.map(row).join('') : '<p class="sub" style="margin:0;font-size:12px;">Zatiaľ nič na kúpenie.</p>') +
+      (done.length ? `<h5 style="margin:16px 0 4px;font-size:11px;letter-spacing:.08em;color:#8f9297;">VYBAVENÉ (posledných 7 dní)</h5>${done.map(doneRow).join('')}` : '');
+    document.querySelectorAll('#boardList [data-bdel]').forEach(x=>x.onclick=()=>deleteBoardItem(x.dataset.bdel));
+    document.querySelectorAll('#boardList [data-bdone]').forEach(x=>x.onclick=()=>setBoardDone(x.dataset.bdone, true));
+    document.querySelectorAll('#boardList [data-bundone]').forEach(x=>x.onclick=()=>setBoardDone(x.dataset.bundone, false));
+  }
+  function openBoard(){ renderBoard(); $('boardModal').classList.add('open'); }
+
+  // ---------- to-do zoznam úloh (vedúci pridáva/priraďuje/mazáva, priradený človek si vie odškrtnúť hotové) ----------
+  function todoList(){
+    return Object.keys(todos||{}).map(id=>({ id, ...todos[id] })).filter(t=>t && typeof t.text==='string').sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  }
+  const WEEKDAY_NAMES=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
+  // Pre opakujúcu sa úlohu (napr. "každý pondelok") sa deň, odkedy naposledy táto úloha "začala platiť", počíta
+  // z aktuálneho dňa (dnešok alebo naposledy prešlý zvolený deň v týždni, o polnoci).
+  function recurPeriodStart(weekday){
+    const now=new Date();
+    const d=new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const diff=(d.getDay()-weekday+7)%7;
+    d.setDate(d.getDate()-diff);
+    return d.getTime();
+  }
+  // Opakujúca sa úloha je "hotová" len ak bola odškrtnutá v rámci AKTUÁLNEHO týždňového obdobia - inak (napr.
+  // v pondelok ráno) sa automaticky znova ukáže ako otvorená, bez toho, aby ju niekto musel ručne resetovať.
+  function todoEffectiveDone(t){
+    if(t.recur===undefined || t.recur===null) return !!t.done;
+    if(!t.doneAt) return false;
+    return t.doneAt>=recurPeriodStart(t.recur);
+  }
+  function todoOpenCount(){ return todoList().filter(t=>!todoEffectiveDone(t)).length; }
+  async function addTodo(){
+    if(!manager||!dbAvailable) return;
+    const text=($('todoText').value||'').trim().slice(0,200);
+    if(!text){ showToast('Napíš úlohu.'); return; }
+    const assignee=$('todoAssignee') ? $('todoAssignee').value : '';
+    const recurVal=$('todoRecur') ? $('todoRecur').value : '';
+    try{
+      const doc={ text, createdAt: serverTs() };
+      if(assignee) doc.assignee=assignee;
+      if(recurVal!=='') doc.recur=Number(recurVal);
+      await todosRef.push(doc);
+      $('todoText').value='';
+      showToast('Úloha pridaná ✓');
+      logEvent('', `Vedúci pridal/a úlohu: ${text}${assignee?' (pre '+assignee+')':''}${recurVal!==''?' (každý '+WEEKDAY_NAMES[Number(recurVal)]+')':''}`);
+    }catch(e){ showToast('Nepodarilo sa uložiť.'); }
+  }
+  async function deleteTodo(id){
+    if(!manager||!dbAvailable) return;
+    if(!confirm('Zmazať túto úlohu?')) return;
+    try{ await todosRef.child(id).remove(); }catch(e){ showToast('Nepodarilo sa zmazať.'); }
+  }
+  async function setTodoDone(id, val){
+    const t=todos[id]; if(!t||!dbAvailable) return;
+    if(!manager && t.assignee!==myName) return;   // len priradený človek (alebo vedúci) môže úlohu odškrtnúť
+    try{ await todosRef.child(id).update({ done: !!val, doneAt: val ? serverTs() : null }); }catch(e){ showToast('Nepodarilo sa uložiť.'); renderTodo(); }
+  }
+  // náhodne premieša priradenie medzi zamestnancami (pre istotu, keď vedúci nechce vyberať ručne) - týka sa
+  // len aktuálne otvorených úloh, hotové (aj tie tento týždeň hotové opakujúce sa) nechá tak
+  async function shuffleTodos(){
+    if(!manager||!dbAvailable) return;
+    const names=(employees.list||[]).map(e=>e.name);
+    if(!names.length) return showToast('Najprv pridaj zamestnancov.');
+    const open=todoList().filter(t=>!todoEffectiveDone(t));
+    if(!open.length) return showToast('Žiadne nedokončené úlohy na premiešanie.');
+    const shuffled=[...names];
+    for(let i=shuffled.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]; }
+    const patch={};
+    open.forEach((t,i)=>{ patch[t.id+'/assignee']=shuffled[i%shuffled.length]; });
+    try{ await todosRef.update(patch); showToast('Úlohy premiešané 🔀'); logEvent('', 'Vedúci náhodne premiešal/a priradenie úloh'); }
+    catch(e){ showToast('Nepodarilo sa uložiť.'); }
+  }
+  function renderTodo(){
+    $('todoForm').style.display = manager ? '' : 'none';
+    $('todoShuffleRow').style.display = manager ? '' : 'none';
+    $('todoSub').textContent = manager
+      ? 'Pridaj úlohy, prípadne priraď konkrétnemu zamestnancovi alebo nastav, aby sa úloha opakovala každý týždeň. Priradený človek (alebo ty) ju môže označiť ako hotovú.'
+      : 'Úlohy, ktoré treba spraviť. Ak je priradená tebe, môžeš ju označiť ako hotovú.';
+    if(manager){
+      const names=(employees.list||[]).map(e=>e.name).sort((a,b)=>a.localeCompare(b,'sk'));
+      if(document.activeElement!==$('todoAssignee')) $('todoAssignee').innerHTML = `<option value="">(nepriradené)</option>` + names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+      if(document.activeElement!==$('todoRecur') && $('todoRecur') && !$('todoRecur').dataset.filled){ $('todoRecur').innerHTML = `<option value="">Jednorazovo</option>` + WEEKDAY_NAMES.map((n,i)=>`<option value="${i}">Každý ${n.toLowerCase()}</option>`).join(''); $('todoRecur').dataset.filled='1'; }
+    }
+    const list=todoList();
+    const open=list.filter(t=>!todoEffectiveDone(t)), done=list.filter(t=>todoEffectiveDone(t));
+    const row=t=>{
+      const canToggle = manager || t.assignee===myName;
+      const dEff=todoEffectiveDone(t);
+      return `<label class="switch-row" style="margin-bottom:6px;">
+        <input type="checkbox" data-todo="${esc(t.id)}" ${dEff?'checked':''} ${canToggle?'':'disabled'}>
+        <span><b>${esc(t.text)}</b>${t.recur!==undefined&&t.recur!==null?` <span class="ckby">🔁 každý ${WEEKDAY_NAMES[t.recur].toLowerCase()}</span>`:''}${t.assignee?` <span class="ckby">→ ${esc(t.assignee)}</span>`:''}${manager?` <button class="cfm" data-tdel="${esc(t.id)}">🗑</button>`:''}</span>
+      </label>`;
+    };
+    $('todoList').innerHTML = (open.length ? open.map(row).join('') : '<p class="sub" style="margin:0 0 8px;font-size:12px;">Žiadne otvorené úlohy.</p>') +
+      (done.length ? `<h5 style="margin:14px 0 4px;font-size:11px;letter-spacing:.08em;color:#8f9297;">HOTOVÉ${done.some(t=>t.recur!==undefined&&t.recur!==null)?' (opakujúce sa sa samy znova otvoria)':''}</h5>${done.map(row).join('')}` : '');
+    document.querySelectorAll('#todoList [data-todo]').forEach(x=>x.onchange=()=>setTodoDone(x.dataset.todo, x.checked));
+    document.querySelectorAll('#todoList [data-tdel]').forEach(x=>x.onclick=()=>deleteTodo(x.dataset.tdel));
+  }
+  function openTodo(){ renderTodo(); $('todoModal').classList.add('open'); }
 
   // ---------- editor vlastnej šablóny správ ----------
   const tplKind=()=>callMode==='notice' ? 'notice' : 'call';
@@ -4073,7 +4308,13 @@
   function message(id,text){ $(id).textContent=text; $(id).classList.add('show'); }
 
   function renderTopRight(){
-    let html=`<a class="outline" id="ordersLink" href="objednavky.html" style="text-decoration:none;display:inline-flex;align-items:center">🍹 Objednávky</a><button class="outline" id="helpBtn">❓ Návod</button>`;
+    let html=`<a class="outline" id="ordersLink" href="objednavky.html" style="text-decoration:none;display:inline-flex;align-items:center">🍹 Objednávky</a>`;
+    if(myName || manager){
+      if(feat('board')) html+=`<button class="outline" id="boardBtn">📦 Chýba/Kúpiť${boardMissingCount()?` <span class="badge-manager" style="margin-left:4px;">${boardMissingCount()}</span>`:''}</button>`;
+      if(feat('checklists')) html+=`<button class="outline" id="extraBtn">✨ Navyše</button>`;
+      if(feat('todos')) html+=`<button class="outline" id="todoBtn">☑ To-do${todoOpenCount()?` <span class="badge-manager" style="margin-left:4px;">${todoOpenCount()}</span>`:''}</button>`;
+    }
+    html+=`<button class="outline" id="helpBtn">❓ Návod</button>`;
     if(canShowInstall()) html+=`<button class="outline" id="installBtn">📲 Do mobilu</button>`;
     if(myName) html+=`<div class="who-badge"><span class="avatar">${esc(myName[0]||'?')}</span>${esc(myName)}<button class="link-btn" id="logoutBtn">odhlásiť</button></div>`;
     if(manager) html+=`<span class="badge-manager">⚡ VEDÚCI</span><button class="outline" id="lockBtn">Vypnúť</button>`;
@@ -4084,6 +4325,9 @@
     const lb=$('logoutBtn'); if(lb) lb.onclick=doLogout;
     const mb=$('managerBtn'); if(mb) mb.onclick=()=>{ $('managerModal').classList.add('open'); setTimeout(()=>$('pin').focus(),50); };
     const kb=$('lockBtn'); if(kb) kb.onclick=doManagerLogout;
+    const bb=$('boardBtn'); if(bb) bb.onclick=openBoard;
+    const eb=$('extraBtn'); if(eb) eb.onclick=openExtra;
+    const tb=$('todoBtn'); if(tb) tb.onclick=openTodo;
   }
 
   function renderHero(){
@@ -4689,6 +4933,9 @@
     if(personPanels.length) renderPersonPanels();
     if($('noticeModal').classList.contains('open')) renderNoticeAdmin();
     if($('defectModal').classList.contains('open')) renderDefects();
+    if($('boardModal').classList.contains('open')) renderBoard();
+    if($('extraModal').classList.contains('open')) renderExtra();
+    if($('todoModal').classList.contains('open')) renderTodo();
     if($('dataModal').classList.contains('open')) renderDataCheck();
     if($('availModal').classList.contains('open')) renderAvail();
     if($('checkModal').classList.contains('open')) renderCheck();
@@ -4862,6 +5109,9 @@
   $('dataFixAll').onclick=async()=>{ await fixDataIssues(dataIssues().filter(i=>i.patch).map(i=>i.id)); renderDataCheck(); };
   $('dataRecheck').onclick=renderDataCheck;
   $('noticePost').onclick=postNotice;
+  $('boardAdd').onclick=addBoardItem;
+  $('todoAdd').onclick=addTodo;
+  $('todoShuffle').onclick=shuffleTodos;
   $('confirmAll').onclick=confirmAllMine;
   $('personBtn').onclick=()=>{ const first=employees.list.map(e=>e.name).sort((a,b)=>a.localeCompare(b,'sk'))[0]; if(first) openPerson(first); };
   $('pnoteSave').onclick=savePNote;
