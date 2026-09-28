@@ -134,6 +134,14 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
   <button class="btn">Prihlásiť</button>
   <p style="text-align:center;margin-top:14px"><a href="#" onclick="backToGate();return false" style="font-size:13px">← Späť</a></p>
   </form></div>
+<div id="itemOptionsModal" class="login hide">
+  <div class="card">
+    <h2 style="margin-top:0" id="itemOptionsTitle"></h2>
+    <div id="itemOptionsBody"></div>
+    <button class="btn" style="margin-top:14px" onclick="confirmItemOptions()">Pridať do košíka</button>
+    <p style="text-align:center;margin-top:10px"><a href="#" onclick="closeItemOptions();return false" style="font-size:13px">Zrušiť</a></p>
+  </div>
+</div>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
@@ -193,6 +201,9 @@ let boardType = 'missing';
 let warnedReservations = new Set();  // rezervácie, na ktoré sa už píplo (aby to nepípalo dookola)
 let histFilter = '';         // hľadanie v histórii platieb (meno stola, položka, číslo objednávky)
 let queueHistFilter = '';    // hľadanie v histórii rezervácií (meno)
+let editingOptsFor = null;   // id položky menu, ktorej "možnosti pri pridaní" sa práve upravujú v Nastaveniach
+let itemOptionsFor = null;   // id položky menu, pre ktorú je otvorený výber možností (napr. sóda/ľad/príchuť) pri objednávaní
+let itemOptionsPicks = {};   // { indexSkupiny: indexVybranejMožnosti } pre aktuálne otvorený výber
 let payroll = store.get('payroll', { pct: '', days: {} });  // výplatná kalkulačka v uzávierke: % z tržby + odpracované hodiny za deň
 // ochrana pred starým tvarom uložených dát v localStorage (zo staršej verzie appky) - inak by Uzávierka spadla na chybe
 if (!payroll || typeof payroll !== 'object') payroll = { pct: '', days: {} };
@@ -300,6 +311,9 @@ async function callInner(m, [col, id, action], body) {
       if (body.fav !== undefined) u.fav = !!body.fav;
       // vlastná suma pri pridaní (napr. biliard) - namiesto pevnej ceny z menu sa v objednávke spýta presná suma
       if (body.customPrice !== undefined) u.customPrice = !!body.customPrice;
+      // možnosti pri pridaní (napr. sóda/bez sódy, s ľadom/bez ľadu, príchuť) - jedna skupina na riadok,
+      // formát "Názov: možnosť1, možnosť2"; prázdny reťazec = žiadne možnosti (zmaže sa)
+      if (body.opts !== undefined) u.opts = str(body.opts, 500);
       return db.ref('menu/' + id).update(u); }
     if (m === 'DELETE') return db.ref('menu/' + id).remove();
   }
@@ -897,8 +911,9 @@ function stationTile(st) {
 function stationQueueBlock(type) {
   const rows = S.queue.filter(q => q.type === type);
   if (!rows.length) return '';
+  const nowT = now();
   return `<div class="card" style="padding:0;margin-top:8px">${rows.map((q, i) => `<div class="line" style="align-items:center">
-    <div class="n">${i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `}${esc(q.name)}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
+    <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
     ${i === 0 ? `<button class="btn ok" style="width:auto" onclick="serveQueue('${q.id}')">Odbaviť ✓</button>`
                : `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="delQueue('${q.id}')">✕</button>`}
   </div>`).join('')}</div>`;
@@ -913,6 +928,8 @@ function queueFormBlock(type) {
       ${S.tables.map(tb => `<option value="${tb.id}">${esc(tb.name)}</option>`).join('')}
     </select>
     <input id="qfName-${tid}" placeholder="alebo napíš meno (ak nesedí k žiadnemu stolu)" style="margin-top:6px">
+    <label class="muted" style="font-size:13px;margin-top:6px;display:block">Na presný čas (voliteľné - keď sa nezadá, ide rovno "teraz")</label>
+    <input id="qfTime-${tid}" type="time" style="margin-top:4px">
     <button class="btn" style="margin-top:8px" onclick="addStationQueue('${esc(type).replace(/'/g, "\\'")}')">Pridať</button>
   </div>`;
 }
@@ -1023,13 +1040,16 @@ async function confirmFinishSession(id, restart) {
 async function cancelSession(id) { if (confirm('Zrušiť bez platby? (napr. omylom spustené)')) await call('DELETE', '/api/sessions/' + id); }
 async function addStationQueue(type) {
   const tid = slug(type);
-  const sel = $('#qfTable-' + tid), nameInput = $('#qfName-' + tid);
+  const sel = $('#qfTable-' + tid), nameInput = $('#qfName-' + tid), timeInput = $('#qfTime-' + tid);
   const tableId = sel ? sel.value : '';
   const table = tableId ? S.tables.find(t => t.id === tableId) : null;
   const typedName = nameInput ? nameInput.value.trim() : '';
   const name = table ? table.name : typedName;
   if (!name) return toast('Vyber stôl alebo napíš meno');
-  await call('POST', '/api/queue', { name, note: '', type, tableId: table ? table.id : null });
+  const body = { name, note: '', type, tableId: table ? table.id : null };
+  const time = timeInput ? timeInput.value : '';
+  if (time) body.time = time;
+  await call('POST', '/api/queue', body);
   queueFormType = null; toast('Rezervácia pridaná ✓'); render();
 }
 
@@ -1233,14 +1253,65 @@ function renderFavs() {
     <button class="item" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}</span>
     ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><button class="qminus" onclick="event.stopPropagation();removeItem('${m.id}')">−</button></div>` : ''}</button>`).join('')}</div>`;
 }
+// Rozparsuje nastavenie "možností pri pridaní" (napr. sóda/ľad/príchuť) z jednoduchého textového formátu:
+// jedna skupina na riadok, "Názov skupiny: možnosť1, možnosť2, možnosť3".
+function parseOpts(raw) {
+  return String(raw || '').split('\n').map(l => l.trim()).filter(Boolean).map(line => {
+    const idx = line.indexOf(':'); if (idx === -1) return null;
+    const name = line.slice(0, idx).trim();
+    const choices = line.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean);
+    if (!name || !choices.length) return null;
+    return { name, choices };
+  }).filter(Boolean);
+}
 function addItem(id) {
   const mi = S.menu.find(x => x.id === id);
   // položky ako biliard majú premenlivú sumu - namiesto pevnej ceny sa spýta presná suma, nech sa
   // nemusí prácne vyťukávať cez pevné položky (napr. 7,10 €)
   if (mi && mi.customPrice) return addCustomPriceItem(id);
+  // položky s nastavenými "možnosťami" (napr. sóda/bez sódy, s ľadom/bez ľadu, príchuť) otvoria pred
+  // pridaním do košíka malý výber, nech sa nemusí každý detail vypisovať ručne do poznámky
+  if (mi && mi.opts && parseOpts(mi.opts).length) return openItemOptions(id);
   const c = cart.find(x => x.menuId === id && !x.note && x.price == null);
   c ? c.qty++ : cart.push({ menuId: id, qty: 1, note: '' });
   renderItems(); renderFavs(); renderCart();
+}
+function openItemOptions(id) {
+  itemOptionsFor = id; itemOptionsPicks = {};
+  renderItemOptions();
+  $('#itemOptionsModal').classList.remove('hide');
+}
+function closeItemOptions() {
+  itemOptionsFor = null;
+  $('#itemOptionsModal').classList.add('hide');
+}
+function pickItemOption(gi, ci) {
+  itemOptionsPicks[gi] = (itemOptionsPicks[gi] === ci) ? undefined : ci;
+  renderItemOptions();
+}
+function renderItemOptions() {
+  const mi = S.menu.find(x => x.id === itemOptionsFor); if (!mi) return closeItemOptions();
+  const groups = parseOpts(mi.opts);
+  $('#itemOptionsTitle').textContent = mi.name;
+  $('#itemOptionsBody').innerHTML = groups.map((g, gi) => `
+    <label class="muted" style="font-size:13px;display:block;margin-top:${gi ? 10 : 0}px">${esc(g.name)}</label>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">
+      ${g.choices.map((c, ci) => `<button type="button" class="btn ${itemOptionsPicks[gi] === ci ? '' : 'ghost'}" style="width:auto;padding:8px 12px" onclick="pickItemOption(${gi},${ci})">${esc(c)}</button>`).join('')}
+    </div>`).join('');
+}
+function confirmItemOptions() {
+  const mi = S.menu.find(x => x.id === itemOptionsFor); if (!mi) return;
+  const groups = parseOpts(mi.opts);
+  const note = groups.map((g, gi) => itemOptionsPicks[gi] != null ? g.choices[itemOptionsPicks[gi]] : null).filter(Boolean).join(' · ');
+  cart.push({ menuId: mi.id, qty: 1, note });
+  closeItemOptions();
+  renderItems(); renderFavs(); renderCart();
+}
+function toggleEditOpts(id) { editingOptsFor = editingOptsFor === id ? null : id; render(); }
+function saveOpts(id) {
+  const raw = ($('#optsRaw-' + id)?.value || '').trim();
+  call('PUT', '/api/menu/' + id, { opts: raw });
+  editingOptsFor = null;
 }
 function addCustomPriceItem(id) {
   const mi = S.menu.find(x => x.id === id); if (!mi) return;
@@ -1647,7 +1718,17 @@ function renderSettings() {
       <select class="cat" onchange="call('PUT','/api/menu/${m.id}',{category:this.value})">${cats.map(c2 => `<option value="${esc(c2)}" ${c2 === m.category ? 'selected' : ''}>${esc(c2)}</option>`).join('')}</select>
       <div style="display:flex;gap:4px"><button class="btn ghost" style="width:auto;padding:4px 8px" title="${m.fav ? 'Obľúbené – klikni pre zrušenie' : 'Označiť ako obľúbené'}" onclick="call('PUT','/api/menu/${m.id}',{fav:${!m.fav}})">${m.fav ? '⭐' : '☆'}</button>
       <button class="btn ghost" style="width:auto;padding:4px 8px" title="${m.customPrice ? 'Vlastná suma pri pridaní (napr. biliard) – klikni pre zrušenie' : 'Zapnúť vlastnú sumu pri pridaní (napr. biliard – zadáš presnú sumu namiesto pevnej ceny)'}" onclick="call('PUT','/api/menu/${m.id}',{customPrice:${!m.customPrice}})">${m.customPrice ? '✎€' : '€'}</button>
-      <button class="del" onclick="delItem('${m.id}')">✕</button></div></div>`).join('') || '<p class="muted" style="font-size:13px">Zatiaľ žiadne položky.</p>')).join('');
+      <button class="btn ghost" style="width:auto;padding:4px 8px" title="${m.opts ? 'Možnosti pri pridaní (napr. s ľadom/bez ľadu) – klikni pre úpravu' : 'Pridať možnosti pri pridaní (napr. sóda, ľad, príchuť)'}" onclick="toggleEditOpts('${m.id}')">${m.opts ? '⚙️' : '⚙'}</button>
+      <button class="del" onclick="delItem('${m.id}')">✕</button></div></div>
+      ${editingOptsFor === m.id ? `<div class="card" style="margin:4px 0 10px">
+        <label class="muted" style="font-size:13px">Možnosti pri pridaní „${esc(m.name)}“ – jedna skupina na riadok, formát „Názov: možnosť1, možnosť2“</label>
+        <textarea id="optsRaw-${m.id}" rows="4" style="margin-top:6px;width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink)" placeholder="Sóda: So sódou, Bez sódy&#10;Ľad: S ľadom, Bez ľadu&#10;Príchuť: Vanilka, Malina, Čokoláda">${esc(m.opts || '')}</textarea>
+        <div class="row" style="gap:6px;margin-top:8px">
+          <button class="btn" style="width:auto;padding:8px 14px" onclick="saveOpts('${m.id}')">Uložiť</button>
+          ${m.opts ? `<button class="btn ghost" style="width:auto;padding:8px 14px" onclick="call('PUT','/api/menu/${m.id}',{opts:''});editingOptsFor=null;render()">Vymazať možnosti</button>` : ''}
+          <button class="btn ghost" style="width:auto;padding:8px 14px" onclick="editingOptsFor=null;render()">Zavrieť</button>
+        </div>
+      </div>` : ''}`).join('') || '<p class="muted" style="font-size:13px">Zatiaľ žiadne položky.</p>')).join('');
   const empRows = (S.employees || []).map(e => `<div class="set-row t">
     <input value="${esc(e.name)}" disabled style="opacity:.75">
     <div class="row" style="gap:4px;align-items:center"><input type="number" min="0" step="0.1" inputmode="decimal" style="width:80px" value="${e.wage || ''}" placeholder="€/h"
