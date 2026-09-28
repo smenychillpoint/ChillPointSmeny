@@ -274,6 +274,31 @@ async function callInner(m, [col, id, action], body) {
         note: '', items: paidItems, status: 'zaplatena', createdAt: now(), paidAt: now() };
       return db.ref('orders').update(u);
     }
+    // Odstránenie (stornovanie) položky z účtu stola bez platby - napr. omylom objednané, alebo hosť
+    // zmenil názor. Funguje len na ešte NEzaplatené položky (rovnaká hranica ako pri rušení objednávky).
+    if (m === 'POST' && action === 'removeItem') {
+      const name = str(body.name, 60); if (!name) fail('Chýba názov položky');
+      const price = num(body.price);
+      let remaining = Math.max(1, Math.min(99, body.qty | 0 || 1));
+      const os = tableOrders(id).sort((a, b) => a.createdAt - b.createdAt);
+      const u2 = {}; const delOrders = [];
+      os.forEach(o => {
+        if (remaining <= 0) return;
+        let changed = false;
+        const items = o.items.map(it => {
+          if (remaining <= 0 || it.name !== name || it.price !== price) return it;
+          const take = Math.min(remaining, it.qty);
+          remaining -= take; changed = true;
+          return { ...it, qty: it.qty - take };
+        }).filter(it => it.qty > 0);
+        if (changed) { if (items.length) u2[o.id + '/items'] = items; else delOrders.push(o.id); }
+      });
+      if (!Object.keys(u2).length && !delOrders.length) fail('Položka sa na účte nenašla');
+      const jobs = [];
+      if (Object.keys(u2).length) jobs.push(db.ref('orders').update(u2));
+      delOrders.forEach(oid => jobs.push(db.ref('orders/' + oid).remove()));
+      return Promise.all(jobs);
+    }
     // Zmena poradia stola v zozname (v Nastaveniach) - preusporiada, nech vedúci môže dať stoly, ktoré k sebe patria, vedľa seba
     if (m === 'POST' && action === 'move') {
       if (!isManager) fail('Stoly smie meniť len vedúci');
@@ -1152,7 +1177,8 @@ function renderTable() {
     </button>
     ${acctOpen ? `<div style="padding:0 14px 14px">
       <div class="cart-list">${acctRows.map(r => `
-        <div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span></div>`).join('')}</div>
+        <div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span>
+          <button class="del" style="width:auto;padding:6px 8px;font-size:13px" title="Odstrániť z účtu" onclick="removeAcctItem('${esc(r.name).replace(/'/g, "\\'")}',${r.price})">✕</button></div>`).join('')}</div>
       ${pending.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">${pending.map(o => `
         <div class="row" style="justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
           <span class="pill p-${o.status}">#${o.no} · ${STAV[o.status]}</span>
@@ -1234,8 +1260,11 @@ function applyVoiceOrder(text) {
 function renderItems() {
   const el = $('#items'); if (!el) return;
   const words = fold(q.trim()).split(/\s+/).filter(Boolean);
-  const list = words.length ? S.menu.filter(m => words.every(w => fold(m.name).includes(w))).slice(0, 60)
-                            : S.menu.filter(m => m.category === cat);
+  // položky bez názvu (napr. omylom vytvorené prázdne riadky v Nastaveniach) sa v objednávaní vôbec
+  // nezobrazujú - vyzerali by ako prázdna biela dlaždica bez textu. Vedúci ich vidí a zmaže v Nastaveniach.
+  const named = m => (m.name || '').trim();
+  const list = words.length ? S.menu.filter(m => named(m) && words.every(w => fold(m.name).includes(w))).slice(0, 60)
+                            : S.menu.filter(m => named(m) && m.category === cat);
   $('#cats').classList.toggle('hide', words.length > 0);
   const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
   el.innerHTML = list.length ? list.map(m => `
@@ -1246,7 +1275,7 @@ function renderItems() {
 
 function renderFavs() {
   const el = $('#favs'); if (!el) return;
-  const favs = S.menu.filter(m => m.fav);
+  const favs = S.menu.filter(m => m.fav && (m.name || '').trim());
   if (!favs.length) { el.innerHTML = ''; return; }
   const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
   el.innerHTML = `<h3 style="margin:0 0 6px">⭐ Obľúbené</h3><div class="items">${favs.map(m => `
@@ -1384,6 +1413,12 @@ async function writeOrder() {
 }
 async function setStatus(id, status) { await call('POST', `/api/orders/${id}/status`, { status }); }
 async function cancelOrder(id) { if (confirm('Zrušiť túto objednávku?')) await call('DELETE', `/api/orders/${id}`); }
+// Odstráni 1 kus danej položky z účtu stola (nezaplatené) - napr. keď sa niečo objednalo omylom.
+// Funguje rovnako ako mínus v košíku, len na už odoslané/zapísané položky na účte.
+async function removeAcctItem(name, price) {
+  if (!confirm(`Odstrániť "${name}" z účtu? (nezaplatené)`)) return;
+  await call('POST', `/api/tables/${tableId}/removeItem`, { name, price, qty: 1 });
+}
 async function moveTable() {
   const sel = $('#moveSel'); if (!sel) return;
   const targetId = sel.value;
@@ -1712,8 +1747,8 @@ function renderSettings() {
     <button class="del" onclick="delTable('${x.id}')">Zmazať</button></div>`).join('');
   const cats = allCategories();
   const menu = cats.map(c => `<h3 style="margin:14px 0 6px">${esc(c)}</h3>` + (S.menu.filter(m => m.category === c).map(m => `
-    <div class="set-row">
-      <input value="${esc(m.name)}" onchange="call('PUT','/api/menu/${m.id}',{name:this.value})">
+    <div class="set-row"${(m.name || '').trim() ? '' : ' style="outline:2px solid var(--warn);border-radius:10px"'}>
+      <input value="${esc(m.name)}" placeholder="(bez názvu - vidno len tu, doplň názov alebo zmaž ✕)" onchange="call('PUT','/api/menu/${m.id}',{name:this.value})">
       <input type="number" step="0.01" min="0" inputmode="decimal" value="${m.price}" onchange="call('PUT','/api/menu/${m.id}',{price:this.value})">
       <select class="cat" onchange="call('PUT','/api/menu/${m.id}',{category:this.value})">${cats.map(c2 => `<option value="${esc(c2)}" ${c2 === m.category ? 'selected' : ''}>${esc(c2)}</option>`).join('')}</select>
       <div style="display:flex;gap:4px"><button class="btn ghost" style="width:auto;padding:4px 8px" title="${m.fav ? 'Obľúbené – klikni pre zrušenie' : 'Označiť ako obľúbené'}" onclick="call('PUT','/api/menu/${m.id}',{fav:${!m.fav}})">${m.fav ? '⭐' : '☆'}</button>
