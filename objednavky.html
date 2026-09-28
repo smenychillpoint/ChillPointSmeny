@@ -87,6 +87,9 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .empty{text-align:center;color:var(--muted);padding:40px 10px}
 .set-row{display:grid;grid-template-columns:1fr 90px 1fr auto;gap:6px;align-items:center;margin-bottom:6px}
 .set-row.t{grid-template-columns:1fr auto}
+.dragHandle{cursor:grab;touch-action:none;color:var(--muted);text-align:center;font-size:18px;user-select:none;padding:6px 0}
+.attr-row.dragging{opacity:.4}
+.attr-row.drag-over{box-shadow:0 -3px 0 0 var(--accent)}
 .del{background:var(--warnbg);color:var(--warn);padding:10px 12px}
 .login{position:fixed;inset:0;z-index:30;background:var(--bg);display:grid;place-items:center;padding:20px}.login form{width:100%;max-width:360px;display:grid;gap:10px}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:20;max-width:90vw}
@@ -202,8 +205,11 @@ let warnedReservations = new Set();  // rezervácie, na ktoré sa už píplo (ab
 let histFilter = '';         // hľadanie v histórii platieb (meno stola, položka, číslo objednávky)
 let queueHistFilter = '';    // hľadanie v histórii rezervácií (meno)
 let editingOptsFor = null;   // id položky menu, ktorej "možnosti pri pridaní" sa práve upravujú v Nastaveniach
+let attrDragId = null;       // id atrakcie, ktorá sa práve ťahá (preusporiadanie v Nastaveniach)
+let attrDragOverId = null;   // id atrakcie, nad ktorou je práve prst/kurzor pri ťahaní
 let itemOptionsFor = null;   // id položky menu, pre ktorú je otvorený výber možností (napr. sóda/ľad/príchuť) pri objednávaní
 let itemOptionsPicks = {};   // { indexSkupiny: indexVybranejMožnosti } pre aktuálne otvorený výber
+let settingsTab = 'stoly';   // aktívna záložka v Nastaveniach (stoly/menu/atrakcie/zamestnanci/zariadenie) - nech nie je všetko na jednej dlhej stránke
 let payroll = store.get('payroll', { pct: '', days: {} });  // výplatná kalkulačka v uzávierke: % z tržby + odpracované hodiny za deň
 // ochrana pred starým tvarom uložených dát v localStorage (zo staršej verzie appky) - inak by Uzávierka spadla na chybe
 if (!payroll || typeof payroll !== 'object') payroll = { pct: '', days: {} };
@@ -221,6 +227,8 @@ if (!window.FIREBASE_CONFIG || String(window.FIREBASE_CONFIG.apiKey || '').inclu
 firebase.initializeApp(window.FIREBASE_CONFIG);
 const auth = firebase.auth(), db = firebase.database();
 const now = () => Date.now();
+// dnešný dátum vo formáte YYYY-MM-DD podľa lokálneho času (nie UTC, ako by dal toISOString())
+const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const str = (v, max = 100) => String(v ?? '').trim().slice(0, max);
 const num = v => Math.round(Number(String(v ?? '').replace(',', '.')) * 100) / 100;
 function fail(msg) { toast(msg); throw new Error(msg); }
@@ -399,10 +407,17 @@ async function callInner(m, [col, id, action], body) {
       const name = str(body.name, 40); if (!name) fail('Zadaj meno');
       const rec = { name, note: str(body.note, 60), type: str(body.type, 30), createdAt: now() };
       if (body.tableId) { const t = S.tables.find(x => x.id === body.tableId); if (t) rec.tableId = t.id; }
-      // rezervácia na presný čas dnes (napr. 18:00) - ak sa nezadá, ide o bežný poradovník "teraz"
+      // rezervácia na presný čas (napr. 18:00), prípadne aj na iný ako dnešný deň (napr. budúci pondelok) -
+      // ak sa čas nezadá, ide o bežný poradovník "teraz" (dátum bez času sa ignoruje, nemá čo kotviť)
       if (body.time && /^([01]\d|2[0-3]):[0-5]\d$/.test(body.time)) {
         const [h, mi] = body.time.split(':').map(Number);
-        const d = new Date(); d.setHours(h, mi, 0, 0);
+        let d = new Date();
+        if (body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
+          const [y, mo, da] = body.date.split('-').map(Number);
+          const chosen = new Date(y, mo - 1, da);
+          if (!isNaN(chosen.getTime())) d = chosen;
+        }
+        d.setHours(h, mi, 0, 0);
         rec.reserveAt = d.getTime();
       }
       return db.ref('queue').push(rec);
@@ -451,6 +466,17 @@ async function callInner(m, [col, id, action], body) {
     if (m === 'DELETE') { if (!isManager) fail('Atrakcie smie mazať len vedúci');
       if (S.sessions.some(s => s.stationId === id)) fail('Stanica sa práve používa');
       return db.ref('attractions/' + id).remove(); }
+    // Preusporiadanie ťahaním (Nastavenia) - príde celý nový poradie zoznam id-čiek, prepíše sa "order"
+    // podľa pozície v ňom (na rozdiel od "move" pri stoloch, ktoré len vymení dvoch susedov). Volá sa
+    // ako /api/attractions/_/reorder - konkrétne id v ceste sa ignoruje, mení sa poradie celého zoznamu.
+    if (m === 'POST' && action === 'reorder') {
+      if (!isManager) fail('Atrakcie smie meniť len vedúci');
+      const ids = Array.isArray(body.order) ? body.order : [];
+      const known = new Set(S.attractions.map(a => a.id));
+      if (!ids.length || !ids.every(x => known.has(x)) || ids.length !== S.attractions.length) fail('Neplatné poradie');
+      const u = {}; ids.forEach((aid, i) => { u[aid + '/order'] = i; });
+      return db.ref('attractions').update(u);
+    }
   }
   // Sedenia (session) - kto práve hrá na danej stanici, od kedy. Ktokoľvek prihlásený smie spustiť/ukončiť.
   if (col === 'sessions') {
@@ -625,10 +651,11 @@ function unlockUzavierka() {
 let pending = false;
 function safeRender() {
   if (document.activeElement?.tagName === 'INPUT') { pending = true; return; }
+  if (attrDragId) { pending = true; return; } // neprekresľovať uprostred ťahania atrakcie v Nastaveniach
   render();
 }
 document.addEventListener('focusout', () => setTimeout(() => {
-  if (pending && document.activeElement?.tagName !== 'INPUT') { pending = false; render(); }
+  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId) { pending = false; render(); }
 }, 50));
 
 // ---------- zvuk ----------
@@ -821,10 +848,14 @@ async function delBoardItem(id) {
 // v poradovníku danej atrakcie na obrazovke Atrakcie (rovnaký záznam, len iný pohľad naň).
 const queueTargetLabel = q => q.tableId ? (S.tables.find(t => t.id === q.tableId)?.name || '') : (q.type || '');
 const fmtQTime = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const isSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+// Ako fmtQTime, ale keď je rezervácia na iný deň ako dnes, pridá aj dátum (napr. "5.10. 18:00"), nech sa
+// budúca rezervácia nedá pomýliť s dnešnou v tom istom (chronologicky zoradenom) zozname.
+const fmtQDateTime = t => { const d = new Date(t); const time = fmtQTime(t); return isSameDay(d, new Date()) ? time : `${d.getDate()}.${d.getMonth() + 1}. ${time}`; };
 function renderQueue() {
   const nowT = now();
   const rows = S.queue.map((q, i) => `<div class="line" style="align-items:center">
-    <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
+    <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
     <div class="row" style="gap:4px">
       <button class="btn ok" style="width:auto;padding:6px 10px" onclick="serveQueue('${q.id}')">Odbaviť ✓</button>
       <button class="btn ghost" style="width:auto;padding:6px 10px" onclick="delQueue('${q.id}')">✕</button>
@@ -841,8 +872,8 @@ function renderQueue() {
         ${S.tables.length ? `<optgroup label="Stôl">${S.tables.map(t => `<option value="table:${t.id}">${esc(t.name)}</option>`).join('')}</optgroup>` : ''}
         ${attrTypes.length ? `<optgroup label="Atrakcia">${attrTypes.map(t => `<option value="attr:${esc(t)}">${esc(t)}</option>`).join('')}</optgroup>` : ''}
       </select>
-      <label class="muted" style="font-size:13px;margin-top:6px;display:block">Na presný čas (voliteľné - keď sa nezadá, ide rovno "teraz")</label>
-      <input id="qTime" type="time" style="margin-top:4px">
+      <label class="muted" style="font-size:13px;margin-top:6px;display:block">Na presný dátum a čas (voliteľné - keď sa nezadá čas, ide rovno "teraz")</label>
+      <div class="row" style="margin-top:4px;gap:6px"><input id="qDate" type="date" value="${todayISO()}" style="flex:1"><input id="qTime" type="time" style="flex:1"></div>
       <input id="qNote" placeholder="Poznámka (nepovinné)" style="margin-top:6px">
       <button class="btn" style="margin-top:8px" onclick="addQueue()">Pridať</button>
     </div>
@@ -855,9 +886,10 @@ async function addQueue() {
   if (targetVal.startsWith('table:')) { const t = S.tables.find(x => x.id === targetVal.slice(6)); if (t) body.tableId = t.id; }
   else if (targetVal.startsWith('attr:')) { body.type = targetVal.slice(5); }
   const time = $('#qTime') ? $('#qTime').value : '';
-  if (time) body.time = time;
+  if (time) { body.time = time; body.date = $('#qDate') ? $('#qDate').value : ''; }
   await call('POST', '/api/queue', body);
   $('#qName').value = ''; $('#qNote').value = ''; if ($('#qTarget')) $('#qTarget').value = ''; if ($('#qTime')) $('#qTime').value = '';
+  if ($('#qDate')) $('#qDate').value = todayISO();
 }
 // Zámok proti omylom - aj odbavenie sa musí potvrdiť (predtým sa dalo omylom zmazať jedným klikom)
 async function serveQueue(id) {
@@ -938,7 +970,7 @@ function stationQueueBlock(type) {
   if (!rows.length) return '';
   const nowT = now();
   return `<div class="card" style="padding:0;margin-top:8px">${rows.map((q, i) => `<div class="line" style="align-items:center">
-    <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
+    <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
     ${i === 0 ? `<button class="btn ok" style="width:auto" onclick="serveQueue('${q.id}')">Odbaviť ✓</button>`
                : `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="delQueue('${q.id}')">✕</button>`}
   </div>`).join('')}</div>`;
@@ -953,8 +985,8 @@ function queueFormBlock(type) {
       ${S.tables.map(tb => `<option value="${tb.id}">${esc(tb.name)}</option>`).join('')}
     </select>
     <input id="qfName-${tid}" placeholder="alebo napíš meno (ak nesedí k žiadnemu stolu)" style="margin-top:6px">
-    <label class="muted" style="font-size:13px;margin-top:6px;display:block">Na presný čas (voliteľné - keď sa nezadá, ide rovno "teraz")</label>
-    <input id="qfTime-${tid}" type="time" style="margin-top:4px">
+    <label class="muted" style="font-size:13px;margin-top:6px;display:block">Na presný dátum a čas (voliteľné - keď sa nezadá čas, ide rovno "teraz")</label>
+    <div class="row" style="margin-top:4px;gap:6px"><input id="qfDate-${tid}" type="date" value="${todayISO()}" style="flex:1"><input id="qfTime-${tid}" type="time" style="flex:1"></div>
     <button class="btn" style="margin-top:8px" onclick="addStationQueue('${esc(type).replace(/'/g, "\\'")}')">Pridať</button>
   </div>`;
 }
@@ -1065,7 +1097,7 @@ async function confirmFinishSession(id, restart) {
 async function cancelSession(id) { if (confirm('Zrušiť bez platby? (napr. omylom spustené)')) await call('DELETE', '/api/sessions/' + id); }
 async function addStationQueue(type) {
   const tid = slug(type);
-  const sel = $('#qfTable-' + tid), nameInput = $('#qfName-' + tid), timeInput = $('#qfTime-' + tid);
+  const sel = $('#qfTable-' + tid), nameInput = $('#qfName-' + tid), timeInput = $('#qfTime-' + tid), dateInput = $('#qfDate-' + tid);
   const tableId = sel ? sel.value : '';
   const table = tableId ? S.tables.find(t => t.id === tableId) : null;
   const typedName = nameInput ? nameInput.value.trim() : '';
@@ -1073,7 +1105,7 @@ async function addStationQueue(type) {
   if (!name) return toast('Vyber stôl alebo napíš meno');
   const body = { name, note: '', type, tableId: table ? table.id : null };
   const time = timeInput ? timeInput.value : '';
-  if (time) body.time = time;
+  if (time) { body.time = time; body.date = dateInput ? dateInput.value : ''; }
   await call('POST', '/api/queue', body);
   queueFormType = null; toast('Rezervácia pridaná ✓'); render();
 }
@@ -1769,8 +1801,14 @@ function renderSettings() {
     <div class="row" style="gap:4px;align-items:center"><input type="number" min="0" step="0.1" inputmode="decimal" style="width:80px" value="${e.wage || ''}" placeholder="€/h"
       onchange="setEmployeeWage('${e.name.replace(/'/g, "\\'")}',this.value)"><span class="muted" style="font-size:12px">€/h</span></div>
     </div>`).join('');
-  $('#app').innerHTML = device + `
-    <h2>Stoly</h2><div class="card">${t}
+  const SETTINGS_TABS = [
+    ['stoly', 'Stoly'], ['menu', 'Menu'], ['atrakcie', 'Atrakcie'], ['zamestnanci', 'Zamestnanci'], ['zariadenie', 'Zariadenie'],
+  ];
+  if (!SETTINGS_TABS.some(x => x[0] === settingsTab)) settingsTab = 'stoly';
+  const nav = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">${SETTINGS_TABS.map(([k, label]) => `
+    <button class="btn ${settingsTab === k ? '' : 'ghost'}" style="width:auto;padding:8px 14px" onclick="settingsTab='${k}';render()">${label}</button>`).join('')}</div>`;
+
+  const stolyTab = `<h2>Stoly</h2><div class="card">${t}
       <div class="set-row t" style="margin-top:10px"><input id="newT" placeholder="Názov nového stola, napr. Terasa 2">
       <button class="btn" style="width:auto" onclick="addTable()">Pridať</button></div>
       <div class="row" style="margin-top:10px;gap:6px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
@@ -1780,32 +1818,13 @@ function renderSettings() {
         <input id="qaNum" placeholder="číslo, napr. 1" style="width:90px">
         <button class="btn ghost" style="width:auto" onclick="quickAddTable()">Pridať</button>
       </div>
-      <p class="muted" style="font-size:12px;margin-top:6px">Stoly s rovnakou skupinou (napr. P) sa zobrazia spolu v jednom riadku. Nová farba skupiny sa prevezme z už existujúceho stola v tej skupine.</p></div>
-    <h2>Zamestnanci – mzda</h2><div class="card">
-      ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách.</p>'}
-      <p class="muted" style="font-size:12px;margin-top:8px">Sadzba sa použije vo Výplatnej kalkulačke v Dennej uzávierke.</p></div>
-    <h2>Prístup do uzávierky</h2><div class="card">
-      <label class="muted" style="font-size:13px">PIN, ktorým sa do Dennej uzávierky dostane aj niekto iný ako vedúci (napr. keď nie si na prevádzke)</label>
-      <div class="row" style="margin-top:6px;gap:8px">
-        <input id="uzPinSet" inputmode="numeric" placeholder="napr. 2468" value="${esc(S.access.uzavierkaPin || '')}" style="max-width:160px">
-        <button class="btn ghost" style="width:auto" onclick="saveUzavierkaPin()">Uložiť</button>
-        ${S.access.uzavierkaPin ? `<button class="btn ghost" style="width:auto" onclick="clearUzavierkaPin()">Zrušiť PIN</button>` : ''}
-      </div>
-      <p class="muted" style="font-size:12px;margin-top:8px">${S.access.uzavierkaPin ? 'PIN je nastavený – kto ho pozná, dostane sa do Uzávierky (bez prístupu do Nastavení a bez mazania platieb).' : 'Zatiaľ nie je nastavený – Uzávierku vidí len vedúci.'}</p></div>
-    <h2>Kategórie</h2><div class="card">
+      <p class="muted" style="font-size:12px;margin-top:6px">Stoly s rovnakou skupinou (napr. P) sa zobrazia spolu v jednom riadku. Nová farba skupiny sa prevezme z už existujúceho stola v tej skupine.</p></div>`;
+
+  const menuTab = `<h2>Kategórie</h2><div class="card">
       ${cats.map(c => `<div class="set-row t"><input value="${esc(c)}" disabled style="opacity:.75">
         <button class="del" onclick="delCategory('${c.replace(/'/g, "\\'")}')">Zmazať</button></div>`).join('') || '<p class="muted">Zatiaľ žiadne kategórie.</p>'}
       <div class="set-row t" style="margin-top:10px"><input id="newC" placeholder="Názov novej kategórie, napr. Panáky">
       <button class="btn" style="width:auto" onclick="addCategory()">Pridať</button></div></div>
-    <h2>Atrakcie (biliard, PlayStation, ping-pong, šípky...)</h2><div class="card">
-      ${S.attractions.map(a => `<div class="set-row t" style="grid-template-columns:1fr 1fr auto">
-        <input value="${esc(a.name)}" onchange="call('PUT','/api/attractions/${a.id}',{name:this.value})">
-        <input value="${esc(a.type || '')}" placeholder="typ, napr. Biliard" onchange="call('PUT','/api/attractions/${a.id}',{type:this.value})">
-        <button class="del" onclick="delAttraction('${a.id}')">Zmazať</button></div>`).join('') || '<p class="muted">Zatiaľ žiadne atrakcie.</p>'}
-      <div class="set-row t" style="grid-template-columns:1fr 1fr auto;margin-top:10px"><input id="newAName" placeholder="Názov, napr. 7">
-      <input id="newAType" placeholder="Typ, napr. Biliard">
-      <button class="btn" style="width:auto" onclick="addAttraction()">Pridať</button></div>
-      <p class="muted" style="font-size:12px;margin-top:6px">Atrakcie s rovnakým typom sa v záložke Atrakcie zoskupia pod jeden nadpis.</p></div>
     <h2>Menu</h2><div class="card">
       <div class="set-row muted" style="font-size:13px"><span>Názov</span><span>Cena €</span><span class="cat">Kategória</span><span></span></div>
       ${menu || '<p class="muted">Najprv pridaj aspoň jednu kategóriu.</p>'}
@@ -1814,6 +1833,34 @@ function renderSettings() {
         <input id="nN" placeholder="Nová položka"><input id="nP" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00">
         <select id="nC" class="cat">${cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
         <button class="btn" style="width:auto" onclick="addItemMenu()">+</button></div>` : ''}</div>`;
+
+  const atrakcieTab = `<h2>Atrakcie (biliard, PlayStation, ping-pong, šípky...)</h2><div class="card">
+      <div id="attrList">${S.attractions.map(a => `<div class="set-row t attr-row" style="grid-template-columns:28px 1fr 1fr auto" data-attr-id="${a.id}">
+        <span class="dragHandle" title="Podrž a presuň – zmení poradie" onpointerdown="startAttrDrag(event,'${a.id}')">⠿</span>
+        <input value="${esc(a.name)}" onchange="call('PUT','/api/attractions/${a.id}',{name:this.value})">
+        <input value="${esc(a.type || '')}" placeholder="typ, napr. Biliard" onchange="call('PUT','/api/attractions/${a.id}',{type:this.value})">
+        <button class="del" onclick="delAttraction('${a.id}')">Zmazať</button></div>`).join('') || '<p class="muted">Zatiaľ žiadne atrakcie.</p>'}</div>
+      ${S.attractions.length > 1 ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Podrž ⠿ a presuň – zmení sa poradie (aj v akom poradí sa zobrazujú v Atrakciách).</p>' : ''}
+      <div class="set-row t" style="grid-template-columns:1fr 1fr auto;margin-top:10px"><input id="newAName" placeholder="Názov, napr. 7">
+      <input id="newAType" placeholder="Typ, napr. Biliard">
+      <button class="btn" style="width:auto" onclick="addAttraction()">Pridať</button></div>
+      <p class="muted" style="font-size:12px;margin-top:6px">Atrakcie s rovnakým typom sa v záložke Atrakcie zoskupia pod jeden nadpis.</p></div>`;
+
+  const zamestnanciTab = `<h2>Zamestnanci – mzda</h2><div class="card">
+      ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách.</p>'}
+      <p class="muted" style="font-size:12px;margin-top:8px">Sadzba sa použije vo Výplatnej kalkulačke v Dennej uzávierke.</p></div>`;
+
+  const zariadenieTab = `<h2>Prístup do uzávierky</h2><div class="card">
+      <label class="muted" style="font-size:13px">PIN, ktorým sa do Dennej uzávierky dostane aj niekto iný ako vedúci (napr. keď nie si na prevádzke)</label>
+      <div class="row" style="margin-top:6px;gap:8px">
+        <input id="uzPinSet" inputmode="numeric" placeholder="napr. 2468" value="${esc(S.access.uzavierkaPin || '')}" style="max-width:160px">
+        <button class="btn ghost" style="width:auto" onclick="saveUzavierkaPin()">Uložiť</button>
+        ${S.access.uzavierkaPin ? `<button class="btn ghost" style="width:auto" onclick="clearUzavierkaPin()">Zrušiť PIN</button>` : ''}
+      </div>
+      <p class="muted" style="font-size:12px;margin-top:8px">${S.access.uzavierkaPin ? 'PIN je nastavený – kto ho pozná, dostane sa do Uzávierky (bez prístupu do Nastavení a bez mazania platieb).' : 'Zatiaľ nie je nastavený – Uzávierku vidí len vedúci.'}</p></div>`;
+
+  const TAB_HTML = { stoly: stolyTab, menu: menuTab, atrakcie: atrakcieTab, zamestnanci: zamestnanciTab, zariadenie: zariadenieTab };
+  $('#app').innerHTML = device + nav + TAB_HTML[settingsTab];
 }
 function allCategories() {
   const set = new Set(S.categories.map(c => c.name));
@@ -1829,6 +1876,41 @@ async function addAttraction() {
   $('#newAName').value = ''; $('#newAType').value = '';
 }
 async function delAttraction(id) { if (confirm('Zmazať túto atrakciu?')) await call('DELETE', '/api/attractions/' + id); }
+
+// ---------- preusporiadanie atrakcií ťahaním (podrž ⠿ a presuň) v Nastaveniach ----------
+// Funguje na myš aj dotyk cez Pointer Events (jedno rozhranie pre oboje).
+function startAttrDrag(e, id) {
+  e.preventDefault();
+  attrDragId = id; attrDragOverId = null;
+  const row = e.currentTarget.closest('[data-attr-id]');
+  if (row) row.classList.add('dragging');
+  document.addEventListener('pointermove', onAttrDragMove);
+  document.addEventListener('pointerup', endAttrDrag, { once: true });
+  document.addEventListener('pointercancel', endAttrDrag, { once: true });
+}
+function onAttrDragMove(e) {
+  if (!attrDragId) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const row = el && el.closest('[data-attr-id]');
+  document.querySelectorAll('#attrList [data-attr-id]').forEach(r => r.classList.remove('drag-over'));
+  if (row && row.dataset.attrId !== attrDragId) { row.classList.add('drag-over'); attrDragOverId = row.dataset.attrId; }
+  else attrDragOverId = null;
+}
+async function endAttrDrag() {
+  document.removeEventListener('pointermove', onAttrDragMove);
+  document.querySelectorAll('#attrList [data-attr-id]').forEach(r => r.classList.remove('dragging', 'drag-over'));
+  const fromId = attrDragId, toId = attrDragOverId;
+  attrDragId = null; attrDragOverId = null;
+  if (!fromId || !toId || fromId === toId) { render(); return; }
+  const list = [...S.attractions]; // S.attractions je už zoradené podľa "order"
+  const fromIdx = list.findIndex(a => a.id === fromId);
+  const toIdx = list.findIndex(a => a.id === toId);
+  if (fromIdx === -1 || toIdx === -1) { render(); return; }
+  const [moved] = list.splice(fromIdx, 1);
+  list.splice(toIdx, 0, moved);
+  try { await call('POST', '/api/attractions/_/reorder', { order: list.map(a => a.id) }); }
+  finally { render(); }
+}
 async function addTable() { const v = $('#newT').value.trim(); if (v) await call('POST', '/api/tables', { name: v }); }
 async function delTable(id) { if (confirm('Zmazať stôl?')) await call('DELETE', '/api/tables/' + id); }
 async function moveTableOrder(id, dir) { await call('POST', '/api/tables/' + id + '/move', { dir }); }
