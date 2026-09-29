@@ -232,7 +232,6 @@ let payroll = store.get('payroll', { pct: '', days: {} });  // výplatná kalkul
 if (!payroll || typeof payroll !== 'object') payroll = { pct: '', days: {} };
 if (!payroll.days || typeof payroll.days !== 'object') payroll.days = {};
 if (payroll.pct === undefined || payroll.pct === null) payroll.pct = '';
-if (!Array.isArray(payroll.noPctItems)) payroll.noPctItems = [...(Array.isArray(payroll.noPctCategories) ? payroll.noPctCategories : [])];  // konkrétne položky (napr. Pixel), z ktorých sa personálu neráta % z tržby
 let sound = store.get('sound', true);
 let seenReady = new Set(store.get('seenReady', []));
 
@@ -366,8 +365,18 @@ async function callInner(m, [col, id, action], body) {
     }
   }
   if (col === 'access') {
-    if (!isManager) fail('PIN pre uzávierku smie meniť len vedúci');
-    if (m === 'PUT') return db.ref('access').update({ uzavierkaPin: str(body.uzavierkaPin, 12) });
+    if (!isManager) fail('Toto smie meniť len vedúci');
+    if (m === 'PUT') {
+      const u = {};
+      if (body.uzavierkaPin !== undefined) u.uzavierkaPin = str(body.uzavierkaPin, 12);
+      // Položky (podľa názvu), z ktorých sa personálu neráta % z tržby (napr. len Pixel, nie celé Hry) -
+      // spoločné nastavenie pre všetky dni a všetky zariadenia (nastavuje sa len v Nastaveniach, len vedúci).
+      if (body.noPctItems !== undefined) {
+        const arr = Array.isArray(body.noPctItems) ? body.noPctItems : [];
+        u.noPctItems = [...new Set(arr.map(x => str(x, 60)).filter(Boolean))].slice(0, 300);
+      }
+      return db.ref('access').update(u);
+    }
   }
   if (col === 'menu') {
     if (!isManager) fail('Nastavenia menu smie meniť len vedúci');
@@ -406,7 +415,19 @@ async function callInner(m, [col, id, action], body) {
         // pri položkách s vlastnou sumou (napr. biliard) smie klient poslať presnú cenu namiesto pevnej ceny z menu
         let price = mi.price;
         if (mi.customPrice && i.price !== undefined) { const p = num(i.price); if (p > 0 && p < 10000) price = Math.round(p * 100) / 100; }
-        return { menuId: mi.id, name: mi.name, price, qty: Math.max(1, Math.min(99, i.qty | 0)), note: str(i.note, 80) };
+        const origPrice = price;
+        // zľava na konkrétnu položku (napr. zamestnanecká/VIP zľava) - buď % alebo pevná suma v €; prepočíta
+        // sa zo serverovej ceny (nedôveruje sa klientom spočítanej sume), pôvodná cena aj zľava ostanú uložené
+        // kvôli prehľadu. Suma má prednosť, ak by omylom prišli obe naraz.
+        let discountPct = 0, discountAmt = 0;
+        if (i.discountAmt !== undefined) { const a = num(i.discountAmt); if (a > 0) discountAmt = Math.min(origPrice, Math.round(a * 100) / 100); }
+        if (!discountAmt && i.discountPct !== undefined) { const d = num(i.discountPct); if (d > 0 && d <= 100) discountPct = Math.round(d * 10) / 10; }
+        if (discountAmt > 0) price = Math.max(0, Math.round((origPrice - discountAmt) * 100) / 100);
+        else if (discountPct > 0) price = Math.round(origPrice * (1 - discountPct / 100) * 100) / 100;
+        const rec = { menuId: mi.id, name: mi.name, price, qty: Math.max(1, Math.min(99, i.qty | 0)), note: str(i.note, 80) };
+        if (discountAmt > 0) { rec.discountAmt = discountAmt; rec.origPrice = origPrice; }
+        else if (discountPct > 0) { rec.discountPct = discountPct; rec.origPrice = origPrice; }
+        return rec;
       }).filter(Boolean);
       if (!items.length) fail('Objednávka je prázdna');
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
@@ -1457,6 +1478,36 @@ function removeItem(id) {
   renderItems(); renderFavs(); renderCart();
 }
 function changeQty(i, d) { cart[i].qty += d; if (cart[i].qty < 1) cart.splice(i, 1); render(); }
+// Ťuknutie na číslo počtu v košíku - namiesto ťukania +/- veľakrát ide počet rovno prepísať
+function setQty(i) {
+  if (!cart[i]) return;
+  const v = prompt('Počet kusov:', cart[i].qty);
+  if (v === null) return;
+  const n = parseInt(String(v).replace(',', '.'), 10);
+  if (!n || n < 1) cart.splice(i, 1);
+  else cart[i].qty = Math.min(99, n);
+  render();
+}
+// Zľava na konkrétnu položku v košíku (napr. zamestnanecká/VIP zľava) - platí len pre tento riadok
+// košíka. Ide zadať buď percentá (napr. "20") alebo sumu v € (napr. "2€" alebo "2e"). Prázdne alebo 0 =
+// zrušiť zľavu.
+function setDiscount(i) {
+  if (!cart[i]) return;
+  const cur = cart[i].discountAmt ? cart[i].discountAmt + '€' : (cart[i].discountPct ? cart[i].discountPct + '%' : '');
+  const v = prompt('Zľava na túto položku - zadaj % (napr. 20) alebo sumu v € (napr. 2€). Nechaj prázdne alebo zadaj 0 na zrušenie zľavy:', cur);
+  if (v === null) return;
+  delete cart[i].discountPct; delete cart[i].discountAmt;
+  const s = String(v).trim().toLowerCase().replace(',', '.');
+  if (s) {
+    const n = parseFloat(s);
+    const rest = s.replace(/^-?[\d.]+/, ''); // čo ostalo za číslom (napr. "€", "e", "%")
+    if (n > 0) {
+      if (/[€e]/.test(rest)) cart[i].discountAmt = Math.round(n * 100) / 100;
+      else cart[i].discountPct = Math.min(100, Math.max(0, Math.round(n * 10) / 10));
+    }
+  }
+  render();
+}
 function setNote(i) {
   const n = prompt('Poznámka k položke (napr. bez ľadu):', cart[i].note);
   if (n !== null) { cart[i].note = n.trim(); render(); }
@@ -1468,7 +1519,14 @@ function renderCart() {
   el.classList.remove('hide');
   const m = id => S.menu.find(x => x.id === id) || { name: '?', price: 0 };
   // položky s vlastnou sumou (napr. biliard) majú cenu uloženú priamo na riadku v košíku (c.price), inak sa berie z menu
-  const linePrice = c => c.price != null ? c.price : m(c.menuId).price;
+  const basePrice = c => c.price != null ? c.price : m(c.menuId).price;
+  // zľava na konkrétnu položku (napr. zamestnanecká/VIP zľava) - buď % alebo pevná suma z basePrice, len na tomto riadku košíka
+  const linePrice = c => {
+    const b = basePrice(c);
+    if (c.discountAmt) return Math.max(0, Math.round((b - c.discountAmt) * 100) / 100);
+    if (c.discountPct) return Math.round(b * (1 - c.discountPct / 100) * 100) / 100;
+    return b;
+  };
   const total = cart.reduce((a, c) => a + linePrice(c) * c.qty, 0);
   const count = cart.reduce((a, c) => a + c.qty, 0);
   if (!cartOpen) {
@@ -1479,9 +1537,12 @@ function renderCart() {
   el.innerHTML = `<div class="cart-in">
     <button class="btn ghost" style="margin-bottom:8px;width:100%" onclick="cartOpen=false;renderCart()">Skryť ▼</button>
     <div class="cart-list">${cart.map((c, i) => `
-    <div class="line"><div class="n">${esc(m(c.menuId).name)}${c.price != null ? ` · <b>${eur(c.price)}</b>` : ''}
-      <small onclick="setNote(${i})" style="cursor:pointer">${c.note ? '✎ ' + esc(c.note) : '+ poznámka'}</small></div>
-      <div class="qcol"><b>${c.qty}</b><button class="qmin" onclick="changeQty(${i},-1)">−</button></div>
+    <div class="line"><div class="n">${esc(m(c.menuId).name)}${(c.discountPct || c.discountAmt)
+        ? ` · <s class="muted">${eur(basePrice(c))}</s> <b>${eur(linePrice(c))}</b> <span style="color:var(--warn);font-weight:700">-${c.discountAmt ? eur(c.discountAmt) : c.discountPct + '%'}</span>`
+        : (c.price != null ? ` · <b>${eur(c.price)}</b>` : '')}
+      <small onclick="setNote(${i})" style="cursor:pointer">${c.note ? '✎ ' + esc(c.note) : '+ poznámka'}</small>
+      <small onclick="setDiscount(${i})" style="cursor:pointer;margin-left:8px">${(c.discountPct || c.discountAmt) ? '🏷️ zmeniť zľavu' : '🏷️ zľava'}</small></div>
+      <div class="qcol"><b onclick="setQty(${i})" style="cursor:pointer;text-decoration:underline dotted" title="Ťukni a prepíš počet">${c.qty}</b><button class="qmin" onclick="changeQty(${i},-1)">−</button></div>
       <button class="qb" onclick="changeQty(${i},1)">+</button></div>`).join('')}</div>
     <input id="onote" placeholder="Poznámka k objednávke (nepovinné)" value="${esc(orderNote)}" oninput="orderNote=this.value" style="margin-bottom:8px">
     <div style="display:grid;gap:6px">
@@ -1638,13 +1699,9 @@ function renderUzavierka() {
   const dayHours = payroll.days[dayKey] || {};
   const pct = num(payroll.pct) || 0;
   // Z niektorých konkrétnych položiek (napr. len Pixel, nie celá kategória Hry) sa personálu neráta percentuálny
-  // podiel - základ pre % je tržba bez nich.
-  const noPctItemSet = new Set(payroll.noPctItems || []);
+  // podiel - základ pre % je tržba bez nich. Zoznam je spoločné nastavenie pre všetky dni (Nastavenia >
+  // Zamestnanci, mení len vedúci) - tu sa už len zobrazuje, nedá sa to priamo odškrtnúť.
   const { pctBase, excludedRevenue } = pctBaseFor(paid, total);
-  // Položky dnešného dňa, ktoré ešte nemajú vlastný riadok v byCat (napr. boli zaškrtnuté v minulosti, ale dnes
-  // z nich nebola tržba) sa ukážu zvlášť, nech ich vieš odškrtnúť aj bez toho, aby mali dnes tržbu.
-  const todayItemNames = new Set(Object.values(agg).map(r => r.name));
-  const extraNoPctItems = (payroll.noPctItems || []).filter(n => !todayItemNames.has(n));
   const pctAmount = pctBase * pct / 100;
   const checkedNames = Object.keys(dayHours);
   const splitShare = checkedNames.length ? pctAmount / checkedNames.length : 0;
@@ -1681,17 +1738,9 @@ function renderUzavierka() {
         <input id="pPct" type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" value="${esc(String(payroll.pct))}" oninput="setPayrollPct(this.value)">
         <span class="muted">%</span>
       </div>
-      ${(cats.length || extraNoPctItems.length) ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
-        <label class="muted" style="font-size:13px">Z týchto konkrétnych položiek neberieme % (napr. len Pixel, nie celé Hry)</label>
-        <div style="margin-top:6px;max-height:240px;overflow:auto">
-          ${cats.map(c => `<div class="muted" style="font-size:12px;margin:8px 0 2px">${esc(c)}</div>
-            ${byCat[c].map(r => `<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:14px">
-              <input type="checkbox" ${noPctItemSet.has(r.name) ? 'checked' : ''} onchange="toggleNoPctItem('${r.name.replace(/'/g, "\\'")}',this.checked)">${esc(r.name)}</label>`).join('')}`).join('')}
-          ${extraNoPctItems.length ? `<div class="muted" style="font-size:12px;margin:8px 0 2px">Iné (dnes bez tržby)</div>
-            ${extraNoPctItems.map(n => `<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:14px">
-              <input type="checkbox" checked onchange="toggleNoPctItem('${n.replace(/'/g, "\\'")}',this.checked)">${esc(n)}</label>`).join('')}` : ''}
-        </div>
-      </div>` : ''}
+      ${(S.access && S.access.noPctItems && S.access.noPctItems.length) ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <p class="muted" style="font-size:13px;margin:0">Bez % z tržby: <b>${S.access.noPctItems.map(esc).join(', ')}</b>${isManager ? ' <a href="#" onclick="role=\'nastavenia\';settingsTab=\'zamestnanci\';store.set(\'role\',role);render();return false" style="font-size:13px">(zmeniť v Nastaveniach)</a>' : ''}</p>
+        </div>` : ''}
       <div class="total" style="margin-top:10px"><span>Hodinovky spolu</span><span id="payHourly">${eur(hourlyTotal)}</span></div>
       <div class="total"><span id="payPctLabel">Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''})</span><span id="payPct">${eur(pctAmount)}</span></div>
       <div class="total" style="border-top:2px solid var(--ink);padding-top:8px;margin-top:6px"><b>Výplaty spolu</b><b id="payGrand">${eur(hourlyTotal + pctAmount)}</b></div>
@@ -1719,18 +1768,20 @@ function itemRevenue(paidOrders) {
   paidOrders.forEach(o => o.items.forEach(i => { byItem[i.name] = (byItem[i.name] || 0) + i.price * i.qty; }));
   return byItem;
 }
-// Základ pre výpočet percent = tržba mínus konkrétne položky, z ktorých si personál percentá neberie (napr. Pixel)
+// Základ pre výpočet percent = tržba mínus konkrétne položky, z ktorých si personál percentá neberie (napr.
+// Pixel) - zoznam týchto položiek je spoločné nastavenie (Nastavenia > Zamestnanci), platí pre všetky dni.
 function pctBaseFor(paidOrders, total) {
   const byItem = itemRevenue(paidOrders);
-  const noPctSet = new Set(payroll.noPctItems || []);
+  const noPctSet = new Set((S.access && S.access.noPctItems) || []);
   const excludedRevenue = Object.entries(byItem).filter(([name]) => noPctSet.has(name)).reduce((s, [, v]) => s + v, 0);
   return { pctBase: Math.max(0, total - excludedRevenue), excludedRevenue };
 }
-function toggleNoPctItem(name, on) {
-  const set = new Set(payroll.noPctItems || []);
+// Zapína/vypína, či sa z danej položky menu personálu neráta % z tržby - spoločné pre všetky dni a
+// zariadenia (Nastavenia > Zamestnanci, len vedúci).
+async function toggleNoPctItem(name, on) {
+  const set = new Set((S.access && S.access.noPctItems) || []);
   if (on) set.add(name); else set.delete(name);
-  payroll.noPctItems = [...set];
-  savePayroll(); render();
+  await call('PUT', '/api/access', { noPctItems: [...set] });
 }
 function recomputePayroll() {
   const paidToday = dayPaidOrders(uzavDate);
@@ -1785,7 +1836,7 @@ function downloadPayrollCsv() {
   });
   rows.push([]);
   rows.push(['Tržba za deň €', total.toFixed(2)]);
-  if (excludedRevenue > 0) rows.push(['z toho bez percent (' + (payroll.noPctItems || []).join(', ') + ') €', excludedRevenue.toFixed(2)]);
+  if (excludedRevenue > 0) rows.push(['z toho bez percent (' + ((S.access && S.access.noPctItems) || []).join(', ') + ') €', excludedRevenue.toFixed(2)]);
   rows.push(['Základ pre percentá €', pctBase.toFixed(2)]);
   rows.push(['Percentá %', pct]);
   rows.push(['Percentá spolu €', pctAmount.toFixed(2)]);
@@ -1901,9 +1952,20 @@ function renderSettings() {
       <button class="btn" style="width:auto" onclick="addAttraction()">Pridať</button></div>
       <p class="muted" style="font-size:12px;margin-top:6px">Atrakcie s rovnakým typom sa v záložke Atrakcie zoskupia pod jeden nadpis.</p></div>`;
 
+  const noPctSet = new Set((S.access && S.access.noPctItems) || []);
+  const noPctBlock = cats.map(c => {
+    const items = S.menu.filter(m => m.category === c && (m.name || '').trim());
+    if (!items.length) return '';
+    return `<div class="muted" style="font-size:12px;margin:8px 0 2px">${esc(c)}</div>
+      ${items.map(m => `<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:14px">
+        <input type="checkbox" ${noPctSet.has(m.name) ? 'checked' : ''} onchange="toggleNoPctItem('${m.name.replace(/'/g, "\\'")}',this.checked)">${esc(m.name)}</label>`).join('')}`;
+  }).join('');
   const zamestnanciTab = `<h2>Zamestnanci – mzda</h2><div class="card">
       ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách.</p>'}
-      <p class="muted" style="font-size:12px;margin-top:8px">Sadzba sa použije vo Výplatnej kalkulačke v Dennej uzávierke.</p></div>`;
+      <p class="muted" style="font-size:12px;margin-top:8px">Sadzba sa použije vo Výplatnej kalkulačke v Dennej uzávierke.</p></div>
+    <h2>Bez % z tržby</h2><div class="card">
+      <p class="muted" style="font-size:13px;margin:0">Z týchto konkrétnych položiek (napr. len Pixel, nie celé Hry) sa personálu neráta percentuálny podiel z tržby vo Výplatnej kalkulačke – platí pre všetky dni, kým to tu nezmeníš.</p>
+      <div style="margin-top:8px;max-height:280px;overflow:auto">${noPctBlock || '<p class="muted" style="font-size:13px">Najprv pridaj položky do menu.</p>'}</div></div>`;
 
   const zariadenieTab = `<h2>Prístup do uzávierky</h2><div class="card">
       <label class="muted" style="font-size:13px">PIN, ktorým sa do Dennej uzávierky dostane aj niekto iný ako vedúci (napr. keď nie si na prevádzke)</label>
