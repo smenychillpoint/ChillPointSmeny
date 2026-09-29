@@ -104,7 +104,6 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
     <h1 id="title">Objednávky</h1>
     <a href="index.html" class="back" style="text-decoration:none">📅 Smeny</a>
     <button id="boardTopBtn" class="back" onclick="showBoard=true;render()" title="Chýba / Kúpiť">📦</button>
-    <button id="bizDayBtn" class="back" onclick="openBizDayModal()" title="Pracovný deň (pre zápis tržby do Uzávierky/Histórie)">📅</button>
     <button id="logoutTop" class="back" onclick="logout()" title="Odhlásiť toto zariadenie">⎋</button>
     <span id="conn" class="conn">●</span>
   </div>
@@ -748,9 +747,6 @@ function render() {
   $('#tabUzavierka').classList.toggle('hide', !canUzavierka);
   const boardMissing = S.board.filter(b => b.type !== 'buy' && !b.done).length;
   $('#boardTopBtn').innerHTML = '📦' + (boardMissing ? `<span style="display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin-left:4px;border-radius:99px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;vertical-align:middle">${boardMissing}</span>` : '');
-  // Pracovný deň (keď sa cez polnoc zapisuje tržba ešte pod predošlý deň) - vidno na ikone v hlavičke,
-  // nech na to nikto nezabudne, keď je zapnuté.
-  $('#bizDayBtn').innerHTML = '📅' + (bizDay ? `<span style="display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin-left:4px;border-radius:99px;background:var(--warn);color:#fff;font-size:10px;font-weight:700;vertical-align:middle">${dayShort(bizDay)}</span>` : '');
   if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
   if (role === 'uzavierka' && !canUzavierka) { role = 'casnik'; store.set('role', role); }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
@@ -808,8 +804,16 @@ function renderTables() {
       <button class="btn ghost" style="width:auto" onclick="showQuickCash=!showQuickCash;render()">💶 Rýchla platba</button>
       <button class="btn ghost" style="width:auto" onclick="showQueue=true;render()">📌 Rezervácie${S.queue.length ? ' (' + S.queue.length + ')' : ''}</button>
       <button class="btn ghost" style="width:auto" onclick="showHist=true;render()">📅 História</button>
+      <button class="btn ghost" style="width:auto" onclick="openBizDayModal()">🌙 Pracovný deň${bizDay ? ': ' + dayShort(bizDay) : ''}</button>
     </div></div>`;
-  $('#app').innerHTML = readyBanner() + topRow + quickCashBlock() + (S.tables.length ? html
+  // Keď je zapnutý ručný "pracovný deň" (práca cez polnoc), pripomenie to hneď na hlavnej obrazovke
+  // Čašníka, nech na to nikto nezabudne - inak by nové platby ticho padali pod nesprávny deň.
+  const bizDayBanner = bizDay ? `<div class="card" style="margin-bottom:10px;border-color:var(--warn);background:var(--warnbg)">
+    <b>🌙 Pracovný deň: ${fmtDay(parseISODate(bizDay))}</b>
+    <p class="muted" style="font-size:12px;margin:4px 0 8px">Nové platby sa teraz zapisujú pod tento deň, nie pod dnešný.</p>
+    <button class="btn ghost" style="width:auto" onclick="clearBizDay()">Späť na dnes (auto)</button>
+  </div>` : '';
+  $('#app').innerHTML = readyBanner() + bizDayBanner + topRow + quickCashBlock() + (S.tables.length ? html
     : '<div class="empty">Zatiaľ žiadne stoly. Pridajte ich v Nastaveniach.</div>');
 }
 // Rýchla platba - keď treba len zapísať sumu do tržby (do kasy), bez toho aby sa rozpisovalo ku ktorému
