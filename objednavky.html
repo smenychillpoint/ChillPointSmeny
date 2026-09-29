@@ -88,8 +88,8 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .set-row{display:grid;grid-template-columns:1fr 90px 1fr auto;gap:6px;align-items:center;margin-bottom:6px}
 .set-row.t{grid-template-columns:1fr auto}
 .dragHandle{cursor:grab;touch-action:none;color:var(--muted);text-align:center;font-size:18px;user-select:none;padding:6px 0}
-.attr-row.dragging{opacity:.4}
-.attr-row.drag-over{box-shadow:0 -3px 0 0 var(--accent)}
+.attr-row.dragging,.table-row.dragging{opacity:.4}
+.attr-row.drag-over,.table-row.drag-over{box-shadow:0 -3px 0 0 var(--accent)}
 .del{background:var(--warnbg);color:var(--warn);padding:10px 12px}
 .login{position:fixed;inset:0;z-index:30;background:var(--bg);display:grid;place-items:center;padding:20px}.login form{width:100%;max-width:360px;display:grid;gap:10px}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:20;max-width:90vw}
@@ -104,6 +104,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
     <h1 id="title">Objednávky</h1>
     <a href="index.html" class="back" style="text-decoration:none">📅 Smeny</a>
     <button id="boardTopBtn" class="back" onclick="showBoard=true;render()" title="Chýba / Kúpiť">📦</button>
+    <button id="bizDayBtn" class="back" onclick="openBizDayModal()" title="Pracovný deň (pre zápis tržby do Uzávierky/Histórie)">📅</button>
     <button id="logoutTop" class="back" onclick="logout()" title="Odhlásiť toto zariadenie">⎋</button>
     <span id="conn" class="conn">●</span>
   </div>
@@ -143,6 +144,18 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
     <div id="itemOptionsBody"></div>
     <button class="btn" style="margin-top:14px" onclick="confirmItemOptions()">Pridať do košíka</button>
     <p style="text-align:center;margin-top:10px"><a href="#" onclick="closeItemOptions();return false" style="font-size:13px">Zrušiť</a></p>
+  </div>
+</div>
+<div id="bizDayModal" class="login hide">
+  <div class="card">
+    <h2 style="margin-top:0">Pracovný deň</h2>
+    <p class="muted" style="font-size:13px;margin:0 0 10px">Každá platba sa bežne zapíše pod dnešný dátum automaticky. Ak pracuješ cez polnoc a chceš, aby platby po polnoci ešte patrili k predošlému dňu (v Uzávierke aj Histórii), nastav si tu ten deň – platí len na tomto zariadení, kým ho nezmeníš späť.</p>
+    <input id="bizDayInput" type="date">
+    <div class="row" style="gap:8px;margin-top:12px">
+      <button class="btn" style="width:auto" onclick="saveBizDay()">Nastaviť</button>
+      <button class="btn ghost" style="width:auto" onclick="clearBizDay()">Späť na dnes (auto)</button>
+    </div>
+    <p style="text-align:center;margin-top:10px"><a href="#" onclick="closeBizDayModal();return false" style="font-size:13px">Zavrieť</a></p>
   </div>
 </div>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
@@ -207,9 +220,14 @@ let queueHistFilter = '';    // hľadanie v histórii rezervácií (meno)
 let editingOptsFor = null;   // id položky menu, ktorej "možnosti pri pridaní" sa práve upravujú v Nastaveniach
 let attrDragId = null;       // id atrakcie, ktorá sa práve ťahá (preusporiadanie v Nastaveniach)
 let attrDragOverId = null;   // id atrakcie, nad ktorou je práve prst/kurzor pri ťahaní
+let tableDragId = null;      // id stola, ktorý sa práve ťahá (preusporiadanie v Nastaveniach)
+let tableDragOverId = null;  // id stola, nad ktorým je práve prst/kurzor pri ťahaní
 let itemOptionsFor = null;   // id položky menu, pre ktorú je otvorený výber možností (napr. sóda/ľad/príchuť) pri objednávaní
 let itemOptionsPicks = {};   // { indexSkupiny: indexVybranejMožnosti } pre aktuálne otvorený výber
 let settingsTab = 'stoly';   // aktívna záložka v Nastaveniach (stoly/menu/atrakcie/zamestnanci/zariadenie) - nech nie je všetko na jednej dlhej stránke
+// Ručne nastavený "pracovný deň" (YYYY-MM-DD) - keď čašník pracuje cez polnoc a chce, aby sa nové platby
+// zapisovali do Uzávierky/Histórie pod predošlý deň namiesto automatického dnešného dátumu. Prázdne = automaticky.
+let bizDay = store.get('bizDay', '');
 let payroll = store.get('payroll', { pct: '', days: {} });  // výplatná kalkulačka v uzávierke: % z tržby + odpracované hodiny za deň
 // ochrana pred starým tvarom uložených dát v localStorage (zo staršej verzie appky) - inak by Uzávierka spadla na chybe
 if (!payroll || typeof payroll !== 'object') payroll = { pct: '', days: {} };
@@ -229,6 +247,16 @@ const auth = firebase.auth(), db = firebase.database();
 const now = () => Date.now();
 // dnešný dátum vo formáte YYYY-MM-DD podľa lokálneho času (nie UTC, ako by dal toISOString())
 const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// dátum (Date objekt) -> YYYY-MM-DD, lokálny čas
+const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// deň (YYYY-MM-DD), ku ktorému sa zaplatená objednávka počíta v Uzávierke/Histórii - buď ručne nastavený
+// "pracovný deň" (keď čašník cez Nastavenia > Zariadenie nastaví, že pracuje napr. včerajší deň - typicky
+// pri práci cez polnoc, nech tržba po polnoci ešte patrí k predošlej zmene), inak kalendárny deň platby
+const orderDayKey = o => o.businessDay || dateKey(new Date(o.paidAt));
+// "YYYY-MM-DD" -> Date objekt (lokálny čas, nie UTC ako by dal new Date(string))
+const parseISODate = s => { const [y, mo, da] = s.split('-').map(Number); return new Date(y, mo - 1, da); };
+// "YYYY-MM-DD" -> krátky zápis "D.M." pre odznak v hlavičke
+const dayShort = s => { const [y, mo, da] = s.split('-').map(Number); return `${da}.${mo}.`; };
 const str = (v, max = 100) => String(v ?? '').trim().slice(0, max);
 const num = v => Math.round(Number(String(v ?? '').replace(',', '.')) * 100) / 100;
 function fail(msg) { toast(msg); throw new Error(msg); }
@@ -246,6 +274,16 @@ async function callInner(m, [col, id, action], body) {
       if (body.group !== undefined) rec.group = str(body.group, 10);
       if (body.color !== undefined) rec.color = str(body.color, 20);
       return db.ref('tables').push(rec); }
+    // Preusporiadanie ťahaním (Nastavenia) - príde celý nový poradie zoznam id-čiek, prepíše sa "order"
+    // podľa pozície v ňom. Volá sa ako /api/tables/_/reorder - konkrétne id v ceste sa ignoruje.
+    if (m === 'POST' && action === 'reorder') {
+      if (!isManager) fail('Stoly smie meniť len vedúci');
+      const ids = Array.isArray(body.order) ? body.order : [];
+      const known = new Set(S.tables.map(x => x.id));
+      if (!ids.length || !ids.every(x => known.has(x)) || ids.length !== S.tables.length) fail('Neplatné poradie');
+      const u = {}; ids.forEach((tid, i) => { u[tid + '/order'] = i; });
+      return db.ref('tables').update(u);
+    }
     const t = S.tables.find(x => x.id === id); if (!t) fail('Stôl neexistuje');
     if (m === 'PUT') { if (!isManager) fail('Stoly smie meniť len vedúci');
       const u = {};
@@ -272,14 +310,14 @@ async function callInner(m, [col, id, action], body) {
         }).filter(it => it.qty > 0);
         if (changed) {
           u[o.id + '/items'] = items;
-          if (!items.length) { u[o.id + '/status'] = 'zaplatena'; u[o.id + '/paidAt'] = now(); }
+          if (!items.length) { u[o.id + '/status'] = 'zaplatena'; u[o.id + '/paidAt'] = now(); if (bizDay) u[o.id + '/businessDay'] = bizDay; }
         }
       });
       if (!paidItems.length) fail('Nič na zaplatenie');
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
       const newKey = db.ref('orders').push().key;
       u[newKey] = { no: r.snapshot.val(), tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30),
-        note: '', items: paidItems, status: 'zaplatena', createdAt: now(), paidAt: now() };
+        note: '', items: paidItems, status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}) };
       return db.ref('orders').update(u);
     }
     // Odstránenie (stornovanie) položky z účtu stola bez platby - napr. omylom objednané, alebo hosť
@@ -397,7 +435,7 @@ async function callInner(m, [col, id, action], body) {
         no: r.snapshot.val(), tableId: null, tableName: '💶 Rýchla platba',
         waiter: str(body.waiter, 30), note: '',
         items: [{ menuId: null, name: note || 'Rýchla platba', price, qty: 1, note: '', cat: 'Rýchla platba' }],
-        status: 'zaplatena', createdAt: now(), paidAt: now()
+        status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {})
       });
     }
   }
@@ -504,7 +542,7 @@ async function callInner(m, [col, id, action], body) {
         items: [{ menuId: null, name: '🎮 ' + s.name, price, qty: 1, note: '', cat: s.type || 'Atrakcie' }],
         status: tbl ? 'vydana' : 'zaplatena', createdAt: s.startedAt
       };
-      if (!tbl) rec.paidAt = now();
+      if (!tbl) { rec.paidAt = now(); if (bizDay) rec.businessDay = bizDay; }
       await db.ref('orders/' + newKey).set(rec);
       return db.ref('sessions/' + id).remove();
     }
@@ -651,11 +689,11 @@ function unlockUzavierka() {
 let pending = false;
 function safeRender() {
   if (document.activeElement?.tagName === 'INPUT') { pending = true; return; }
-  if (attrDragId) { pending = true; return; } // neprekresľovať uprostred ťahania atrakcie v Nastaveniach
+  if (attrDragId || tableDragId) { pending = true; return; } // neprekresľovať uprostred ťahania atrakcie/stola v Nastaveniach
   render();
 }
 document.addEventListener('focusout', () => setTimeout(() => {
-  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId) { pending = false; render(); }
+  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId) { pending = false; render(); }
 }, 50));
 
 // ---------- zvuk ----------
@@ -710,6 +748,9 @@ function render() {
   $('#tabUzavierka').classList.toggle('hide', !canUzavierka);
   const boardMissing = S.board.filter(b => b.type !== 'buy' && !b.done).length;
   $('#boardTopBtn').innerHTML = '📦' + (boardMissing ? `<span style="display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin-left:4px;border-radius:99px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;vertical-align:middle">${boardMissing}</span>` : '');
+  // Pracovný deň (keď sa cez polnoc zapisuje tržba ešte pod predošlý deň) - vidno na ikone v hlavičke,
+  // nech na to nikto nezabudne, keď je zapnuté.
+  $('#bizDayBtn').innerHTML = '📅' + (bizDay ? `<span style="display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin-left:4px;border-radius:99px;background:var(--warn);color:#fff;font-size:10px;font-weight:700;vertical-align:middle">${dayShort(bizDay)}</span>` : '');
   if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
   if (role === 'uzavierka' && !canUzavierka) { role = 'casnik'; store.set('role', role); }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
@@ -1115,11 +1156,8 @@ async function addStationQueue(type) {
 function renderHistory() {
   const wasFocused = document.activeElement && document.activeElement.id === 'histFilterInput';
   const selPos = wasFocused ? document.activeElement.selectionStart : null;
-  const dayStart = new Date(histDate.getFullYear(), histDate.getMonth(), histDate.getDate()).getTime();
-  const dayEnd = dayStart + 86400000;
-  const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
-  const isToday = dayStart === todayStart;
-  let paid = S.orders.filter(o => o.status === 'zaplatena' && o.paidAt >= dayStart && o.paidAt < dayEnd).sort((a, b) => b.paidAt - a.paidAt);
+  const isToday = dateKey(histDate) === todayISO();
+  let paid = S.orders.filter(o => o.status === 'zaplatena' && orderDayKey(o) === dateKey(histDate)).sort((a, b) => b.paidAt - a.paidAt);
   const total = sumOrders(paid);
   const q = fold(histFilter || '');
   if (q) paid = paid.filter(o => fold(o.tableName || '').includes(q) || String(o.no).includes(q) || o.items.some(i => fold(i.name || '').includes(q)));
@@ -1301,7 +1339,7 @@ function renderItems() {
   const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
   el.innerHTML = list.length ? list.map(m => `
     <button class="item" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}${words.length ? ' · ' + esc(m.category) : ''}</span>
-    ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><button class="qminus" onclick="event.stopPropagation();removeItem('${m.id}')">−</button></div>` : ''}</button>`).join('')
+    ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><span class="qminus" role="button" tabindex="0" onclick="event.stopPropagation();removeItem('${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();removeItem('${m.id}')}">−</span></div>` : ''}</button>`).join('')
     : '<div class="empty" style="grid-column:1/-1">Nič sa nenašlo</div>';
 }
 
@@ -1312,7 +1350,7 @@ function renderFavs() {
   const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
   el.innerHTML = `<h3 style="margin:0 0 6px">⭐ Obľúbené</h3><div class="items">${favs.map(m => `
     <button class="item" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}</span>
-    ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><button class="qminus" onclick="event.stopPropagation();removeItem('${m.id}')">−</button></div>` : ''}</button>`).join('')}</div>`;
+    ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><span class="qminus" role="button" tabindex="0" onclick="event.stopPropagation();removeItem('${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();removeItem('${m.id}')}">−</span></div>` : ''}</button>`).join('')}</div>`;
 }
 // Rozparsuje nastavenie "možností pri pridaní" (napr. sóda/ľad/príchuť) z jednoduchého textového formátu:
 // jedna skupina na riadok, "Názov skupiny: možnosť1, možnosť2, možnosť3".
@@ -1345,6 +1383,26 @@ function openItemOptions(id) {
 function closeItemOptions() {
   itemOptionsFor = null;
   $('#itemOptionsModal').classList.add('hide');
+}
+// ---------- pracovný deň (zápis tržby cez polnoc pod predošlý deň) - dostupné komukoľvek prihlásenému ----------
+function openBizDayModal() {
+  const inp = $('#bizDayInput'); if (inp) inp.value = bizDay || todayISO();
+  $('#bizDayModal').classList.remove('hide');
+}
+function closeBizDayModal() { $('#bizDayModal').classList.add('hide'); }
+function saveBizDay() {
+  const v = $('#bizDayInput').value;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return toast('Vyber platný dátum');
+  bizDay = v; store.set('bizDay', v);
+  closeBizDayModal();
+  toast(`Pracovný deň: ${fmtDay(parseISODate(v))} – nové platby sa zapíšu pod tento deň ✓`);
+  render();
+}
+function clearBizDay() {
+  bizDay = ''; store.set('bizDay', '');
+  closeBizDayModal();
+  toast('Pracovný deň späť na automatický (dnešok) ✓');
+  render();
 }
 function pickItemOption(gi, ci) {
   itemOptionsPicks[gi] = (itemOptionsPicks[gi] === ci) ? undefined : ci;
@@ -1558,11 +1616,8 @@ function renderUzavierka() {
       : '<div class="empty" style="padding:60px 20px">Uzávierka je dostupná len pre vedúceho. PIN pre ostatných zatiaľ nie je nastavený (Nastavenia).</div>';
     return;
   }
-  const dayStart = new Date(uzavDate.getFullYear(), uzavDate.getMonth(), uzavDate.getDate()).getTime();
-  const dayEnd = dayStart + 86400000;
-  const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
-  const isToday = dayStart === todayStart;
-  const paid = S.orders.filter(o => o.status === 'zaplatena' && o.paidAt >= dayStart && o.paidAt < dayEnd);
+  const isToday = dateKey(uzavDate) === todayISO();
+  const paid = S.orders.filter(o => o.status === 'zaplatena' && orderDayKey(o) === dateKey(uzavDate));
   const total = sumOrders(paid);
   const agg = {};
   paid.forEach(o => o.items.forEach(i => {
@@ -1651,9 +1706,7 @@ function renderUzavierka() {
 function payDayKey() { return `${uzavDate.getFullYear()}-${String(uzavDate.getMonth() + 1).padStart(2, '0')}-${String(uzavDate.getDate()).padStart(2, '0')}`; }
 function savePayroll() { store.set('payroll', payroll); }
 function dayPaidOrders(date) {
-  const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const dayEnd = dayStart + 86400000;
-  return S.orders.filter(o => o.status === 'zaplatena' && o.paidAt >= dayStart && o.paidAt < dayEnd);
+  return S.orders.filter(o => o.status === 'zaplatena' && orderDayKey(o) === dateKey(date));
 }
 // Tržba rozpočítaná po jednotlivých položkách (podľa názvu) - na výpočet, koľko z toho je vylúčené z percent
 // (konkrétna položka, napr. len "Pixel", nie celá kategória "Hry"), aj pre CSV export.
@@ -1766,11 +1819,8 @@ function renderSettings() {
   }
   const TABLE_COLORS = ['', '#e5484d', '#f2994a', '#f2c94c', '#27ae60', '#17a398', '#2f80ed', '#9b51e0', '#eb5296'];
   const groupNames = [...new Set(S.tables.map(x => x.group).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'sk'));
-  const t = S.tables.map((x, i) => `<div class="set-row t" style="grid-template-columns:30px 1fr 64px auto auto">
-    <div style="display:flex;flex-direction:column;gap:2px">
-      <button class="btn ghost" style="width:26px;height:20px;padding:0;font-size:10px;line-height:1" ${i === 0 ? 'disabled' : ''} onclick="moveTableOrder('${x.id}',-1)">▲</button>
-      <button class="btn ghost" style="width:26px;height:20px;padding:0;font-size:10px;line-height:1" ${i === S.tables.length - 1 ? 'disabled' : ''} onclick="moveTableOrder('${x.id}',1)">▼</button>
-    </div>
+  const t = S.tables.map((x, i) => `<div class="set-row t table-row" style="grid-template-columns:28px 1fr 64px auto auto" data-table-id="${x.id}">
+    <span class="dragHandle" title="Podrž a presuň – zmení poradie" onpointerdown="startTableDrag(event,'${x.id}')">⠿</span>
     <input value="${esc(x.name)}" onchange="call('PUT','/api/tables/${x.id}',{name:this.value})">
     <input value="${esc(x.group || '')}" placeholder="skup." title="Skupina, napr. P alebo L" onchange="call('PUT','/api/tables/${x.id}',{group:this.value})">
     <div style="display:flex;gap:4px">${TABLE_COLORS.map(c => `
@@ -1808,7 +1858,8 @@ function renderSettings() {
   const nav = `<div class="row" style="gap:6px;flex-wrap:wrap;margin-bottom:12px">${SETTINGS_TABS.map(([k, label]) => `
     <button class="btn ${settingsTab === k ? '' : 'ghost'}" style="width:auto;padding:8px 14px" onclick="settingsTab='${k}';render()">${label}</button>`).join('')}</div>`;
 
-  const stolyTab = `<h2>Stoly</h2><div class="card">${t}
+  const stolyTab = `<h2>Stoly</h2><div class="card"><div id="tableList">${t}</div>
+      ${S.tables.length > 1 ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Podrž ⠿ a presuň – zmení sa poradie stolov.</p>' : ''}
       <div class="set-row t" style="margin-top:10px"><input id="newT" placeholder="Názov nového stola, napr. Terasa 2">
       <button class="btn" style="width:auto" onclick="addTable()">Pridať</button></div>
       <div class="row" style="margin-top:10px;gap:6px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
@@ -1913,7 +1964,41 @@ async function endAttrDrag() {
 }
 async function addTable() { const v = $('#newT').value.trim(); if (v) await call('POST', '/api/tables', { name: v }); }
 async function delTable(id) { if (confirm('Zmazať stôl?')) await call('DELETE', '/api/tables/' + id); }
-async function moveTableOrder(id, dir) { await call('POST', '/api/tables/' + id + '/move', { dir }); }
+
+// ---------- preusporiadanie stolov ťahaním (podrž ⠿ a presuň) v Nastaveniach ----------
+// Rovnaký princíp ako pri atrakciách (Pointer Events - funguje na myš aj dotyk).
+function startTableDrag(e, id) {
+  e.preventDefault();
+  tableDragId = id; tableDragOverId = null;
+  const row = e.currentTarget.closest('[data-table-id]');
+  if (row) row.classList.add('dragging');
+  document.addEventListener('pointermove', onTableDragMove);
+  document.addEventListener('pointerup', endTableDrag, { once: true });
+  document.addEventListener('pointercancel', endTableDrag, { once: true });
+}
+function onTableDragMove(e) {
+  if (!tableDragId) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const row = el && el.closest('[data-table-id]');
+  document.querySelectorAll('#tableList [data-table-id]').forEach(r => r.classList.remove('drag-over'));
+  if (row && row.dataset.tableId !== tableDragId) { row.classList.add('drag-over'); tableDragOverId = row.dataset.tableId; }
+  else tableDragOverId = null;
+}
+async function endTableDrag() {
+  document.removeEventListener('pointermove', onTableDragMove);
+  document.querySelectorAll('#tableList [data-table-id]').forEach(r => r.classList.remove('dragging', 'drag-over'));
+  const fromId = tableDragId, toId = tableDragOverId;
+  tableDragId = null; tableDragOverId = null;
+  if (!fromId || !toId || fromId === toId) { render(); return; }
+  const list = [...S.tables]; // S.tables je už zoradené podľa "order"
+  const fromIdx = list.findIndex(x => x.id === fromId);
+  const toIdx = list.findIndex(x => x.id === toId);
+  if (fromIdx === -1 || toIdx === -1) { render(); return; }
+  const [moved] = list.splice(fromIdx, 1);
+  list.splice(toIdx, 0, moved);
+  try { await call('POST', '/api/tables/_/reorder', { order: list.map(x => x.id) }); }
+  finally { render(); }
+}
 async function quickAddTable() {
   const g = $('#qaGroup').value.trim(), n = $('#qaNum').value.trim();
   if (!g || !n) return toast('Zadaj skupinu aj číslo');
