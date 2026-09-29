@@ -302,7 +302,11 @@ async function callInner(m, [col, id, action], body) {
         const items = o.items.map(it => {
           const k = it.name + '|' + it.price; const take = Math.min(need[k] || 0, it.qty);
           if (take > 0) { need[k] -= take; changed = true;
-            paidItems.push({ menuId: it.menuId, name: it.name, price: it.price, qty: take, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}) });
+            // POZOR: položky z ukončenej atrakcie nemajú menuId (Firebase pri zápise "null" hodnotu úplne
+            // vynechá, takže sa pri čítaní späť správa ako undefined) - nikdy sem nedávaj "menuId: it.menuId"
+            // natvrdo, lebo zápis objektu s explicitnou hodnotou undefined do Firebase rovno zlyhá (a keďže
+            // to nie je fail() s hláškou, používateľ nevidí vôbec nič - účet sa potichu nedá vyplatiť).
+            paidItems.push({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: take, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}) });
             return { ...it, qty: it.qty - take }; }
           return it;
         }).filter(it => it.qty > 0);
