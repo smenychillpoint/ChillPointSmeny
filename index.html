@@ -799,7 +799,7 @@
     <div class="box" style="max-width:680px;">
       <button class="close" data-close>×</button>
       <h2>Čo som spravil/a navyše</h2>
-      <p class="sub">Záznamy za posledných 30 dní, kto čo spravil navyše počas smeny. Pridáš to na svoj dnešný deň cez „Checklist a záznam zo smeny“ (voľba ✨).</p>
+      <p class="sub">Záznamy za posledných 30 dní, kto čo spravil navyše počas smeny. Pridáš to cez „Checklist a záznam zo smeny“ (voľba ✨) na ktorýkoľvek deň, na ktorom si bol/a na smene – aj spätne, nemusí to byť práve dnes.</p>
       <div id="extraList"></div>
     </div>
   </div>
@@ -3604,11 +3604,12 @@
     const items=ckItems(type); const m=((dayObj(key).ck||{})[type])||{};
     return { done:items.filter(t=>m[hash36(t)]).length, total:items.length };
   }
-  // vedúci môže vždy, zamestnanec iba v ten deň, keď je na smene
+  // vedúci môže vždy, zamestnanec na ktoromkoľvek dni (aj spätne, nielen dnes) - ale iba na taký deň,
+  // na ktorom bol/a naozaj na smene, a nie na deň, ktorý ešte len príde (ten sa ešte neodohral)
   function canCheck(key){
     if(!feat('checklists')) return false;
     if(manager) return true;
-    return !!myName && key===todayKey() && (dayObj(key).employees||[]).includes(myName) && !dayObj(key).off;
+    return !!myName && key<=todayKey() && (dayObj(key).employees||[]).includes(myName) && !dayObj(key).off;
   }
   const ckWho=()=>manager ? 'Vedúci' : myName;
   async function tickItem(key, type, text, val){
