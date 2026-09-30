@@ -216,6 +216,7 @@ let boardType = 'missing';
 let warnedReservations = new Set();  // rezervácie, na ktoré sa už píplo (aby to nepípalo dookola)
 let histFilter = '';         // hľadanie v histórii platieb (meno stola, položka, číslo objednávky)
 let queueHistFilter = '';    // hľadanie v histórii rezervácií (meno)
+let queuePrefillTable = null; // id stola, z ktorého sa otvorila "+ Rezervácia" - predvyplní sa v selecte na obrazovke Rezervácie
 let editingOptsFor = null;   // id položky menu, ktorej "možnosti pri pridaní" sa práve upravujú v Nastaveniach
 let attrDragId = null;       // id atrakcie, ktorá sa práve ťahá (preusporiadanie v Nastaveniach)
 let attrDragOverId = null;   // id atrakcie, nad ktorou je práve prst/kurzor pri ťahaní
@@ -227,10 +228,11 @@ let settingsTab = 'stoly';   // aktívna záložka v Nastaveniach (stoly/menu/at
 // Ručne nastavený "pracovný deň" (YYYY-MM-DD) - keď čašník pracuje cez polnoc a chce, aby sa nové platby
 // zapisovali do Uzávierky/Histórie pod predošlý deň namiesto automatického dnešného dátumu. Prázdne = automaticky.
 let bizDay = store.get('bizDay', '');
-let payroll = store.get('payroll', { pct: '', days: {} });  // výplatná kalkulačka v uzávierke: % z tržby + odpracované hodiny za deň
+let payroll = store.get('payroll', { pct: '', days: {}, tips: {} });  // výplatná kalkulačka v uzávierke: % z tržby + odpracované hodiny + trinkgeľ za deň
 // ochrana pred starým tvarom uložených dát v localStorage (zo staršej verzie appky) - inak by Uzávierka spadla na chybe
-if (!payroll || typeof payroll !== 'object') payroll = { pct: '', days: {} };
+if (!payroll || typeof payroll !== 'object') payroll = { pct: '', days: {}, tips: {} };
 if (!payroll.days || typeof payroll.days !== 'object') payroll.days = {};
+if (!payroll.tips || typeof payroll.tips !== 'object') payroll.tips = {};
 if (payroll.pct === undefined || payroll.pct === null) payroll.pct = '';
 let sound = store.get('sound', true);
 let seenReady = new Set(store.get('seenReady', []));
@@ -524,6 +526,17 @@ async function callInner(m, [col, id, action], body) {
       const u = {};
       if (body.name !== undefined) { const name = str(body.name, 40); if (name) u.name = name; }
       if (body.type !== undefined) u.type = str(body.type, 30) || 'Ostatné';
+      // Prepojenie na cenníkovú položku (Nastavenia > Menu) - jej cena sa berie ako sadzba €/hod a pri
+      // ukončení hry sa z nej navrhne suma podľa odohraného času (viď attrSuggestedPrice). Viac atrakcií
+      // môže ukazovať na tú istú položku (napr. 3 biliardové stoly -> jedna položka "Biliard").
+      if (body.menuId !== undefined) {
+        if (!body.menuId) u.menuId = null;
+        else { const mi = S.menu.find(x => x.id === body.menuId); if (!mi) fail('Cenníková položka neexistuje'); u.menuId = mi.id; }
+      }
+      // Či sa má pri ukončení hry suma navrhnúť automaticky podľa času × sadzby (viď attrSuggestedPrice).
+      // Vypnuté napr. pri biliarde s fyzickým počítadlom - prepojenie na cenník (kvôli kategórii/tržbe)
+      // môže ostať, len sa cena nebude predvypĺňať. Chýbajúce pole = zapnuté (predvolený stav).
+      if (body.suggestPrice !== undefined) u.suggestPrice = body.suggestPrice ? null : false;
       return db.ref('attractions/' + id).update(u); }
     if (m === 'DELETE') { if (!isManager) fail('Atrakcie smie mazať len vedúci');
       if (S.sessions.some(s => s.stationId === id)) fail('Stanica sa práve používa');
@@ -558,12 +571,18 @@ async function callInner(m, [col, id, action], body) {
       // Ak je zadaný stôl, suma sa nezaplatí hneď, ale pripíše sa na otvorený účet stola (zaplatí sa neskôr spolu so zvyškom)
       let tbl = null;
       if (body.tableId) { tbl = S.tables.find(x => x.id === body.tableId); if (!tbl) fail('Stôl neexistuje'); }
+      // Ak je stanica prepojená s cenníkovou položkou (Nastavenia > Atrakcie), položka objednávky dostane
+      // jej menuId a kategóriu - tržba z atrakcií sa potom v uzávierke/reportoch počíta jednotne s cenníkom.
+      // Bez prepojenia (menuId chýba/undefined) sa nikdy nesmie zapísať "menuId: undefined" natvrdo - Firebase
+      // by takýto zápis rovno zhodilo bez akejkoľvek hlášky (viď komentár pri paySome vyššie).
+      const st = S.attractions.find(a => a.id === s.stationId);
+      const mi = st && st.menuId ? S.menu.find(x => x.id === st.menuId) : null;
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
       const newKey = db.ref('orders').push().key;
       const rec = {
         no: r.snapshot.val(), tableId: tbl ? tbl.id : null, tableName: tbl ? tbl.name : '🎮 ' + s.name, waiter: str(body.waiter, 30),
         note: body.durationText ? 'Trvanie: ' + str(body.durationText, 40) : '',
-        items: [{ menuId: null, name: '🎮 ' + s.name, price, qty: 1, note: '', cat: s.type || 'Atrakcie' }],
+        items: [{ ...(mi ? { menuId: mi.id } : {}), name: '🎮 ' + s.name, price, qty: 1, note: '', cat: (mi && mi.category) || s.type || 'Atrakcie' }],
         status: tbl ? 'vydana' : 'zaplatena', createdAt: s.startedAt
       };
       if (!tbl) { rec.paidAt = now(); if (bizDay) rec.businessDay = bizDay; }
@@ -939,7 +958,7 @@ function renderQueue() {
       <input id="qName" placeholder="Meno / číslo objednávky" style="margin-top:6px">
       <select id="qTarget" style="margin-top:6px">
         <option value="">Čo je rezervované? (voliteľné)</option>
-        ${S.tables.length ? `<optgroup label="Stôl">${S.tables.map(t => `<option value="table:${t.id}">${esc(t.name)}</option>`).join('')}</optgroup>` : ''}
+        ${S.tables.length ? `<optgroup label="Stôl">${S.tables.map(t => `<option value="table:${t.id}" ${queuePrefillTable === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : ''}
         ${attrTypes.length ? `<optgroup label="Atrakcia">${attrTypes.map(t => `<option value="attr:${esc(t)}">${esc(t)}</option>`).join('')}</optgroup>` : ''}
       </select>
       <label class="muted" style="font-size:13px;margin-top:6px;display:block">Na presný dátum a čas (voliteľné - keď sa nezadá čas, ide rovno "teraz")</label>
@@ -948,6 +967,7 @@ function renderQueue() {
       <button class="btn" style="margin-top:8px" onclick="addQueue()">Pridať</button>
     </div>
     <button class="btn ghost" style="margin-top:14px;width:100%" onclick="showQueue=false;render()">← Späť na stoly</button>`;
+  queuePrefillTable = null; // len na jedno otvorenie tejto obrazovky, nech nezostane "prilepené" pri ďalšej návšteve
 }
 async function addQueue() {
   const name = $('#qName').value.trim(); if (!name) return toast('Zadaj meno');
@@ -982,6 +1002,15 @@ const fmtDur = ms => {
   return h ? `${h} h ${m} min` : `${m} min`;
 };
 const slug = s => String(s).replace(/[^a-zA-Z0-9]/g, '_');
+// Ak je atrakcia prepojená s cenníkovou položkou (jej cena = sadzba €/hod), navrhne pri ukončení sumu
+// podľa odohraného času - čas sa zaokrúhli na najbližšiu pol hodinu (napr. 35 min -> 30 min = pol sadzby,
+// 55 min -> 60 min = celá sadzba), nech sa nepočíta na centy podľa presných minút. Dá sa vždy prepísať.
+function attrSuggestedPrice(mi, startedAt) {
+  if (!mi) return null;
+  const mins = (now() - startedAt) / 60000;
+  const halfHours = Math.round(mins / 30);
+  return Math.round(mi.price * halfHours * 0.5 * 100) / 100;
+}
 let finishSessionId = null;   // id sedenia, ktoré sa práve ukončuje (zobrazí inline formulár so sumou)
 let queueFormType = null;     // typ atrakcie, pre ktorý je otvorený formulár "+ Rezervácia"
 let startFormStation = null;  // id stanice, pre ktorú je otvorený formulár na spustenie hry (výber času)
@@ -990,7 +1019,13 @@ let addAttrToTableOpen = false; // v účte stola - formulár na pridanie/spuste
 // Ak bola hra spustená priamo z účtu stola, ten stôl je vopred predvybraný.
 function sessionFinishBlock(s) {
   const sid = slug(s.id);
-  return `<input id="finPrice-${sid}" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Suma €" style="margin-top:2px">
+  const st = S.attractions.find(a => a.id === s.stationId);
+  const mi = st && st.menuId ? S.menu.find(m => m.id === st.menuId) : null;
+  // "návrh" (suggestPrice) sa dá za jednotlivú atrakciu vypnúť (napr. biliard s fyzickým počítadlom) - vtedy
+  // sa síce položka aj tak zapíše prepojená na cenník (kvôli kategórii), ale suma sa nepredvypĺňa a zadáva sa ručne.
+  const suggested = (mi && st.suggestPrice !== false) ? attrSuggestedPrice(mi, s.startedAt) : null;
+  return `<input id="finPrice-${sid}" type="number" step="0.01" min="0" inputmode="decimal" placeholder="Suma €" style="margin-top:2px" value="${suggested != null ? suggested : ''}">
+    ${suggested != null ? `<p class="muted" style="font-size:12px;margin:4px 0 0">Návrh podľa cenníka: ${eur(mi.price)}/hod × ${fmtDur(now() - s.startedAt)} (zaokrúhlené na pol hodiny) – dá sa prepísať</p>` : ''}
     <select id="finTable-${sid}" style="margin-top:2px">
       <option value="">💶 Zaplatiť hneď (hotovosť)</option>
       ${S.tables.map(tb => `<option value="${tb.id}" ${tb.id === s.tableId ? 'selected' : ''}>🧾 Pripísať na účet: ${esc(tb.name)}</option>`).join('')}
@@ -1250,6 +1285,33 @@ function attractionsOnTableBlock(id) {
   </div>`;
 }
 
+// Rezervácie viazané na tento konkrétny stôl (z celkového zoznamu "queue" - viď col==='queue') - nech ich
+// čašník vidí rovno pri stole, bez toho, aby musel prepínať do samostatnej obrazovky "Rezervácie".
+function tableReservationsBlock(id) {
+  const rs = S.queue.filter(q => q.tableId === id).sort((a, b) => (a.reserveAt || a.createdAt) - (b.reserveAt || b.createdAt));
+  if (!rs.length) return `<div class="card" style="margin-bottom:14px">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <b>📌 Rezervácie stola</b>
+      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';showQueue=true;render()">+ Rezervácia</button>
+    </div>
+    <p class="muted" style="margin:6px 0 0;font-size:13px">Zatiaľ žiadna.</p>
+  </div>`;
+  const nowT = now();
+  return `<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
+    <div style="padding:14px 14px 0"><div class="row" style="justify-content:space-between;align-items:center">
+      <b>📌 Rezervácie stola</b>
+      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';showQueue=true;render()">+ Rezervácia</button>
+    </div></div>
+    <div style="padding:10px 14px 14px">${rs.map(q => `
+      <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px;flex-wrap:wrap;gap:6px">
+        <span>${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : ''}${esc(q.name)}${q.note ? ` <small class="muted">· ${esc(q.note)}</small>` : ''}</span>
+        <div class="row" style="gap:6px">
+          <button class="btn ok" style="width:auto;padding:6px 10px;font-size:13px" onclick="serveQueue('${q.id}')">Odbaviť ✓</button>
+          <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="delQueue('${q.id}')">✕</button>
+        </div>
+      </div>`).join('')}</div>
+  </div>`;
+}
 function renderTable() {
   const cats = [...new Set(S.menu.map(m => m.category))];
   if (!cats.includes(cat)) cat = cats[0] ?? null;
@@ -1289,7 +1351,7 @@ function renderTable() {
     </div>` : ''}
   </div>` : '';
 
-  $('#app').innerHTML = readyBanner() + moveUi + attractionsOnTableBlock(tableId) + prev + (S.menu.length ? `
+  $('#app').innerHTML = readyBanner() + moveUi + tableReservationsBlock(tableId) + attractionsOnTableBlock(tableId) + prev + (S.menu.length ? `
     <h2 style="${os.length ? 'margin-top:22px' : ''}">Nová objednávka</h2>
     <div id="favs" style="margin-bottom:14px"></div>
     <div class="search"><input id="q" type="search" placeholder="🔍 Hľadať položku…" value="${esc(q)}" oninput="q=this.value;renderItems()" autocomplete="off">
@@ -1709,9 +1771,13 @@ function renderUzavierka() {
   const pctAmount = pctBase * pct / 100;
   const checkedNames = Object.keys(dayHours);
   const splitShare = checkedNames.length ? pctAmount / checkedNames.length : 0;
+  // Trinkgeľ za deň - ručne zadaná suma, rozdelí sa rovným dielom medzi zaškrtnutých zamestnancov (rovnaká
+  // skupina ako pri percentách z tržby vyššie).
+  const tip = num(payroll.tips[dayKey]) || 0;
+  const tipShare = checkedNames.length ? tip / checkedNames.length : 0;
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
   const empRows = (S.employees || []).map((e, i) => { const on = e.name in dayHours; const h = dayHours[e.name] || '';
-    const hourly = (num(h) || 0) * (e.wage || 0), empTotal = hourly + (on ? splitShare : 0);
+    const hourly = (num(h) || 0) * (e.wage || 0), empTotal = hourly + (on ? splitShare + tipShare : 0);
     return `<div style="margin-bottom:10px;${on ? 'padding-bottom:10px;border-bottom:1px solid var(--line)' : ''}">
       <div class="row" style="gap:8px;align-items:center">
         <label style="flex:1;display:flex;align-items:center;gap:6px"><input type="checkbox" ${on ? 'checked' : ''} onchange="togglePayrollEmp('${e.name.replace(/'/g, "\\'")}',this.checked)">${esc(e.name)}
@@ -1719,7 +1785,7 @@ function renderUzavierka() {
         <input type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="hodín" value="${h}" ${on ? '' : 'disabled'}
           oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)">
       </div>
-      ${on ? `<p class="muted" style="font-size:12px;margin:4px 0 0" id="payEmpNote-${i}">hodinovka ${eur(hourly)} + podiel z tržby ${eur(splitShare)} = <b id="payEmpTotal-${i}">${eur(empTotal)}</b></p>` : ''}
+      ${on ? `<p class="muted" style="font-size:12px;margin:4px 0 0" id="payEmpNote-${i}">hodinovka ${eur(hourly)} + podiel z tržby ${eur(splitShare)}${tip > 0 ? ' + trinkgeľ ' + eur(tipShare) : ''} = <b id="payEmpTotal-${i}">${eur(empTotal)}</b></p>` : ''}
     </div>`; }).join('');
   $('#app').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:6px">
@@ -1745,9 +1811,15 @@ function renderUzavierka() {
       ${(S.access && S.access.noPctItems && S.access.noPctItems.length) ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
         <p class="muted" style="font-size:13px;margin:0">Bez % z tržby: <b>${S.access.noPctItems.map(esc).join(', ')}</b>${isManager ? ' <a href="#" onclick="role=\'nastavenia\';settingsTab=\'zamestnanci\';store.set(\'role\',role);render();return false" style="font-size:13px">(zmeniť v Nastaveniach)</a>' : ''}</p>
         </div>` : ''}
+      <div class="row" style="margin-top:10px;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
+        <label class="muted" style="flex:1;font-size:13px">Trinkgeľ za deň (rozdelí sa rovným dielom medzi zaškrtnutých)</label>
+        <input id="pTip" type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" value="${payroll.tips[dayKey] || ''}" oninput="setPayrollTip(this.value)">
+        <span class="muted">€</span>
+      </div>
       <div class="total" style="margin-top:10px"><span>Hodinovky spolu</span><span id="payHourly">${eur(hourlyTotal)}</span></div>
       <div class="total"><span id="payPctLabel">Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''})</span><span id="payPct">${eur(pctAmount)}</span></div>
-      <div class="total" style="border-top:2px solid var(--ink);padding-top:8px;margin-top:6px"><b>Výplaty spolu</b><b id="payGrand">${eur(hourlyTotal + pctAmount)}</b></div>
+      <div class="total"><span id="payTipLabel">Trinkgeľ${checkedNames.length ? ' (rozdelené medzi ' + checkedNames.length + ')' : ''}</span><span id="payTip">${eur(tip)}</span></div>
+      <div class="total" style="border-top:2px solid var(--ink);padding-top:8px;margin-top:6px"><b>Výplaty spolu</b><b id="payGrand">${eur(hourlyTotal + pctAmount + tip)}</b></div>
       <button class="btn ghost" style="margin-top:10px" onclick="downloadPayrollCsv()">⬇️ Stiahnuť výplaty (CSV pre Excel)</button>
     </div>
 
@@ -1796,16 +1868,20 @@ function recomputePayroll() {
   const pctAmount = pctBase * pct / 100;
   const checkedNames = Object.keys(dayHours);
   const splitShare = checkedNames.length ? pctAmount / checkedNames.length : 0;
+  const tip = num(payroll.tips[payDayKey()]) || 0;
+  const tipShare = checkedNames.length ? tip / checkedNames.length : 0;
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
   if ($('#payHourly')) $('#payHourly').textContent = eur(hourlyTotal);
   if ($('#payPct')) $('#payPct').textContent = eur(pctAmount);
   if ($('#payPctLabel')) $('#payPctLabel').textContent = `Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''})`;
-  if ($('#payGrand')) $('#payGrand').textContent = eur(hourlyTotal + pctAmount);
+  if ($('#payTip')) $('#payTip').textContent = eur(tip);
+  if ($('#payTipLabel')) $('#payTipLabel').textContent = `Trinkgeľ${checkedNames.length ? ' (rozdelené medzi ' + checkedNames.length + ')' : ''}`;
+  if ($('#payGrand')) $('#payGrand').textContent = eur(hourlyTotal + pctAmount + tip);
   (S.employees || []).forEach((e, i) => {
     if (!(e.name in dayHours)) return;
-    const hourly = (num(dayHours[e.name]) || 0) * (e.wage || 0), empTotal = hourly + splitShare;
+    const hourly = (num(dayHours[e.name]) || 0) * (e.wage || 0), empTotal = hourly + splitShare + tipShare;
     const note = $('#payEmpNote-' + i);
-    if (note) note.innerHTML = `hodinovka ${eur(hourly)} + podiel z tržby ${eur(splitShare)} = <b id="payEmpTotal-${i}">${eur(empTotal)}</b>`;
+    if (note) note.innerHTML = `hodinovka ${eur(hourly)} + podiel z tržby ${eur(splitShare)}${tip > 0 ? ' + trinkgeľ ' + eur(tipShare) : ''} = <b id="payEmpTotal-${i}">${eur(empTotal)}</b>`;
   });
 }
 function togglePayrollEmp(name, on) {
@@ -1818,6 +1894,7 @@ function setPayrollHours(name, val) {
   payroll.days[k][name] = val; savePayroll(); recomputePayroll();
 }
 function setPayrollPct(val) { payroll.pct = val; savePayroll(); recomputePayroll(); }
+function setPayrollTip(val) { payroll.tips[payDayKey()] = val; savePayroll(); recomputePayroll(); }
 // Stiahne výplatný prehľad za daný deň ako CSV (otvorí sa priamo v Exceli). Bodkočiarka ako oddeľovač
 // a BOM na začiatku, nech Excel v slovenčine správne rozpozná kódovanie aj oddeľovač stĺpcov.
 function downloadPayrollCsv() {
@@ -1829,14 +1906,16 @@ function downloadPayrollCsv() {
   const pctAmount = pctBase * pct / 100;
   const checkedNames = Object.keys(dayHours);
   const splitShare = checkedNames.length ? pctAmount / checkedNames.length : 0;
+  const tip = num(payroll.tips[payDayKey()]) || 0;
+  const tipShare = checkedNames.length ? tip / checkedNames.length : 0;
   let hourlyTotal = 0;
-  const rows = [['Meno', 'Odpracované hodiny', 'Hodinovka €/h', 'Hodinovka spolu €', 'Podiel z tržby €', 'Spolu €']];
+  const rows = [['Meno', 'Odpracované hodiny', 'Hodinovka €/h', 'Hodinovka spolu €', 'Podiel z tržby €', 'Trinkgeľ €', 'Spolu €']];
   (S.employees || []).forEach(e => {
     if (!(e.name in dayHours)) return;
     const h = num(dayHours[e.name]) || 0;
     const hourly = h * (e.wage || 0);
     hourlyTotal += hourly;
-    rows.push([e.name, h, e.wage || 0, hourly.toFixed(2), splitShare.toFixed(2), (hourly + splitShare).toFixed(2)]);
+    rows.push([e.name, h, e.wage || 0, hourly.toFixed(2), splitShare.toFixed(2), tipShare.toFixed(2), (hourly + splitShare + tipShare).toFixed(2)]);
   });
   rows.push([]);
   rows.push(['Tržba za deň €', total.toFixed(2)]);
@@ -1844,8 +1923,9 @@ function downloadPayrollCsv() {
   rows.push(['Základ pre percentá €', pctBase.toFixed(2)]);
   rows.push(['Percentá %', pct]);
   rows.push(['Percentá spolu €', pctAmount.toFixed(2)]);
+  rows.push(['Trinkgeľ spolu €', tip.toFixed(2)]);
   rows.push(['Hodinovky spolu €', hourlyTotal.toFixed(2)]);
-  rows.push(['Výplaty spolu €', (hourlyTotal + pctAmount).toFixed(2)]);
+  rows.push(['Výplaty spolu €', (hourlyTotal + pctAmount + tip).toFixed(2)]);
   const esc2 = v => { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const csv = '﻿' + rows.map(r => r.map(esc2).join(';')).join('\r\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -1944,17 +2024,25 @@ function renderSettings() {
         <select id="nC" class="cat">${cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
         <button class="btn" style="width:auto" onclick="addItemMenu()">+</button></div>` : ''}</div>`;
 
+  const attrMenuOpts = S.menu.filter(m => (m.name || '').trim());
   const atrakcieTab = `<h2>Atrakcie (biliard, PlayStation, ping-pong, šípky...)</h2><div class="card">
-      <div id="attrList">${S.attractions.map(a => `<div class="set-row t attr-row" style="grid-template-columns:28px 1fr 1fr auto" data-attr-id="${a.id}">
+      <div id="attrList">${S.attractions.map(a => `<div class="set-row t attr-row" style="grid-template-columns:28px 1fr 1fr 1.3fr auto auto" data-attr-id="${a.id}">
         <span class="dragHandle" title="Podrž a presuň – zmení poradie" onpointerdown="startAttrDrag(event,'${a.id}')">⠿</span>
         <input value="${esc(a.name)}" onchange="call('PUT','/api/attractions/${a.id}',{name:this.value})">
         <input value="${esc(a.type || '')}" placeholder="typ, napr. Biliard" onchange="call('PUT','/api/attractions/${a.id}',{type:this.value})">
+        <select onchange="call('PUT','/api/attractions/${a.id}',{menuId:this.value})" title="Cenníková položka - jej cena = sadzba €/hod, pre kategóriu/tržbu v uzávierke">
+          <option value="">— vlastná suma (ako doteraz) —</option>
+          ${attrMenuOpts.map(m => `<option value="${m.id}" ${a.menuId === m.id ? 'selected' : ''}>${esc(m.name)} (${eur(m.price)}/hod)</option>`).join('')}
+        </select>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;white-space:nowrap;${a.menuId ? '' : 'opacity:.4'}" title="Ak je zapnuté, pri ukončení hry sa suma navrhne automaticky podľa odohraného času a sadzby. Vypni napr. pri biliarde, ak máte na stole fyzické počítadlo a sumu čítate z neho.">
+          <input type="checkbox" ${a.menuId ? '' : 'disabled'} ${a.suggestPrice === false ? '' : 'checked'} onchange="call('PUT','/api/attractions/${a.id}',{suggestPrice:this.checked})">⏱ návrh
+        </label>
         <button class="del" onclick="delAttraction('${a.id}')">Zmazať</button></div>`).join('') || '<p class="muted">Zatiaľ žiadne atrakcie.</p>'}</div>
       ${S.attractions.length > 1 ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Podrž ⠿ a presuň – zmení sa poradie (aj v akom poradí sa zobrazujú v Atrakciách).</p>' : ''}
       <div class="set-row t" style="grid-template-columns:1fr 1fr auto;margin-top:10px"><input id="newAName" placeholder="Názov, napr. 7">
       <input id="newAType" placeholder="Typ, napr. Biliard">
       <button class="btn" style="width:auto" onclick="addAttraction()">Pridať</button></div>
-      <p class="muted" style="font-size:12px;margin-top:6px">Atrakcie s rovnakým typom sa v záložke Atrakcie zoskupia pod jeden nadpis.</p></div>`;
+      <p class="muted" style="font-size:12px;margin-top:6px">Atrakcie s rovnakým typom sa v záložke Atrakcie zoskupia pod jeden nadpis. Prepojením na cenníkovú položku (v Menu vyššie – jej cena = € za hodinu) sa tržba z atrakcie počíta jednotne s cenníkom (kategória, uzávierka). „⏱ návrh" navyše pri ukončení hry automaticky predvyplní sumu podľa odohraného času, zaokrúhlenú na pol hodiny (35 min ≈ pol sadzby, 55 min ≈ celá sadzba) – dá sa vždy prepísať. Vypni to napr. pri biliarde, ak máte fyzické počítadlo a sumu čítate priamo z neho – prepojenie na cenník (kvôli kategórii) môže ostať zapnuté, len sa cena nebude navrhovať. Viac atrakcií môže zdieľať tú istú cenníkovú položku (napr. 3 biliardové stoly).</p></div>`;
 
   const noPctSet = new Set((S.access && S.access.noPctItems) || []);
   const noPctBlock = cats.map(c => {
