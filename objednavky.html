@@ -733,10 +733,15 @@ let pending = false;
 function safeRender() {
   if (document.activeElement?.tagName === 'INPUT') { pending = true; return; }
   if (attrDragId || tableDragId) { pending = true; return; } // neprekresľovať uprostred ťahania atrakcie/stola v Nastaveniach
+  // Neprekresľovať, kým je otvorený formulár na zadanie sumy za atrakciu (sessionFinishBlock) - inak
+  // by prípadná živá zmena z iného zariadenia (ktokoľvek z tímu) prepísala rozostavaný input naspäť
+  // na predvyplnenú/prázdnu hodnotu tesne predtým, než čašník klikne "Potvrdiť" - a suma sa buď stratí,
+  // alebo sa potichu odošle nula namiesto zadanej sumy (presne bug nahlásený pri biliarde).
+  if (finishSessionId) { pending = true; return; }
   render();
 }
 document.addEventListener('focusout', () => setTimeout(() => {
-  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId) { pending = false; render(); }
+  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId && !finishSessionId) { pending = false; render(); }
 }, 50));
 
 // ---------- zvuk ----------
@@ -1009,6 +1014,10 @@ function attrSuggestedPrice(mi, startedAt) {
   if (!mi) return null;
   const mins = (now() - startedAt) / 60000;
   const halfHours = Math.round(mins / 30);
+  // Pri veľmi krátkom hraní (zaokrúhli sa na 0 polhodín) nenavrhuj sumu "0" - vyzeralo by to ako
+  // predvyplnené pole a mohlo by sa to potichu odoslať namiesto skutočnej sumy. Radšej nech je pole
+  // prázdne a čašník sumu zadá sám.
+  if (halfHours <= 0) return null;
   return Math.round(mi.price * halfHours * 0.5 * 100) / 100;
 }
 let finishSessionId = null;   // id sedenia, ktoré sa práve ukončuje (zobrazí inline formulár so sumou)
@@ -1179,7 +1188,9 @@ async function confirmStartOnTable(tableId) {
   toast('Atrakcia spustená na stole ✓');
   render();
 }
+let finishingSession = false; // zámok proti dvojitému odoslaniu (napr. rýchly dvojklik/dvojťuk), kým beží predošlé ukladanie
 async function confirmFinishSession(id, restart) {
+  if (finishingSession) return; // predošlé potvrdenie ešte prebieha - ignoruj ďalší klik/ťuk
   const s = S.sessions.find(x => x.id === id); if (!s) return;
   const sid = slug(id);
   const priceStr = $('#finPrice-' + sid) ? $('#finPrice-' + sid).value : '';
@@ -1187,9 +1198,12 @@ async function confirmFinishSession(id, restart) {
   if (!(price >= 0)) return toast('Zadaj platnú sumu');
   const tableSel = $('#finTable-' + sid);
   const targetTableId = tableSel ? tableSel.value : '';
-  await call('DELETE', '/api/sessions/' + id + '/finish', {
-    price, waiter: store.get('waiter', ''), durationText: fmtDur(now() - s.startedAt), tableId: targetTableId || null
-  });
+  finishingSession = true;
+  try {
+    await call('DELETE', '/api/sessions/' + id + '/finish', {
+      price, waiter: store.get('waiter', ''), durationText: fmtDur(now() - s.startedAt), tableId: targetTableId || null
+    });
+  } finally { finishingSession = false; }
   finishSessionId = null;
   toast(targetTableId ? 'Pripísané na účet stola ✓' : 'Zaplatené ✓');
   // Rýchle opakované spustenie - hneď po ukončení naskočí nová hra na tej istej stanici (šetrí klikanie pri stálych hráčoch)
