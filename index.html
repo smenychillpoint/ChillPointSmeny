@@ -762,6 +762,24 @@
     </div>
   </div>
 
+  <div class="modal" id="takenModal">
+    <div class="box" style="max-width:680px;">
+      <button class="close" data-close>×</button>
+      <h2>Vzal/a som si</h2>
+      <p class="sub">Záznamy za posledných 60 dní, kto si čo vzal (napr. z pokladne alebo skladu) – vidíš iba ty, ostatní zamestnanci tento zoznam nevidia. Vysporiadané označíš tlačidlom.</p>
+      <div id="takenList"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="myTakenModal">
+    <div class="box" style="max-width:680px;">
+      <button class="close" data-close>×</button>
+      <h2>Moje „vzal/a som si“</h2>
+      <p class="sub">Tvoje vlastné záznamy za tento kalendárny mesiac. Vidíš iba ty a vedúci, ostatní zamestnanci nie.</p>
+      <div id="myTakenList"></div>
+    </div>
+  </div>
+
   <div class="modal" id="noticeModal">
     <div class="box" style="max-width:720px;">
       <button class="close" data-close>×</button>
@@ -932,7 +950,7 @@
           <li><b>📅 Pridať smeny do kalendára v telefóne</b> (v „Moje smeny“) stiahne tvoje smeny do kalendára.</li>
           <li><b>📲 Do mobilu</b> pridá stránku na plochu ako aplikáciu. Na iPhone cez Zdieľať → Pridať na plochu.</li>
           <li><b>OZNAMY</b> od vedúceho sa zobrazia hore. Tlačidlom <b>Beriem na vedomie</b> dáš vedieť, že si ich prečítal/a.</li>
-          <li>V okne dňa v ten deň, keď si na smene, odškrtávaš <b>checklist</b> a môžeš pridať <b>záznam</b> alebo nahlásiť <b>🛠 závadu</b>.</li>
+          <li>V okne dňa v ten deň, keď si na smene, odškrtávaš <b>checklist</b> a môžeš pridať <b>záznam</b>, nahlásiť <b>🛠 závadu</b>, alebo zapísať <b>🧾 Vzal/a som si niečo</b> (napr. z pokladne/skladu) – to vidí iba vedúci, nemusíš mu to písať zvlášť.</li>
           <li>V prehľade zamestnancov sú stĺpce <b>CHCE VÍKEND</b> a <b>CHCE TÝŽDEŇ</b> — koľko dní si zamestnanec sám nastavil, že by chcel za týždeň (na porovnanie s tým, čo skutočne má).</li>
           <li><b>🎯 Chcem jeden z týchto dní:</b> keď zamestnancovi je jedno, ktorý z viacerých dní dostane, vidíš to v okne dňa a v sekcii „Chcú jeden z viacerých dní“. Žiadosť sama zmizne, keď dostane dosť dní alebo keď všetky vybrané dni uplynú.</li>
           <li><b>Deň je zavretý alebo plný?</b> Stále sa môžeš prihlásiť ako <b>🪑 náhradník</b>. Do smeny sa nezapočítaš, ale vedúci uvidí, že môžeš zaskočiť, keby sa niekto odhlásil. Keď ťa pridá na smenu, z náhradníkov zmizneš. Ak sa neskôr prihlásiš normálne, náhradník sa zruší.</li>
@@ -958,6 +976,7 @@
           <li><b>📨 Správa pre ľudí</b> (tlačidlo nad kalendárom alebo <b>📨 Výzva / oznam</b> v okne dňa) pripraví text pre WhatsApp: výzva pre dni, kde chýbajú ľudia (podľa minima alebo dni, ktoré vyberieš ručne), alebo oznam pre ľudí na smene („ideš do práce“). Aplikácia správu sama neodošle, text skopíruješ alebo otvoríš vo WhatsAppe.</li>
           <li><b>✨ Návrh na obdobie</b> navrhne zostavu pre všetky otvorené dni týždňa alebo mesiaca naraz (dni sa navrhujú postupne, takže sa počíta aj s tým, koho už dostali). Ťuknutím na mená ju upravíš a potvrdíš jedným klikom.</li>
           <li><b>✅ Checklisty</b> (Nastavenia) a <b>záznam zo smeny</b>: v okne dňa zamestnanci na smene v ten deň odškrtávajú otvorenie a zatvorenie a hlásia poznámky alebo <b>🛠 závady</b>. Nevyriešené závady vidíš v prehľade.</li>
+          <li><b>🧾 Vzal/a som si:</b> zamestnanec si týmto zapíše, čo si vzal (napr. z pokladne alebo skladu) namiesto toho, aby ti to musel písať zvlášť. Vidíš to iba ty, nie ostatní zamestnanci – v prehľade „Dnes a zajtra“ sa objaví, koľko je nevysporiadaných, a vysporiadané si po dohode označíš tlačidlom.</li>
           <li>V okne <b>📨 Správa pre ľudí</b> si cez <b>✎ Vlastná šablóna</b> upravíš znenie výzvy a oznamu (použi {dni}, {cas}, {odkaz}).</li>
           <li><b>🪑 Náhradníci:</b> na zavretom (alebo plnom) dni sa zamestnanci môžu prihlásiť ako záloha. V okne dňa ich vidíš s časom a tlačidlom <b>→ Na smenu</b>, v kalendári ako <b>🪑 2</b>. Návrh zostavy ich pri dopĺňaní uprednostní. Vypnúť sa dá v Nastaveniach → Funkcie.</li>
           <li>V zozname zamestnancov a v okne rozpisu človeka si môžeš pri mene dať <b>✅ hotovo</b> – hodí sa, keď prechádzaš viac ľudí naraz a chceš vedieť, ktorých máš už skontrolovaných. Ostáva to uložené aj po obnovení stránky (iba v tomto prehliadači).</li>
@@ -3034,9 +3053,10 @@
     const noticesActive = !feat('notices') ? [] : noticeList(false);
     const noticesUnread = noticesActive.filter(n=>unreadNames(n.id).length>0).length;
     const defects = feat('checklists') ? defectList().filter(e=>!e.r).length : 0;
+    const taken = feat('checklists') ? takenList().filter(e=>!e.r).length : 0;
     const subs = feat('swaps') ? openSubs().length : 0;
     const flexN = feat('flexwant') ? openFlex().length : 0;
-    return { toClose, shortDays, swapsN, warnN, cfPending, cfAny, defects, subs, flexN, noticesActive:noticesActive.length, noticesUnread };
+    return { toClose, shortDays, swapsN, warnN, cfPending, cfAny, defects, taken, subs, flexN, noticesActive:noticesActive.length, noticesUnread };
   }
   const scrollToId=id=>{ const el=$(id); try{ if(el && el.scrollIntoView) el.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){} };
   function openCheck(){ checkRange='next14'; renderCheck(); $('checkModal').classList.add('open'); }
@@ -3051,6 +3071,7 @@
     else if(kind==='cf'){ if(c.cfPending.length) openShift(c.cfPending[0]); }
     else if(kind==='notices'){ openNotices(); }
     else if(kind==='defects'){ openDefects(); }
+    else if(kind==='taken'){ openTaken(); }
   }
   function renderToday(){
     const sec=$('todaySection');
@@ -3084,7 +3105,8 @@
       + chip('warn',   c.warnN,           `🔍 Varovania na 14 dní: ${c.warnN}`, '✓ Bez varovaní na 14 dní')
       + (feat('confirm') && (c.cfPending.length || c.cfAny) ? chip('cf', c.cfPending.length, `⏳ Nepotvrdená účasť (7 dní): ${c.cfPending.length} ${plural(c.cfPending.length,'deň','dni','dní')}`, '✓ Všetci potvrdili účasť') : '')
       + (c.noticesActive ? chip('notices', c.noticesUnread, `📣 Oznamy, ktoré niekto nečítal: ${c.noticesUnread}`, '✓ Všetky oznamy sú prečítané') : '')
-      + (feat('checklists') && c.defects ? chip('defects', c.defects, `🛠 Nevyriešené závady: ${c.defects}`, '') : '');
+      + (feat('checklists') && c.defects ? chip('defects', c.defects, `🛠 Nevyriešené závady: ${c.defects}`, '') : '')
+      + (feat('checklists') && c.taken ? chip('taken', c.taken, `🧾 Nevysporiadané "vzal/a som si": ${c.taken}`, '') : '');
     document.querySelectorAll('#todayCards [data-today]').forEach(x=>x.onclick=()=>openShift(x.dataset.today));
     document.querySelectorAll('#todayChips [data-tc]').forEach(x=>x.onclick=()=>dashAction(x.dataset.tc));
   }
@@ -3625,12 +3647,12 @@
     if(!canCheck(key)||!dbAvailable) return false;
     text=String(text||'').trim().slice(0,400);
     if(!text){ showToast('Napíš, čo sa stalo.'); return false; }
-    if(kind!=='defect' && kind!=='extra') kind='note';
+    if(kind!=='defect' && kind!=='extra' && kind!=='taken') kind='note';
     try{
       await scheduleRef.child(key).child('dl').push({ n:ckWho(), t:serverTs(), x:text, k:kind });
       ckDraft='';
-      showToast(kind==='defect' ? 'Závada nahlásená 🛠' : (kind==='extra' ? 'Pridané do „Navyše“ ✨' : 'Záznam pridaný 📝'));
-      logEvent(key, `${kind==='defect'?'Nahlásená závada':(kind==='extra'?'Spravil/a navyše':'Záznam zo smeny')}: ${text.slice(0,120)}`, ckWho());
+      showToast(kind==='defect' ? 'Závada nahlásená 🛠' : (kind==='extra' ? 'Pridané do „Navyše“ ✨' : (kind==='taken' ? 'Zapísané, uvidí to vedúci 🧾' : 'Záznam pridaný 📝')));
+      logEvent(key, `${kind==='defect'?'Nahlásená závada':(kind==='extra'?'Spravil/a navyše':(kind==='taken'?'Zapísal/a čo si vzal/a':'Záznam zo smeny'))}: ${text.slice(0,120)}`, ckWho());
       return true;
     }catch(e){ showToast('Nepodarilo sa uložiť (nastav nové pravidlá vo Firebase).', 4000); return false; }
   }
@@ -3655,10 +3677,11 @@
       return `<div class="ck-sec"><b>${label}</b> <span class="sub">${pr.done}/${pr.total}</span>${items.map((t,i)=>{ const e=m[hash36(t)]; return `<label class="ckrow"><input type="checkbox" data-ck="${type}|${i}"${e?' checked':''}${can?'':' disabled'}><span>${esc(t)}${e?` <span class="ckby">${esc(e.n||'')} · ${esc(fmtClock(e.t))}</span>`:''}</span></label>`; }).join('')}</div>`;
     };
     const cfg = sec('open','Otvorenie') + sec('close','Zatvorenie');
-    const logs=Object.keys(d.dl||{}).map(id=>({ id, ...d.dl[id] })).filter(e=>e && e.x).sort((a,b)=>(a.t||0)-(b.t||0));
-    const logIcon=k=>k==='defect'?'🛠':(k==='extra'?'✨':'📝');
+    // záznamy druhu "taken" (vzal/a som si) v dennom okne vidí vedúci a ten, kto ich napísal - ostatným zamestnancom sa vôbec nezobrazia
+    const logs=Object.keys(d.dl||{}).map(id=>({ id, ...d.dl[id] })).filter(e=>e && e.x && (manager || e.k!=='taken' || e.n===myName)).sort((a,b)=>(a.t||0)-(b.t||0));
+    const logIcon=k=>k==='defect'?'🛠':(k==='extra'?'✨':(k==='taken'?'🧾':'📝'));
     const logHtml=logs.map(e=>`<div class="ck-log ${e.k==='defect'?'defect':''}">${logIcon(e.k)} <b>${esc(e.n||'')}</b> · ${esc(fmtClock(e.t))} – ${esc(e.x)}${e.r?' <em>(vyriešené)</em>':''}${manager?` <button class="cfm" data-ldone="${esc(e.id)}">${e.r?'↺ znovu otvoriť':'✓ vyriešené'}</button><button class="cfm" data-ldel="${esc(e.id)}">🗑</button>`:''}</div>`).join('');
-    const form = can ? `<div class="ckform"><select id="ckKind"><option value="note">📝 Poznámka</option><option value="extra">✨ Spravil/a som navyše</option><option value="defect">🛠 Závada</option></select><textarea id="ckLogText" maxlength="400" placeholder="Čo sa stalo? (napr. nefunguje zbraň č. 4, alebo čo si spravil/a navyše)">${esc(ckDraft)}</textarea><button class="primary small" id="ckLogAdd">Pridať záznam</button></div>` : '';
+    const form = can ? `<div class="ckform"><select id="ckKind"><option value="note">📝 Poznámka</option><option value="extra">✨ Spravil/a som navyše</option><option value="defect">🛠 Závada</option><option value="taken">🧾 Vzal/a som si niečo (vidí len vedúci)</option></select><textarea id="ckLogText" maxlength="400" placeholder="Čo sa stalo? (napr. nefunguje zbraň č. 4, čo si spravil/a navyše, alebo čo si si vzal/a)">${esc(ckDraft)}</textarea><button class="primary small" id="ckLogAdd">Pridať záznam</button></div>` : '';
     const hint = (!cfg && manager) ? '<p class="sub" style="margin:0 0 6px;font-size:12px;">Checklisty otvorenia a zatvorenia nastavíš v Nastaveniach (✅ Checklisty).</p>' : '';
     box.innerHTML=`<div class="section-title">Checklist a záznam zo smeny</div>${hint}${cfg}<div style="margin-top:8px;">${logHtml||'<p class="sub" style="margin:0;font-size:12px;">Zatiaľ žiadne záznamy.</p>'}</div>${form}`;
     document.querySelectorAll('#ckBox [data-ck]').forEach(x=>x.onchange=()=>{ const [type,i]=x.dataset.ck.split('|'); tickItem(date, type, ckItems(type)[Number(i)], x.checked); });
@@ -3700,6 +3723,44 @@
     document.querySelectorAll('#defectList [data-rdone]').forEach(x=>x.onclick=()=>{ const [k,id]=x.dataset.rdone.split('|'); resolveLog(k, id, !(((dayObj(k).dl||{})[id]||{}).r)); });
   }
   function openDefects(){ if(!manager) return; renderDefects(); $('defectModal').classList.add('open'); }
+
+  // čo si zamestnanci vzali (posledných 60 dní) - rovnaký "dl" záznam, len iný druh (k:'taken').
+  // Na rozdiel od "navyše" to vidí IBA vedúci - zamestnanec to len nahodí, nemusí to nikomu písať.
+  function takenList(){
+    const out=[]; const cut=(()=>{ const d=new Date(); d.setDate(d.getDate()-60); return iso(d); })();
+    Object.keys(schedule.days||{}).forEach(k=>{
+      if(k<cut) return;
+      const dl=(schedule.days[k]||{}).dl||{};
+      Object.keys(dl).forEach(id=>{ const e=dl[id]; if(e && e.k==='taken' && e.x) out.push({ key:k, id, n:e.n, t:e.t, x:e.x, r:!!e.r }); });
+    });
+    return out.sort((a,b)=>(a.r-b.r) || ((b.t||0)-(a.t||0)));
+  }
+  function renderTaken(){
+    if(!manager){ $('takenList').innerHTML=''; return; }
+    const list=takenList();
+    $('takenList').innerHTML = list.length ? list.map(e=>`<div class="ck-log"${e.r?' style="opacity:.6"':''}>🧾 <b>${esc(fmtDay(e.key))}</b> · ${esc(e.n||'')} · ${esc(fmtClock(e.t))} – ${esc(e.x)}${e.r?' <em>(vysporiadané)</em>':''} <button class="cfm" data-tdone="${esc(e.key)}|${esc(e.id)}">${e.r?'↺ znovu otvoriť':'✓ vysporiadané'}</button><button class="cfm" data-tdel="${esc(e.key)}|${esc(e.id)}">🗑</button></div>`).join('') : '<p class="sub">Zatiaľ nič.</p>';
+    document.querySelectorAll('#takenList [data-tdone]').forEach(x=>x.onclick=()=>{ const [k,id]=x.dataset.tdone.split('|'); resolveLog(k, id, !(((dayObj(k).dl||{})[id]||{}).r)).then(()=>renderTaken()); });
+    document.querySelectorAll('#takenList [data-tdel]').forEach(x=>x.onclick=()=>{ const [k,id]=x.dataset.tdel.split('|'); deleteLog(k, id).then(()=>renderTaken()); });
+  }
+  function openTaken(){ if(!manager) return; renderTaken(); $('takenModal').classList.add('open'); }
+
+  // osobný pohľad zamestnanca na VLASTNÉ "vzal/a som si" záznamy za celý aktuálny kalendárny mesiac
+  // (deň v okne dňa ukáže iba ten konkrétny deň - toto je prehľad za celý mesiac naraz)
+  function myTakenList(){
+    if(!myName) return [];
+    const out=[]; const now=new Date(); const ym=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+    Object.keys(schedule.days||{}).forEach(k=>{
+      if(k.slice(0,7)!==ym) return;
+      const dl=(schedule.days[k]||{}).dl||{};
+      Object.keys(dl).forEach(id=>{ const e=dl[id]; if(e && e.k==='taken' && e.x && e.n===myName) out.push({ key:k, id, n:e.n, t:e.t, x:e.x, r:!!e.r }); });
+    });
+    return out.sort((a,b)=>(b.t||0)-(a.t||0));
+  }
+  function renderMyTaken(){
+    const list=myTakenList();
+    $('myTakenList').innerHTML = list.length ? list.map(e=>`<div class="ck-log"${e.r?' style="opacity:.6"':''}>🧾 <b>${esc(fmtDay(e.key))}</b> · ${esc(fmtClock(e.t))} – ${esc(e.x)}${e.r?' <em>(vysporiadané)</em>':''}</div>`).join('') : '<p class="sub">Tento mesiac si zatiaľ nič nezapísal/a.</p>';
+  }
+  function openMyTaken(){ if(!myName) return; renderMyTaken(); $('myTakenModal').classList.add('open'); }
 
   // čo kto spravil navyše (posledných 30 dní) - rovnaký "dl" záznam ako poznámka/závada, len iný druh (k:'extra').
   // Na rozdiel od závad to vidia VŠETCI zamestnanci, nie iba vedúci.
@@ -4313,6 +4374,7 @@
     if(myName || manager){
       if(feat('board')) html+=`<button class="outline" id="boardBtn">📦 Chýba/Kúpiť${boardMissingCount()?` <span class="badge-manager" style="margin-left:4px;">${boardMissingCount()}</span>`:''}</button>`;
       if(feat('checklists')) html+=`<button class="outline" id="extraBtn">✨ Navyše</button>`;
+      if(feat('checklists') && myName && !manager) html+=`<button class="outline" id="myTakenBtn">🧾 Moje „vzal/a som si“</button>`;
       if(feat('todos')) html+=`<button class="outline" id="todoBtn">☑ To-do${todoOpenCount()?` <span class="badge-manager" style="margin-left:4px;">${todoOpenCount()}</span>`:''}</button>`;
     }
     html+=`<button class="outline" id="helpBtn">❓ Návod</button>`;
@@ -4328,6 +4390,7 @@
     const kb=$('lockBtn'); if(kb) kb.onclick=doManagerLogout;
     const bb=$('boardBtn'); if(bb) bb.onclick=openBoard;
     const eb=$('extraBtn'); if(eb) eb.onclick=openExtra;
+    const mtb=$('myTakenBtn'); if(mtb) mtb.onclick=openMyTaken;
     const tb=$('todoBtn'); if(tb) tb.onclick=openTodo;
   }
 
@@ -4934,6 +4997,8 @@
     if(personPanels.length) renderPersonPanels();
     if($('noticeModal').classList.contains('open')) renderNoticeAdmin();
     if($('defectModal').classList.contains('open')) renderDefects();
+    if($('takenModal').classList.contains('open')) renderTaken();
+    if($('myTakenModal').classList.contains('open')) renderMyTaken();
     if($('boardModal').classList.contains('open')) renderBoard();
     if($('extraModal').classList.contains('open')) renderExtra();
     if($('todoModal').classList.contains('open')) renderTodo();
