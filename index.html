@@ -776,6 +776,7 @@
       <button class="close" data-close>×</button>
       <h2>Moje „vzal/a som si“</h2>
       <p class="sub">Tvoje vlastné záznamy za tento kalendárny mesiac. Vidíš iba ty a vedúci, ostatní zamestnanci nie.</p>
+      <div id="myTakenForm"></div>
       <div id="myTakenList"></div>
     </div>
   </div>
@@ -928,7 +929,8 @@
       <div id="helpEmp">
         <details class="more-day" open><summary>Ako sa prihlásim na smenu?</summary><div style="padding:0 12px 12px;"><ul>
           <li>Hore vyber svoje meno a zadaj osobný kód, ktorý ti dal vedúci.</li>
-          <li>Klikni na deň v kalendári a daj <b>Prihlásiť sa</b>. Na viac dní naraz použi <b>☑ Prihlásiť sa na viac dní</b>.</li>
+          <li>Klikni na deň v kalendári a daj <b>Prihlásiť sa</b>. Na viac dní naraz použi <b>☑ Prihlásiť sa na viac dní</b>, alebo rovno <b>podrž prst na niektorom dni</b> – výber viacerých dní sa spustí hneď, s tým dňom už vybraným.</li>
+          <li>Keď máš vybraných viac dní, dole sa objavia tlačidlá <b>Prihlásiť sa</b>, <b>Môžem</b>, <b>Nemôžem</b> a <b>Chcem ★</b> – označia naraz všetky vybrané dni.</li>
           <li>Kým vedúci deň nezavrie, môžeš sa aj odhlásiť. Mená ostatných sa ukážu až po zavretí dňa.</li>
         </ul></div></details>
         <details class="more-day"><summary>Čo znamenajú „Otvorené“, „Zavreté“, „Plné“?</summary><div style="padding:0 12px 12px;"><ul>
@@ -1129,6 +1131,7 @@
   let limitCfg={enabled:false,defaultLimit:0};
   let viewMode=(function(){ try{ const v=localStorage.getItem('cp_view'); if(v) return v; }catch(e){} return (window.innerWidth&&window.innerWidth<=560)?'list':'grid'; })();
   let multiMode=false; const multiSel=new Set();
+  let longPressTimer=null, longPressFired=false; // podržanie prsta na dni = rovno vyber viac dní (bez nutnosti najprv klikať na tlačidlo)
   let flexWant=0;   // >0 = práve vyberáš dni pre „Z viacerých dní chcem X“
   let settingsRef=null, auth=null, latestRaw=null, migrating=false, lastMigTry=0, loginFails=0;
   let ratings={}, ratingsRef=null, ratingsAttached=false;
@@ -1143,6 +1146,7 @@
   const newPanelId=()=>'pp'+(++ppIdSeq);
   let notices={}, noticesRef=null, noticeAcks={}, noticeAcksRef=null;
   let board={}, boardRef=null;   // nástenka "Chýba / Kúpiť" - zdieľaná aj s appkou Objednávky (rovnaká Firebase)
+  let menu={}, menuRef=null;     // cenník z appky Objednávky (rovnaká Firebase) - iba na čítanie, na výber položky pri "Vzal/a som si"
   let todos={}, todosRef=null;   // to-do zoznam úloh (vedúci pridáva a priraďuje, prípadne premieša priradenia)
   let joinOpen=false;
   let flex={}, flexRef=null;
@@ -1154,7 +1158,7 @@
   let statsSort={key:'wkndDays',dir:-1};
   let periods=[], periodsRef=null;
   let featCfg={}, featRef=null;
-  let checkCfg={open:[],close:[]}, checkRef=null, ckDraft='', ckDirty=false;
+  let checkCfg={open:[],close:[]}, checkRef=null, ckDraft='', ckDirty=false, myTakenDraft='';
   let tplCfg={call:'',notice:''}, tplRef=null;
   let offlineMode=false, offlineFromCache=false, cacheTime=0, dbReady=false, netConnected=true, offlineTimer=null, cacheTimer=null;
   let weekCfg={summerFrom:5,summerTo:9,summer:{},winter:{}}, weekRef=null, weekDirty=false;
@@ -1338,6 +1342,7 @@
       recurringRef = rtdb.ref('recurring');
       targetsRef = rtdb.ref('targets');
       boardRef = rtdb.ref('board');
+      menuRef = rtdb.ref('menu');
       todosRef = rtdb.ref('todos');
       dbAvailable = true; dbReady = true;
       try{ rtdb.ref('.info/connected').on('value', snap=>onConnectionChange(snap.val()===true)); }catch(e){}
@@ -1394,6 +1399,7 @@
     noticeAcksRef.on('value', snap=>{ noticeAcks=snap.val()||{}; renderAll(); }, err=>{ noticeAcks={}; });
     flexRef.on('value', snap=>{ flex=snap.val()||{}; renderAll(); }, err=>{ flex={}; });
     boardRef.on('value', snap=>{ board=snap.val()||{}; pruneBoard(); renderAll(); }, err=>{ board={}; });
+    menuRef.on('value', snap=>{ menu=snap.val()||{}; renderAll(); }, err=>{ menu={}; });
     todosRef.on('value', snap=>{ todos=snap.val()||{}; renderAll(); }, err=>{ todos={}; });
     weekWantRef.on('value', snap=>{ weekWant=snap.val()||{}; renderAll(); }, err=>{ weekWant={}; });
     // Vypínanie funkcií
@@ -3756,7 +3762,40 @@
     });
     return out.sort((a,b)=>(b.t||0)-(a.t||0));
   }
+  // cenník z appky Objednávky (rovnaká Firebase, iba na čítanie) - zoradený podľa kategórie a poradia,
+  // nech sa dá položka ("Bacardi" a pod.) vybrať priamo zo zoznamu a nemusí sa písať ručne.
+  function menuItems(){
+    return Object.values(menu||{}).map(v=>({ name:String((v&&v.name)||'').trim(), price:Number(v&&v.price)||0, category:String((v&&v.category)||'').trim()||'Ostatné', order:Number(v&&v.order)||0 }))
+      .filter(m=>m.name).sort((a,b)=> a.category.localeCompare(b.category,'sk') || a.order-b.order || a.name.localeCompare(b.name,'sk'));
+  }
+  const fmtEur = n => `${n.toFixed(2).replace('.',',')} €`;
+  // dni, na ktoré sa dá priamo odtiaľto pridať záznam (bez klikania na konkrétny deň) - rovnaká
+  // podmienka ako canCheck(): musel/a na nich byť na smene a deň sa už musel odohrať.
+  function myTakenEligibleDays(){
+    if(manager || !myName) return [];
+    const out=[]; const cut=(()=>{ const d=new Date(); d.setDate(d.getDate()-60); return iso(d); })();
+    Object.keys(schedule.days||{}).forEach(k=>{ if(k>=cut && canCheck(k)) out.push(k); });
+    return out.sort((a,b)=>b.localeCompare(a)); // najnovší deň prvý
+  }
   function renderMyTaken(){
+    if(document.activeElement && document.activeElement.id==='myTakenText') return; // nerušiť písanie
+    const days=myTakenEligibleDays();
+    const todayK=todayKey(), defaultDay=days.includes(todayK)?todayK:(days[0]||'');
+    const items=menuItems();
+    const cats=[...new Set(items.map(m=>m.category))];
+    const itemSelectHtml = items.length ? `<select id="myTakenItem" style="margin-top:2px;">
+        <option value="">✎ Napísať vlastný text…</option>
+        ${cats.map(c=>`<optgroup label="${esc(c)}">${items.filter(m=>m.category===c).map(m=>`<option value="${esc(m.name)} (${fmtEur(m.price)})">${esc(m.name)} – ${fmtEur(m.price)}</option>`).join('')}</optgroup>`).join('')}
+      </select>` : '';
+    $('myTakenForm').innerHTML = days.length ? `<div class="ckform" style="margin-bottom:14px;">
+        <select id="myTakenDay">${days.map(k=>`<option value="${esc(k)}"${k===defaultDay?' selected':''}>${esc(fmtDay(k))}${k===todayK?' (dnes)':''}</option>`).join('')}</select>
+        ${itemSelectHtml}
+        <textarea id="myTakenText" maxlength="400" placeholder="Čo si si vzal/a? (napr. 5€ z pokladne, 1 pivo) – alebo vyber položku z cenníka vyššie">${esc(myTakenDraft)}</textarea>
+        <button class="primary small" id="myTakenAdd">Pridať záznam</button>
+      </div>` : '<p class="sub" style="margin:0 0 10px;">Zatiaľ nie je deň, na ktorý by sa dalo pridať (musíš byť na smene a deň sa už musel odohrať).</p>';
+    const ta=$('myTakenText'); if(ta) ta.addEventListener('input',()=>{ myTakenDraft=ta.value; });
+    const sel=$('myTakenItem'); if(sel) sel.onchange=()=>{ if(sel.value){ myTakenDraft=sel.value; if(ta) ta.value=sel.value; sel.value=''; if(ta) ta.focus(); } };
+    const add=$('myTakenAdd'); if(add) add.onclick=async()=>{ const day=$('myTakenDay').value; if(await addLog(day,'taken',$('myTakenText').value)){ myTakenDraft=''; renderMyTaken(); } };
     const list=myTakenList();
     $('myTakenList').innerHTML = list.length ? list.map(e=>`<div class="ck-log"${e.r?' style="opacity:.6"':''}>🧾 <b>${esc(fmtDay(e.key))}</b> · ${esc(fmtClock(e.t))} – ${esc(e.x)}${e.r?' <em>(vysporiadané)</em>':''}</div>`).join('') : '<p class="sub">Tento mesiac si zatiaľ nič nezapísal/a.</p>';
   }
@@ -4688,7 +4727,26 @@
     const [a,b]=getVisibleMonths();
     const render = viewMode==='list' ? monthListHTML : monthHTML;
     $('months').innerHTML = render(new Date(a.year,a.month,1)) + render(new Date(b.year,b.month,1));
-    document.querySelectorAll('[data-date]').forEach(x=>x.onclick=()=>{ if(multiMode) toggleMultiDay(x.dataset.date); else openShift(x.dataset.date); });
+    document.querySelectorAll('[data-date]').forEach(x=>{
+      x.onclick=()=>{ if(longPressFired){ longPressFired=false; return; } if(multiMode) toggleMultiDay(x.dataset.date); else openShift(x.dataset.date); };
+      // podržanie prsta/tlačidla na dni = rovno spusti výber viac dní (bez klikania na "☑ Prihlásiť sa na viac dní")
+      if(!!myName && !manager){
+        const key=x.dataset.date;
+        const cancelLP=()=>clearTimeout(longPressTimer);
+        x.onpointerdown=()=>{
+          if(multiMode) return;
+          longPressFired=false; cancelLP();
+          longPressTimer=setTimeout(()=>{
+            longPressFired=true; multiMode=true;
+            const r=signupBlock(key); if(r) showToast(r); else multiSel.add(key);
+            try{ if(navigator.vibrate) navigator.vibrate(12); }catch(e){}
+            renderMonths();
+          }, 420);
+        };
+        x.onpointerup=cancelLP; x.onpointerleave=cancelLP; x.onpointercancel=cancelLP;
+        x.oncontextmenu=()=>false;
+      }
+    });
     $('viewBtn').textContent = viewMode==='list' ? '▦ Mriežka' : '☰ Zoznam';
     renderMultiBar();
   }
