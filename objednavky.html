@@ -324,6 +324,36 @@ async function callInner(m, [col, id, action], body) {
         note: '', items: paidItems, status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}) };
       return db.ref('orders').update(u);
     }
+    // Rozdelenie CELÉHO účtu rovným dielom medzi N ľudí (napr. 4 kamoši, každý platí svoju 1/4,
+    // nezávisle od toho, kto si čo presne objednal). Na rozdiel od paySome sa tu neporovnávajú
+    // konkrétne položky - jednoducho sa zavrú všetky otvorené objednávky a namiesto nich vzniknú N
+    // rovnako veľké (posledná doplní zvyšok po zaokrúhlení) samostatné platby, nech v Uzávierke v
+    // "Jednotlivých platbách" vidno N riadkov "Podiel účtu (i/N)".
+    if (m === 'POST' && action === 'paySplit') {
+      const os = tableOrders(id).sort((a, b) => a.createdAt - b.createdAt);
+      if (!os.length) fail('Stôl nemá žiadne otvorené objednávky');
+      const total = sumOrders(os);
+      if (!(total > 0)) fail('Nie je čo platiť');
+      const parts = Math.max(2, Math.min(20, Math.round(num(body.parts)) || 0));
+      if (!(parts >= 2)) fail('Zadaj aspoň 2 ľudí');
+      const u = {};
+      os.forEach(o => { u[o.id + '/status'] = 'zaplatena'; u[o.id + '/paidAt'] = now(); if (bizDay) u[o.id + '/businessDay'] = bizDay; });
+      const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
+      const n0 = r.snapshot.val();
+      const totalCents = Math.round(total * 100);
+      const baseCents = Math.floor(totalCents / parts);
+      let remainingCents = totalCents;
+      for (let i = 0; i < parts; i++) {
+        const isLast = i === parts - 1;
+        const amountCents = isLast ? remainingCents : baseCents;
+        remainingCents -= amountCents;
+        const key = db.ref('orders').push().key;
+        u[key] = { no: ((n0 - 1 + i) % 999) + 1, tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30), note: '',
+          items: [{ name: `Podiel účtu (${i + 1}/${parts})`, price: Math.round(amountCents) / 100, qty: 1 }],
+          status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}) };
+      }
+      return db.ref('orders').update(u);
+    }
     // Odstránenie (stornovanie) položky z účtu stola bez platby - napr. omylom objednané, alebo hosť
     // zmenil názor. Funguje len na ešte NEzaplatené položky (rovnaká hranica ako pri rušení objednávky).
     if (m === 'POST' && action === 'removeItem') {
@@ -1365,8 +1395,10 @@ function renderTable() {
     </div>` : ''}
   </div>` : '';
 
+  const lastOrder = lastTableOrder();
   $('#app').innerHTML = readyBanner() + moveUi + tableReservationsBlock(tableId) + attractionsOnTableBlock(tableId) + prev + (S.menu.length ? `
     <h2 style="${os.length ? 'margin-top:22px' : ''}">Nová objednávka</h2>
+    ${lastOrder ? `<button class="btn ghost" style="margin-bottom:10px" onclick="repeatLastOrder()">🔁 Zopakovať poslednú objednávku (#${lastOrder.no})</button>` : ''}
     <div id="favs" style="margin-bottom:14px"></div>
     <div class="search"><input id="q" type="search" placeholder="🔍 Hľadať položku…" value="${esc(q)}" oninput="q=this.value;renderItems()" autocomplete="off">
     ${q ? '<button onclick="q=\'\';render()">✕</button>' : ''}
@@ -1467,6 +1499,30 @@ function parseOpts(raw) {
     if (!name || !choices.length) return null;
     return { name, choices };
   }).filter(Boolean);
+}
+// Posledná objednávka tohto stola (akéhokoľvek stavu, aj zaplatená) - na "🔁 Zopakovať" (napr. ďalšie kolo rovnakých pív).
+function lastTableOrder() {
+  const os = S.orders.filter(o => o.tableId === tableId).sort((a, b) => b.createdAt - a.createdAt);
+  return os[0] || null;
+}
+function repeatLastOrder() {
+  const o = lastTableOrder();
+  if (!o) return toast('Tento stôl ešte nemal žiadnu objednávku');
+  let added = 0, skipped = false;
+  o.items.forEach(it => {
+    // položky bez menuId (napr. účet z ukončenej atrakcie) alebo medzičasom zmazané z cenníka sa do
+    // košíka takto pridať nedajú - košík je vždy viazaný na konkrétnu cenníkovú položku.
+    const mi = it.menuId ? S.menu.find(m => m.id === it.menuId) : null;
+    if (!mi) { skipped = true; return; }
+    // iná cena než je teraz v cenníku = vtedy to bola vlastná/zľavnená suma (napr. biliard) - zachová sa aj teraz
+    const customPrice = Math.abs(it.price - mi.price) > 0.004 ? it.price : null;
+    const c = cart.find(x => x.menuId === it.menuId && (x.note || '') === (it.note || '') && (x.price ?? null) === customPrice);
+    if (c) c.qty += it.qty; else cart.push({ menuId: it.menuId, qty: it.qty, note: it.note || '', ...(customPrice != null ? { price: customPrice } : {}) });
+    added += it.qty;
+  });
+  if (!added) return toast('Položky z poslednej objednávky už nie sú v cenníku');
+  toast(`Pridané ${added}× z objednávky #${o.no}${skipped ? ' (časť sa nedala doplniť)' : ''} ✓`);
+  renderItems(); renderFavs(); renderCart();
 }
 function addItem(id) {
   const mi = S.menu.find(x => x.id === id);
@@ -1680,6 +1736,15 @@ function renderBill() {
   const anySel = selTotal > 0;
   $('#app').innerHTML = `<div class="card"><div class="total"><span>Celý účet</span><span>${eur(allTotal)}</span></div></div>
     ${rows.length ? `<button class="btn ok" style="margin-top:10px" onclick="payAll()">💶 Zaplatiť celý účet naraz · ${eur(allTotal)}</button>` : ''}
+    ${rows.length ? `<div class="card" style="margin-top:10px">
+      <b>➗ Rozdeliť rovným dielom</b>
+      <p class="muted" style="margin:4px 0 8px">Celý účet sa zaplatí naraz, rozdelený na rovnaké časti (poslednú doplní zaokrúhlenie).</p>
+      <div class="row" style="gap:8px;align-items:center">
+        <input id="splitParts" type="number" min="2" max="20" value="2" inputmode="numeric" style="width:70px;text-align:center" oninput="updateSplitPreview(${allTotal})">
+        <span class="muted">ľudí · <b id="splitPreview">${eur(allTotal / 2)}</b> / osoba</span>
+      </div>
+      <button class="btn" style="margin-top:8px" onclick="paySplit(${allTotal})">➗ Rozdeliť a zaplatiť</button>
+    </div>` : ''}
     ${rows.length ? `
     <h2 style="margin-top:22px">Alebo platba po častiach - klikaj na položky</h2>
     <p class="muted" style="margin:0 0 10px">Každé kliknutie pridá 1 kus do platby teraz. Kliknutím na číslo na položke ho o 1 uberieš.</p>
@@ -1706,6 +1771,18 @@ async function payAll() {
   const items = Object.values(agg);
   await call('POST', `/api/tables/${tableId}/paySome`, { items, waiter: store.get('waiter', '') });
   billSel = {}; tableId = null; toast('Stôl uzavretý ✓'); render();
+}
+function updateSplitPreview(total) {
+  const inp = $('#splitParts'); const el = $('#splitPreview'); if (!inp || !el) return;
+  const n = Math.max(2, Math.min(20, parseInt(inp.value, 10) || 2));
+  el.textContent = eur(total / n);
+}
+async function paySplit(total) {
+  const inp = $('#splitParts');
+  const n = Math.max(2, Math.min(20, parseInt(inp ? inp.value : '2', 10) || 2));
+  if (!confirm(`Rozdeliť účet (${eur(total)}) na ${n} rovnakých častí po ${eur(total / n)}? Celý účet sa tým zaplatí a uzavrie.`)) return;
+  await call('POST', `/api/tables/${tableId}/paySplit`, { parts: n, waiter: store.get('waiter', '') });
+  billSel = {}; tableId = null; toast('Účet rozdelený a zaplatený ✓'); render();
 }
 async function payItems() {
   const items = Object.entries(billSel).filter(([, q]) => q > 0).map(([k, q]) => {
