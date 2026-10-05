@@ -190,6 +190,21 @@
     .ckform{margin-top:10px}
     .ckform select,.ckform textarea{width:100%;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:8px;font:inherit;margin-bottom:8px}
     .ckform textarea{min-height:70px}
+    .ckform input.tk-note{width:100%;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:8px;font:inherit;margin-bottom:8px}
+    .tk-lbl{font-size:12px;color:#a9acb1;margin:2px 0 4px;font-weight:700}
+    .tk-cats{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+    .tk-cat{background:#191b1f;border:1px solid #4b4e53;color:#ddd;padding:6px 10px;font-size:12px;font-weight:700;cursor:pointer}
+    .tk-cat.on{background:var(--yellow);border-color:var(--yellow);color:#111}
+    .tk-items{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:6px;margin-bottom:10px}
+    .tk-item{background:#0d0f11;border:1px solid #55585c;color:#fff;padding:9px 8px;font:inherit;font-size:13px;text-align:left;cursor:pointer;line-height:1.3;position:relative}
+    .tk-item small{display:block;color:#a9acb1;font-size:11px}
+    .tk-item.on{border-color:var(--yellow)}
+    .tk-item .tk-q{position:absolute;top:4px;right:5px;background:var(--yellow);color:#111;font-weight:800;font-size:11px;padding:0 5px}
+    .tk-cart{background:#15120a;border:1px solid #4a3a10;padding:8px 10px;margin-bottom:8px;font-size:13px}
+    .tk-row{display:flex;align-items:center;gap:6px;padding:3px 0}
+    .tk-row span:first-child{flex:1}
+    .tk-row .cfm{margin-left:0;min-width:30px;font-size:14px;padding:2px 8px}
+    .tk-total{border-top:1px solid #4a3a10;margin-top:4px;padding-top:5px;font-weight:800;display:flex;justify-content:space-between}
     .notice-item{padding:12px;margin-bottom:10px;background:#15120a;border:1px solid #4a3a10}
     .notice-text{font-size:14px;line-height:1.5;white-space:pre-wrap;margin-bottom:6px}
     .notice-meta{font-size:12px;color:#a9acb1;margin-bottom:8px}
@@ -767,6 +782,7 @@
       <button class="close" data-close>×</button>
       <h2>Vzal/a som si</h2>
       <p class="sub">Záznamy za posledných 60 dní, kto si čo vzal (napr. z pokladne alebo skladu) – vidíš iba ty, ostatní zamestnanci tento zoznam nevidia. Vysporiadané označíš tlačidlom.</p>
+      <div id="takenForm"></div>
       <div id="takenList"></div>
     </div>
   </div>
@@ -978,7 +994,7 @@
           <li><b>📨 Správa pre ľudí</b> (tlačidlo nad kalendárom alebo <b>📨 Výzva / oznam</b> v okne dňa) pripraví text pre WhatsApp: výzva pre dni, kde chýbajú ľudia (podľa minima alebo dni, ktoré vyberieš ručne), alebo oznam pre ľudí na smene („ideš do práce“). Aplikácia správu sama neodošle, text skopíruješ alebo otvoríš vo WhatsAppe.</li>
           <li><b>✨ Návrh na obdobie</b> navrhne zostavu pre všetky otvorené dni týždňa alebo mesiaca naraz (dni sa navrhujú postupne, takže sa počíta aj s tým, koho už dostali). Ťuknutím na mená ju upravíš a potvrdíš jedným klikom.</li>
           <li><b>✅ Checklisty</b> (Nastavenia) a <b>záznam zo smeny</b>: v okne dňa zamestnanci na smene v ten deň odškrtávajú otvorenie a zatvorenie a hlásia poznámky alebo <b>🛠 závady</b>. Nevyriešené závady vidíš v prehľade.</li>
-          <li><b>🧾 Vzal/a som si:</b> zamestnanec si týmto zapíše, čo si vzal (napr. z pokladne alebo skladu) namiesto toho, aby ti to musel písať zvlášť. Vidíš to iba ty, nie ostatní zamestnanci – v prehľade „Dnes a zajtra“ sa objaví, koľko je nevysporiadaných, a vysporiadané si po dohode označíš tlačidlom.</li>
+          <li><b>🧾 Vzal/a som si:</b> zamestnanec si týmto zapíše, čo si vzal (napr. z pokladne alebo skladu) namiesto toho, aby ti to musel písať zvlášť. Vidíš to iba ty, nie ostatní zamestnanci – v prehľade „Dnes a zajtra“ sa objaví, koľko je nevysporiadaných, a vysporiadané si po dohode označíš tlačidlom. Cez tlačidlo <b>🧾 Vzal/a som si</b> hore to otvoríš kedykoľvek a môžeš tam aj sám <b>zapísať za zamestnanca</b> – vyberieš meno, deň a ťukneš na položky z cenníka (počet +/−), suma sa zráta sama.</li>
           <li>V okne <b>📨 Správa pre ľudí</b> si cez <b>✎ Vlastná šablóna</b> upravíš znenie výzvy a oznamu (použi {dni}, {cas}, {odkaz}).</li>
           <li><b>🪑 Náhradníci:</b> na zavretom (alebo plnom) dni sa zamestnanci môžu prihlásiť ako záloha. V okne dňa ich vidíš s časom a tlačidlom <b>→ Na smenu</b>, v kalendári ako <b>🪑 2</b>. Návrh zostavy ich pri dopĺňaní uprednostní. Vypnúť sa dá v Nastaveniach → Funkcie.</li>
           <li>V zozname zamestnancov a v okne rozpisu človeka si môžeš pri mene dať <b>✅ hotovo</b> – hodí sa, keď prechádzaš viac ľudí naraz a chceš vedieť, ktorých máš už skontrolovaných. Ostáva to uložené aj po obnovení stránky (iba v tomto prehliadači).</li>
@@ -1159,6 +1175,8 @@
   let periods=[], periodsRef=null;
   let featCfg={}, featRef=null;
   let checkCfg={open:[],close:[]}, checkRef=null, ckDraft='', ckDirty=false, myTakenDraft='';
+  // "vzal/a som si" - výber položiek z cenníka kliknutím (my = zamestnanec sám sebe, mgr = vedúci zapisuje za niekoho)
+  let takenCarts={ my:{}, mgr:{} }, takenCat={ my:'', mgr:'' }, takenDay={ my:'', mgr:'' }, mgrTakenEmp='', mgrTakenNote='', takenSaving=false;
   let tplCfg={call:'',notice:''}, tplRef=null;
   let offlineMode=false, offlineFromCache=false, cacheTime=0, dbReady=false, netConnected=true, offlineTimer=null, cacheTimer=null;
   let weekCfg={summerFrom:5,summerTo:9,summer:{},winter:{}}, weekRef=null, weekDirty=false;
@@ -3741,7 +3759,87 @@
     });
     return out.sort((a,b)=>(a.r-b.r) || ((b.t||0)-(a.t||0)));
   }
+  // ---- výber položiek z cenníka kliknutím (spoločné pre zamestnanca "my" aj vedúceho "mgr") ----
+  // ukladá sa stále ako obyčajný text v zázname (x), takže staré záznamy aj Firebase pravidlá ostávajú bez zmeny
+  function takenCartList(p){ const c=takenCarts[p]; return Object.keys(c).map(name=>({ name, price:c[name].price, q:c[name].q })).filter(e=>e.q>0); }
+  function takenCartTotal(p){ return Math.round(takenCartList(p).reduce((s,e)=>s+e.price*e.q,0)*100)/100; }
+  function takenBuildText(p, note){
+    const list=takenCartList(p); note=String(note||'').trim();
+    let x=list.map(e=>`${e.q}× ${e.name} (${fmtEur(e.price)})`).join(', ');
+    if(list.length) x+=` · spolu ${fmtEur(takenCartTotal(p))}`;
+    if(note) x = x ? `${x} – ${note}` : note;
+    return x.slice(0,400);
+  }
+  function takenPickerHtml(p){
+    const items=menuItems(); if(!items.length) return '';
+    const cats=[...new Set(items.map(m=>m.category))];
+    if(!cats.includes(takenCat[p])) takenCat[p]=cats[0];
+    const cart=takenCarts[p], list=takenCartList(p), q=m=>(cart[m.name]&&cart[m.name].q)||0;
+    return `<div class="tk-lbl">Vyber z cenníka – ťukni na položku (viackrát = viac kusov)</div>
+      <div class="tk-cats">${cats.map((c,i)=>`<button type="button" class="tk-cat${c===takenCat[p]?' on':''}" data-tkcat="${i}">${esc(c)}</button>`).join('')}</div>
+      <div class="tk-items">${items.map((m,i)=>m.category!==takenCat[p]?'':`<button type="button" class="tk-item${q(m)?' on':''}" data-tkadd="${i}">${q(m)?`<span class="tk-q">${q(m)}×</span>`:''}${esc(m.name)}<small>${fmtEur(m.price)}</small></button>`).join('')}</div>
+      ${list.length?`<div class="tk-cart">${list.map((e,i)=>`<div class="tk-row"><span>${e.q}× ${esc(e.name)}</span><span>${fmtEur(e.price*e.q)}</span><button type="button" class="cfm" data-tkm="${i}">−</button><button type="button" class="cfm" data-tkp="${i}">+</button></div>`).join('')}<div class="tk-total"><span>Spolu</span><span>${fmtEur(takenCartTotal(p))}</span></div></div>`:''}`;
+  }
+  function takenPickerBind(root, p, rerender){
+    const items=menuItems(), cats=[...new Set(items.map(m=>m.category))], list=takenCartList(p), cart=takenCarts[p];
+    const setQ=(name,price,q)=>{ if(q>0) cart[name]={ price, q:Math.min(q,99) }; else delete cart[name]; rerender(); };
+    root.querySelectorAll('[data-tkcat]').forEach(b=>b.onclick=()=>{ takenCat[p]=cats[Number(b.dataset.tkcat)]||''; rerender(); });
+    root.querySelectorAll('[data-tkadd]').forEach(b=>b.onclick=()=>{ const m=items[Number(b.dataset.tkadd)]; if(m) setQ(m.name, m.price, ((cart[m.name]&&cart[m.name].q)||0)+1); });
+    root.querySelectorAll('[data-tkp]').forEach(b=>b.onclick=()=>{ const e=list[Number(b.dataset.tkp)]; if(e) setQ(e.name, e.price, e.q+1); });
+    root.querySelectorAll('[data-tkm]').forEach(b=>b.onclick=()=>{ const e=list[Number(b.dataset.tkm)]; if(e) setQ(e.name, e.price, e.q-1); });
+  }
+
+  // vedúci zapisuje "vzal/a som si" ZA zamestnanca - na dni, kedy bol/a na smene (posledných 60 dní, nie budúce) + dnešok, ak je otvorený
+  function mgrTakenDays(name){
+    const tk=todayKey(), cut=(()=>{ const d=new Date(); d.setDate(d.getDate()-60); return iso(d); })();
+    const out=Object.keys(schedule.days||{}).filter(k=>k>=cut && k<=tk && !dayObj(k).off && (dayObj(k).employees||[]).includes(name));
+    if(!out.includes(tk) && (schedule.days||{})[tk] && !dayObj(tk).off) out.push(tk);
+    return out.sort((a,b)=>b.localeCompare(a));
+  }
+  async function addTakenFor(key, name, text){
+    if(!manager||!dbAvailable||takenSaving) return false;
+    text=String(text||'').trim().slice(0,400);
+    if(!name){ showToast('Vyber zamestnanca.'); return false; }
+    if(!key){ showToast('Vyber deň.'); return false; }
+    if(!text){ showToast('Vyber položku z cenníka alebo napíš poznámku.'); return false; }
+    takenSaving=true;
+    try{
+      await scheduleRef.child(key).child('dl').push({ n:name, t:serverTs(), x:text, k:'taken' });
+      showToast(`Zapísané pre ${name} 🧾`);
+      logEvent(key, `Vedúci zapísal/a „vzal/a som si“ pre ${name}: ${text.slice(0,120)}`, 'Vedúci');
+      return true;
+    }catch(e){ showToast('Nepodarilo sa uložiť.', 3500); return false; }
+    finally{ takenSaving=false; }
+  }
+  function renderTakenForm(){
+    const box=$('takenForm'); if(!box) return;
+    if(!manager || !feat('checklists')){ box.innerHTML=''; return; }
+    const ae=document.activeElement && document.activeElement.id;
+    if(ae==='mgrTakenNote' || ae==='mgrTakenEmp' || ae==='mgrTakenDay') return; // nerušiť písanie / otvorený výber
+    const names=(employees.list||[]).map(e=>e.name).filter(Boolean).sort((a,b)=>a.localeCompare(b,'sk'));
+    if(!names.includes(mgrTakenEmp)) mgrTakenEmp='';
+    const days=mgrTakenEmp ? mgrTakenDays(mgrTakenEmp) : [], tk=todayKey();
+    const onShift=k=>(dayObj(k).employees||[]).includes(mgrTakenEmp);
+    if(!days.includes(takenDay.mgr)) takenDay.mgr=days.find(onShift)||days[0]||'';
+    box.innerHTML=`<div class="ckform" style="margin:0 0 14px;padding:10px;border:1px solid #2c2f33;">
+      <div class="tk-lbl">➕ Zapísať za zamestnanca</div>
+      <select id="mgrTakenEmp"><option value="">— vyber zamestnanca —</option>${names.map(n=>`<option value="${esc(n)}"${n===mgrTakenEmp?' selected':''}>${esc(n)}</option>`).join('')}</select>
+      ${!mgrTakenEmp ? '' : (!days.length ? '<p class="sub" style="margin:0;">Za posledných 60 dní nebol/a na žiadnej smene.</p>' : `
+      <select id="mgrTakenDay">${days.map(k=>`<option value="${esc(k)}"${k===takenDay.mgr?' selected':''}>${esc(fmtDay(k))}${k===tk?' (dnes)':''}${onShift(k)?'':' · nebol/a na smene'}</option>`).join('')}</select>
+      ${takenPickerHtml('mgr')}
+      <input class="tk-note" id="mgrTakenNote" maxlength="150" placeholder="Poznámka (nepovinné, napr. 5 € z pokladne)" value="${esc(mgrTakenNote)}">
+      <button class="primary small" id="mgrTakenAdd">🧾 Zapísať pre ${esc(mgrTakenEmp)}</button>`)}
+    </div>`;
+    const es=$('mgrTakenEmp'); if(es) es.onchange=()=>{ mgrTakenEmp=es.value; takenDay.mgr=''; es.blur(); renderTaken(); };
+    const ds=$('mgrTakenDay'); if(ds) ds.onchange=()=>{ takenDay.mgr=ds.value; ds.blur(); };
+    const nt=$('mgrTakenNote'); if(nt) nt.addEventListener('input',()=>{ mgrTakenNote=nt.value; });
+    takenPickerBind(box, 'mgr', renderTaken);
+    const add=$('mgrTakenAdd'); if(add) add.onclick=async()=>{
+      if(await addTakenFor(takenDay.mgr, mgrTakenEmp, takenBuildText('mgr', mgrTakenNote))){ takenCarts.mgr={}; mgrTakenNote=''; if(document.activeElement) document.activeElement.blur(); renderTaken(); }
+    };
+  }
   function renderTaken(){
+    renderTakenForm();
     if(!manager){ $('takenList').innerHTML=''; return; }
     const list=takenList();
     $('takenList').innerHTML = list.length ? list.map(e=>`<div class="ck-log"${e.r?' style="opacity:.6"':''}>🧾 <b>${esc(fmtDay(e.key))}</b> · ${esc(e.n||'')} · ${esc(fmtClock(e.t))} – ${esc(e.x)}${e.r?' <em>(vysporiadané)</em>':''} <button class="cfm" data-tdone="${esc(e.key)}|${esc(e.id)}">${e.r?'↺ znovu otvoriť':'✓ vysporiadané'}</button><button class="cfm" data-tdel="${esc(e.key)}|${esc(e.id)}">🗑</button></div>`).join('') : '<p class="sub">Zatiaľ nič.</p>';
@@ -3778,24 +3876,28 @@
     return out.sort((a,b)=>b.localeCompare(a)); // najnovší deň prvý
   }
   function renderMyTaken(){
-    if(document.activeElement && document.activeElement.id==='myTakenText') return; // nerušiť písanie
+    const ae=document.activeElement && document.activeElement.id;
+    if(ae==='myTakenText' || ae==='myTakenDay') return; // nerušiť písanie / otvorený výber dňa
     const days=myTakenEligibleDays();
-    const todayK=todayKey(), defaultDay=days.includes(todayK)?todayK:(days[0]||'');
-    const items=menuItems();
-    const cats=[...new Set(items.map(m=>m.category))];
-    const itemSelectHtml = items.length ? `<select id="myTakenItem" style="margin-top:2px;">
-        <option value="">✎ Napísať vlastný text…</option>
-        ${cats.map(c=>`<optgroup label="${esc(c)}">${items.filter(m=>m.category===c).map(m=>`<option value="${esc(m.name)} (${fmtEur(m.price)})">${esc(m.name)} – ${fmtEur(m.price)}</option>`).join('')}</optgroup>`).join('')}
-      </select>` : '';
+    const todayK=todayKey();
+    if(!days.includes(takenDay.my)) takenDay.my=days.includes(todayK)?todayK:(days[0]||'');
     $('myTakenForm').innerHTML = days.length ? `<div class="ckform" style="margin-bottom:14px;">
-        <select id="myTakenDay">${days.map(k=>`<option value="${esc(k)}"${k===defaultDay?' selected':''}>${esc(fmtDay(k))}${k===todayK?' (dnes)':''}</option>`).join('')}</select>
-        ${itemSelectHtml}
-        <textarea id="myTakenText" maxlength="400" placeholder="Čo si si vzal/a? (napr. 5€ z pokladne, 1 pivo) – alebo vyber položku z cenníka vyššie">${esc(myTakenDraft)}</textarea>
+        <select id="myTakenDay">${days.map(k=>`<option value="${esc(k)}"${k===takenDay.my?' selected':''}>${esc(fmtDay(k))}${k===todayK?' (dnes)':''}</option>`).join('')}</select>
+        ${takenPickerHtml('my')}
+        <input class="tk-note" id="myTakenText" maxlength="150" placeholder="Poznámka (nepovinné, napr. 5 € z pokladne)" value="${esc(myTakenDraft)}">
         <button class="primary small" id="myTakenAdd">Pridať záznam</button>
       </div>` : '<p class="sub" style="margin:0 0 10px;">Zatiaľ nie je deň, na ktorý by sa dalo pridať (musíš byť na smene a deň sa už musel odohrať).</p>';
     const ta=$('myTakenText'); if(ta) ta.addEventListener('input',()=>{ myTakenDraft=ta.value; });
-    const sel=$('myTakenItem'); if(sel) sel.onchange=()=>{ if(sel.value){ myTakenDraft=sel.value; if(ta) ta.value=sel.value; sel.value=''; if(ta) ta.focus(); } };
-    const add=$('myTakenAdd'); if(add) add.onclick=async()=>{ const day=$('myTakenDay').value; if(await addLog(day,'taken',$('myTakenText').value)){ myTakenDraft=''; renderMyTaken(); } };
+    const ds=$('myTakenDay'); if(ds) ds.onchange=()=>{ takenDay.my=ds.value; ds.blur(); };
+    takenPickerBind($('myTakenForm'), 'my', renderMyTaken);
+    const add=$('myTakenAdd'); if(add) add.onclick=async()=>{
+      if(takenSaving) return;
+      const text=takenBuildText('my', myTakenDraft);
+      if(!text){ showToast('Vyber položku z cenníka alebo napíš poznámku.'); return; }
+      takenSaving=true;
+      try{ if(await addLog(takenDay.my,'taken',text)){ takenCarts.my={}; myTakenDraft=''; if(document.activeElement) document.activeElement.blur(); renderMyTaken(); } }
+      finally{ takenSaving=false; }
+    };
     const list=myTakenList();
     $('myTakenList').innerHTML = list.length ? list.map(e=>`<div class="ck-log"${e.r?' style="opacity:.6"':''}>🧾 <b>${esc(fmtDay(e.key))}</b> · ${esc(fmtClock(e.t))} – ${esc(e.x)}${e.r?' <em>(vysporiadané)</em>':''}</div>`).join('') : '<p class="sub">Tento mesiac si zatiaľ nič nezapísal/a.</p>';
   }
@@ -4414,6 +4516,7 @@
       if(feat('board')) html+=`<button class="outline" id="boardBtn">📦 Chýba/Kúpiť${boardMissingCount()?` <span class="badge-manager" style="margin-left:4px;">${boardMissingCount()}</span>`:''}</button>`;
       if(feat('checklists')) html+=`<button class="outline" id="extraBtn">✨ Navyše</button>`;
       if(feat('checklists') && myName && !manager) html+=`<button class="outline" id="myTakenBtn">🧾 Moje „vzal/a som si“</button>`;
+      if(feat('checklists') && manager){ const tn=takenList().filter(e=>!e.r).length; html+=`<button class="outline" id="takenBtn">🧾 Vzal/a som si${tn?` <span class="badge-manager" style="margin-left:4px;">${tn}</span>`:''}</button>`; }
       if(feat('todos')) html+=`<button class="outline" id="todoBtn">☑ To-do${todoOpenCount()?` <span class="badge-manager" style="margin-left:4px;">${todoOpenCount()}</span>`:''}</button>`;
     }
     html+=`<button class="outline" id="helpBtn">❓ Návod</button>`;
@@ -4430,6 +4533,7 @@
     const bb=$('boardBtn'); if(bb) bb.onclick=openBoard;
     const eb=$('extraBtn'); if(eb) eb.onclick=openExtra;
     const mtb=$('myTakenBtn'); if(mtb) mtb.onclick=openMyTaken;
+    const tkb=$('takenBtn'); if(tkb) tkb.onclick=openTaken;
     const tb=$('todoBtn'); if(tb) tb.onclick=openTodo;
   }
 
