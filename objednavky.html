@@ -313,8 +313,10 @@ async function callInner(m, [col, id, action], body) {
           return it;
         }).filter(it => it.qty > 0);
         if (changed) {
-          u[o.id + '/items'] = items;
-          if (!items.length) { u[o.id + '/status'] = 'zaplatena'; u[o.id + '/paidAt'] = now(); if (bizDay) u[o.id + '/businessDay'] = bizDay; }
+          // úplne vyprázdnená pôvodná objednávka sa ZMAŽE - všetky jej položky sú už v novej platbe nižšie.
+          // (predtým sa označila ako zaplatená s 0 položkami a v Uzávierke strašila ako riadok "0,00 €")
+          if (!items.length) u[o.id] = null;
+          else u[o.id + '/items'] = items;
         }
       });
       if (!paidItems.length) fail('Nič na zaplatenie');
@@ -1265,7 +1267,7 @@ function renderHistory() {
   const wasFocused = document.activeElement && document.activeElement.id === 'histFilterInput';
   const selPos = wasFocused ? document.activeElement.selectionStart : null;
   const isToday = dateKey(histDate) === todayISO();
-  let paid = S.orders.filter(o => o.status === 'zaplatena' && orderDayKey(o) === dateKey(histDate)).sort((a, b) => b.paidAt - a.paidAt);
+  let paid = S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(histDate)).sort((a, b) => b.paidAt - a.paidAt);
   const total = sumOrders(paid);
   const q = fold(histFilter || '');
   if (q) paid = paid.filter(o => fold(o.tableName || '').includes(q) || String(o.no).includes(q) || o.items.some(i => fold(i.name || '').includes(q)));
@@ -1839,7 +1841,8 @@ function renderUzavierka() {
     return;
   }
   const isToday = dateKey(uzavDate) === todayISO();
-  const paid = S.orders.filter(o => o.status === 'zaplatena' && orderDayKey(o) === dateKey(uzavDate));
+  // prázdne "zaplatené" objednávky (staré zvyšky po rozdelení platby, 0,00 €) sa nezobrazujú ani nerátajú
+  const paid = S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(uzavDate));
   const total = sumOrders(paid);
   const agg = {};
   paid.forEach(o => o.items.forEach(i => {
@@ -1926,7 +1929,7 @@ function renderUzavierka() {
 function payDayKey() { return `${uzavDate.getFullYear()}-${String(uzavDate.getMonth() + 1).padStart(2, '0')}-${String(uzavDate.getDate()).padStart(2, '0')}`; }
 function savePayroll() { store.set('payroll', payroll); }
 function dayPaidOrders(date) {
-  return S.orders.filter(o => o.status === 'zaplatena' && orderDayKey(o) === dateKey(date));
+  return S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(date));
 }
 // Tržba rozpočítaná po jednotlivých položkách (podľa názvu) - na výpočet, koľko z toho je vylúčené z percent
 // (konkrétna položka, napr. len "Pixel", nie celá kategória "Hry"), aj pre CSV export.
