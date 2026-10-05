@@ -3771,7 +3771,9 @@
     return x.slice(0,400);
   }
   function takenPickerHtml(p){
-    const items=menuItems(); if(!items.length) return '';
+    const items=menuItems();
+    // prázdny cenník = väčšinou Firebase pravidlá nedovolia čítať "menu" bez prihlásenia (zamestnanci v Smenách nie sú prihlásení cez Firebase)
+    if(!items.length) return '<p class="sub" style="margin:0 0 8px;font-size:12px;">⚠ Cenník z appky Objednávky sa nepodarilo načítať – napíš to do poznámky nižšie.</p>';
     const cats=[...new Set(items.map(m=>m.category))];
     if(!cats.includes(takenCat[p])) takenCat[p]=cats[0];
     const cart=takenCarts[p], list=takenCartList(p), q=m=>(cart[m.name]&&cart[m.name].q)||0;
