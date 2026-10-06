@@ -844,7 +844,9 @@
   <div class="modal" id="todoModal">
     <div class="box" style="max-width:680px;">
       <button class="close" data-close>×</button>
-      <h2>To-do zoznam</h2>
+      <h2>Úlohy a navyše</h2>
+      <div id="todoSection">
+      <div class="section-title">☑ Úlohy</div>
       <p class="sub" id="todoSub"></p>
       <div class="form" id="todoForm" style="display:none;">
         <label>ÚLOHA</label><input type="text" id="todoText" maxlength="200" placeholder="napr. umyť okná">
@@ -857,6 +859,15 @@
         <button class="outline" id="todoShuffle">🔀 Náhodne premiešať priradenia</button>
       </div>
       <div id="todoList"></div>
+      </div>
+      <div id="extraSection" style="margin-top:18px;">
+        <div class="section-title">✨ Spravil/a som navyše</div>
+        <div id="extraForm"></div>
+      </div>
+      <div id="doneSection" style="margin-top:18px;">
+        <div class="section-title">✔ Čo sa spravilo (posledných 30 dní)</div>
+        <div id="doneFeed"></div>
+      </div>
     </div>
   </div>
 
@@ -1180,6 +1191,8 @@
   let checkCfg={open:[],close:[]}, checkRef=null, ckDraft='', ckDirty=false, myTakenDraft='';
   // "vzal/a som si" - výber položiek z cenníka kliknutím (my = zamestnanec sám sebe, mgr = vedúci zapisuje za niekoho)
   let takenCarts={ my:{}, mgr:{} }, takenCat={ my:'', mgr:'' }, takenDay={ my:'', mgr:'' }, mgrTakenEmp='', mgrTakenNote='', takenSaving=false;
+  // "spravil/a som navyše" priamo z okna Úlohy a navyše (zamestnanec za seba, vedúci za vybraného zamestnanca)
+  let extraDraft='', extraDay='', extraEmp='', extraSaving=false;
   let tplCfg={call:'',notice:''}, tplRef=null;
   let offlineMode=false, offlineFromCache=false, cacheTime=0, dbReady=false, netConnected=true, offlineTimer=null, cacheTimer=null;
   let weekCfg={summerFrom:5,summerTo:9,summer:{},winter:{}}, weekRef=null, weekDirty=false;
@@ -3801,20 +3814,24 @@
     if(!out.includes(tk) && (schedule.days||{})[tk] && !dayObj(tk).off) out.push(tk);
     return out.sort((a,b)=>b.localeCompare(a));
   }
-  async function addTakenFor(key, name, text){
-    if(!manager||!dbAvailable||takenSaving) return false;
+  // vedúci zapíše záznam zo smeny (dl) ZA konkrétneho zamestnanca - n = meno zamestnanca, nie "Vedúci"
+  async function addLogFor(key, name, kind, text){
+    if(!manager||!dbAvailable) return false;
     text=String(text||'').trim().slice(0,400);
     if(!name){ showToast('Vyber zamestnanca.'); return false; }
     if(!key){ showToast('Vyber deň.'); return false; }
-    if(!text){ showToast('Vyber položku z cenníka alebo napíš poznámku.'); return false; }
-    takenSaving=true;
+    if(!text){ showToast(kind==='taken' ? 'Vyber položku z cenníka alebo napíš poznámku.' : 'Napíš, čo sa spravilo.'); return false; }
     try{
-      await scheduleRef.child(key).child('dl').push({ n:name, t:serverTs(), x:text, k:'taken' });
-      showToast(`Zapísané pre ${name} 🧾`);
-      logEvent(key, `Vedúci zapísal/a „vzal/a som si“ pre ${name}: ${text.slice(0,120)}`, 'Vedúci');
+      await scheduleRef.child(key).child('dl').push({ n:name, t:serverTs(), x:text, k:kind });
+      showToast(kind==='taken' ? `Zapísané pre ${name} 🧾` : `Pridané do „Navyše“ pre ${name} ✨`);
+      logEvent(key, `Vedúci zapísal/a ${kind==='taken'?'„vzal/a som si“':'„navyše“'} pre ${name}: ${text.slice(0,120)}`, 'Vedúci');
       return true;
     }catch(e){ showToast('Nepodarilo sa uložiť.', 3500); return false; }
-    finally{ takenSaving=false; }
+  }
+  async function addTakenFor(key, name, text){
+    if(takenSaving) return false;
+    takenSaving=true;
+    try{ return await addLogFor(key, name, 'taken', text); } finally{ takenSaving=false; }
   }
   function renderTakenForm(){
     const box=$('takenForm'); if(!box) return;
@@ -3936,7 +3953,8 @@
     const lbHtml = lb.length ? `<div class="ck-log" style="border-bottom:2px solid #2c2f33;margin-bottom:8px;padding-bottom:10px;"><b>🏆 Tento mesiac najviac „navyše“</b><br>${lb.map((r,i)=>`${i+1}. ${esc(r.n)} – ${r.c}×`).join('<br>')}</div>` : '';
     $('extraList').innerHTML = lbHtml + (list.length ? list.map(e=>`<div class="ck-log">✨ <b>${esc(fmtDay(e.key))}</b> · ${esc(e.n||'')} · ${esc(fmtClock(e.t))} – ${esc(e.x)}</div>`).join('') : '<p class="sub">Zatiaľ žiadne záznamy.</p>');
   }
-  function openExtra(){ renderExtra(); $('extraModal').classList.add('open'); }
+  // "Navyše" je teraz súčasť okna Úlohy a navyše
+  function openExtra(){ openTodo(); setTimeout(()=>scrollToId('extraSection'),60); }
 
   // ---------- nástenka "Chýba / Kúpiť" (zdieľaná aj s appkou Objednávky) ----------
   function boardList(){
@@ -4006,12 +4024,22 @@
   }
   const todoHasDay=t=>!!t.day && (t.recur===undefined || t.recur===null);
   const todoDayPeople=key=>(dayObj(key).employees||[]).filter(Boolean);
-  // kto môže úlohu odškrtnúť: vedúci, priradená osoba, alebo ktokoľvek na smene v deň úlohy
+  // deň, ku ktorému sa úloha viaže: jednorazová = jej deň, opakujúca sa = tohtotýždňový výskyt (napr. tento pondelok)
+  function todoTargetDay(t){
+    if(t.recur!==undefined && t.recur!==null) return iso(new Date(recurPeriodStart(t.recur)));
+    return t.day||'';
+  }
+  // komu sa úloha zobrazí a kto ju môže odškrtnúť (to isté): vedúci všetko; zamestnanec len to, čo sa ho týka.
+  // Počíta sa živo zo smien - keď vedúci niekoho vyradí zo smeny, úloha mu hneď zmizne.
+  //  - s osobou: iba tá osoba (a ak má úloha deň, iba keď je v ten deň na smene)
+  //  - bez osoby, s dňom: ktokoľvek na smene v ten deň
+  //  - bez osoby aj dňa (staré/všeobecné úlohy): všetci
   function todoCanToggle(t){
     if(manager) return true;
     if(!myName) return false;
-    if(t.assignee===myName) return true;
-    return todoHasDay(t) && todoDayPeople(t.day).includes(myName);
+    const day=todoTargetDay(t), onShift = !day || todoDayPeople(day).includes(myName);
+    if(t.assignee) return t.assignee===myName && onShift;
+    return onShift;
   }
   const WEEKDAY_NAMES=['Nedeľa','Pondelok','Utorok','Streda','Štvrtok','Piatok','Sobota'];
   // Pre opakujúcu sa úlohu (napr. "každý pondelok") sa deň, odkedy naposledy táto úloha "začala platiť", počíta
@@ -4030,7 +4058,7 @@
     if(!t.doneAt) return false;
     return t.doneAt>=recurPeriodStart(t.recur);
   }
-  function todoOpenCount(){ return todoList().filter(t=>!todoEffectiveDone(t)).length; }
+  function todoOpenCount(){ return todoList().filter(t=>todoCanToggle(t) && !todoEffectiveDone(t)).length; }
   async function addTodo(){
     if(!manager||!dbAvailable) return;
     const text=($('todoText').value||'').trim().slice(0,200);
@@ -4058,7 +4086,12 @@
   async function setTodoDone(id, val){
     const t=todos[id]; if(!t||!dbAvailable) return;
     if(!todoCanToggle(t)) return;   // vedúci, priradený človek, alebo ktokoľvek na smene v deň úlohy
-    try{ await todosRef.child(id).update({ done: !!val, doneAt: val ? serverTs() : null }); }catch(e){ showToast('Nepodarilo sa uložiť.'); renderTodo(); }
+    const base={ done: !!val, doneAt: val ? serverTs() : null };
+    try{ await todosRef.child(id).update({ ...base, doneBy: val ? ckWho() : null }); }
+    catch(e){
+      // staršie Firebase pravidlá ešte nepoznajú "doneBy" - vtedy ulož aspoň hotovo (bez mena)
+      try{ await todosRef.child(id).update(base); }catch(e2){ showToast('Nepodarilo sa uložiť.'); renderTodo(); }
+    }
   }
   // náhodne premieša priradenie medzi zamestnancami (pre istotu, keď vedúci nechce vyberať ručne) - týka sa
   // len aktuálne otvorených úloh, hotové (aj tie tento týždeň hotové opakujúce sa) nechá tak
@@ -4072,16 +4105,80 @@
     for(let i=shuffled.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]]; }
     const patch={};
     // úloha s dňom sa priradí niekomu, kto je v ten deň na smene (ak tam nikto nie je, z celého zoznamu)
-    open.forEach((t,i)=>{ const ppl=todoHasDay(t) ? todoDayPeople(t.day) : []; patch[t.id+'/assignee']=ppl.length ? ppl[Math.floor(Math.random()*ppl.length)] : shuffled[i%shuffled.length]; });
+    open.forEach((t,i)=>{ const td=todoTargetDay(t), ppl=td ? todoDayPeople(td) : []; patch[t.id+'/assignee']=ppl.length ? ppl[Math.floor(Math.random()*ppl.length)] : shuffled[i%shuffled.length]; });
     try{ await todosRef.update(patch); showToast('Úlohy premiešané 🔀'); logEvent('', 'Vedúci náhodne premiešal/a priradenie úloh'); }
     catch(e){ showToast('Nepodarilo sa uložiť.'); }
   }
+  // formulár "spravil/a som navyše" priamo v okne Úlohy a navyše
+  function renderExtraForm(){
+    const box=$('extraForm'); if(!box) return;
+    const ae=document.activeElement && document.activeElement.id;
+    if(ae==='extraText' || ae==='extraDaySel' || ae==='extraEmpSel') return;   // nerušiť písanie / otvorený výber
+    const tk=todayKey();
+    let who='', days=[];
+    if(manager){
+      const names=(employees.list||[]).map(e=>e.name).filter(Boolean).sort((a,b)=>a.localeCompare(b,'sk'));
+      if(!names.includes(extraEmp)) extraEmp='';
+      days = extraEmp ? mgrTakenDays(extraEmp) : [];
+      who=`<select id="extraEmpSel"><option value="">— za koho (zamestnanec) —</option>${names.map(n=>`<option value="${esc(n)}"${n===extraEmp?' selected':''}>${esc(n)}</option>`).join('')}</select>`;
+    } else {
+      days = myTakenEligibleDays();   // dni, kedy som bol/a na smene (dnes a spätne)
+    }
+    if(!days.includes(extraDay)) extraDay = days.includes(tk) ? tk : (days[0]||'');
+    const daySel = days.length ? `<select id="extraDaySel">${days.map(k=>`<option value="${esc(k)}"${k===extraDay?' selected':''}>${esc(fmtDay(k))}${k===tk?' (dnes)':''}</option>`).join('')}</select>` : '';
+    const ready = manager ? (extraEmp && days.length) : days.length;
+    const hint = manager
+      ? (extraEmp && !days.length ? '<p class="sub" style="margin:0 0 8px;font-size:12px;">Za posledných 60 dní nebol/a na žiadnej smene.</p>' : '')
+      : (!days.length ? '<p class="sub" style="margin:0;font-size:12px;">Pridať môžeš na deň, keď si bol/a na smene (dnes alebo spätne).</p>' : '');
+    box.innerHTML = `<div class="ckform" style="margin-top:0;">${who}${hint}${ready ? `${daySel}
+      <input class="tk-note" id="extraText" maxlength="300" placeholder="Čo si spravil/a navyše? (napr. umyl/a som okná)" value="${esc(extraDraft)}">
+      <button class="primary small" id="extraAdd">✨ Pridať${manager&&extraEmp?' pre '+esc(extraEmp):''}</button>` : ''}</div>`;
+    const es=$('extraEmpSel'); if(es) es.onchange=()=>{ extraEmp=es.value; extraDay=''; es.blur(); renderExtraForm(); };
+    const ds=$('extraDaySel'); if(ds) ds.onchange=()=>{ extraDay=ds.value; ds.blur(); };
+    const ta=$('extraText'); if(ta) ta.addEventListener('input',()=>{ extraDraft=ta.value; });
+    const add=$('extraAdd'); if(add) add.onclick=async()=>{
+      if(extraSaving) return;
+      if(!String(extraDraft).trim()){ showToast('Napíš, čo si spravil/a.'); return; }
+      extraSaving=true;
+      try{
+        const ok = manager ? await addLogFor(extraDay, extraEmp, 'extra', extraDraft) : await addLog(extraDay, 'extra', extraDraft);
+        if(ok){ extraDraft=''; if(document.activeElement) document.activeElement.blur(); renderTodo(); }
+      } finally{ extraSaving=false; }
+    };
+  }
+  // spoločný prehľad "čo sa spravilo" - hotové úlohy (kto/kedy) + záznamy "navyše"; vidia ho VŠETCI
+  function doneFeedItems(){
+    const cut=(()=>{ const d=new Date(); d.setDate(d.getDate()-30); d.setHours(0,0,0,0); return d.getTime(); })();
+    const out=[];
+    if(feat('todos')) todoList().forEach(t=>{ if(t.doneAt && t.doneAt>=cut && (todoEffectiveDone(t) || t.recur!==undefined&&t.recur!==null)) out.push({ type:'todo', t:t.doneAt, key:iso(new Date(t.doneAt)), n:t.doneBy||'', x:t.text, id:t.id, cur:todoEffectiveDone(t), todo:t }); });
+    if(feat('checklists')) extraList().forEach(e=>out.push({ type:'extra', t:e.t||0, key:e.key, n:e.n||'', x:e.x, id:e.id }));
+    return out.sort((a,b)=>(b.t||0)-(a.t||0));
+  }
+  function renderDoneFeed(){
+    const items=doneFeedItems();
+    const lb = feat('checklists') ? extraLeaderboard() : [];
+    const lbHtml = lb.length ? `<div class="ck-log" style="border-bottom:2px solid #2c2f33;margin-bottom:8px;padding-bottom:10px;"><b>🏆 Tento mesiac najviac „navyše“</b><br>${lb.map((r,i)=>`${i+1}. ${esc(r.n)} – ${r.c}×`).join('<br>')}</div>` : '';
+    $('doneFeed').innerHTML = lbHtml + (items.length ? items.map(e=>{
+      if(e.type==='todo'){
+        const undo = e.cur && todoCanToggle(e.todo) ? ` <button class="cfm" data-tundo="${esc(e.id)}">↺ nehotové</button>` : '';
+        return `<div class="ck-log">☑ <b>${esc(fmtDay(e.key))}</b>${e.n?` · ${esc(e.n)}`:''} · ${esc(fmtClock(e.t))} – úloha: ${esc(e.x)}${undo}</div>`;
+      }
+      const del = manager ? ` <button class="cfm" data-xdel="${esc(e.key)}|${esc(e.id)}">🗑</button>` : '';
+      return `<div class="ck-log">✨ <b>${esc(fmtDay(e.key))}</b> · ${esc(e.n)} · ${esc(fmtClock(e.t))} – ${esc(e.x)}${del}</div>`;
+    }).join('') : '<p class="sub" style="margin:0;font-size:12px;">Zatiaľ nič.</p>');
+    document.querySelectorAll('#doneFeed [data-tundo]').forEach(x=>x.onclick=()=>setTodoDone(x.dataset.tundo, false));
+    document.querySelectorAll('#doneFeed [data-xdel]').forEach(x=>x.onclick=()=>{ const [k,id]=x.dataset.xdel.split('|'); deleteLog(k, id); });
+  }
   function renderTodo(){
+    $('todoSection').style.display = feat('todos') ? '' : 'none';
+    $('extraSection').style.display = feat('checklists') ? '' : 'none';
+    renderExtraForm();
+    renderDoneFeed();
     $('todoForm').style.display = manager ? '' : 'none';
     $('todoShuffleRow').style.display = manager ? '' : 'none';
     $('todoSub').textContent = manager
-      ? 'Pridaj úlohu na konkrétny deň – odškrtne ju ktokoľvek, kto je v ten deň na smene. Osobu priradiť nemusíš, ale môžeš. Opakujúca sa úloha platí každý týždeň vo zvolený deň.'
-      : 'Úlohy, ktoré treba spraviť. Úlohu na deň, kedy si na smene (alebo priradenú tebe), môžeš označiť ako hotovú.';
+      ? 'Pridaj úlohu na konkrétny deň – odškrtne ju ktokoľvek, kto je v ten deň na smene. Osobu priradiť nemusíš, ale môžeš. Zamestnanec vidí len úlohy, ktoré sa ho týkajú – keď ho vyradíš zo smeny, úloha mu zmizne. Opakujúca sa úloha platí každý týždeň vo zvolený deň (pre tých, čo sú vtedy na smene).'
+      : 'Tvoje úlohy – na dni, kedy si na smene, alebo priradené priamo tebe. Hotové označíš zaškrtnutím.';
     if(manager){
       const dIn=$('todoDay'); if(dIn && !dIn.value && document.activeElement!==dIn) dIn.value=todayKey();   // predvolene dnešok
       const rSel=$('todoRecur'); if(dIn && rSel){ dIn.disabled = rSel.value!==''; if(!rSel.dataset.dayHook){ rSel.dataset.dayHook='1'; rSel.addEventListener('change',()=>{ dIn.disabled = rSel.value!==''; }); } }
@@ -4089,8 +4186,8 @@
       if(document.activeElement!==$('todoAssignee')) $('todoAssignee').innerHTML = `<option value="">(nepriradené)</option>` + names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
       if(document.activeElement!==$('todoRecur') && $('todoRecur') && !$('todoRecur').dataset.filled){ $('todoRecur').innerHTML = `<option value="">Jednorazovo</option>` + WEEKDAY_NAMES.map((n,i)=>`<option value="${i}">Každý ${n.toLowerCase()}</option>`).join(''); $('todoRecur').dataset.filled='1'; }
     }
-    const list=todoList();
-    const open=list.filter(t=>!todoEffectiveDone(t)), done=list.filter(t=>todoEffectiveDone(t));
+    const list=todoList().filter(todoCanToggle);   // zamestnanec vidí len úlohy, ktoré sa ho týkajú
+    const open=list.filter(t=>!todoEffectiveDone(t));   // hotové sú v spoločnom prehľade "Čo sa spravilo"
     const row=t=>{
       const canToggle = todoCanToggle(t);
       const dEff=todoEffectiveDone(t);
@@ -4106,8 +4203,7 @@
         <span><b>${esc(t.text)}</b>${dayHtml}${t.recur!==undefined&&t.recur!==null?` <span class="ckby">🔁 každý ${WEEKDAY_NAMES[t.recur].toLowerCase()}</span>`:''}${t.assignee?` <span class="ckby">→ ${esc(t.assignee)}</span>`:''}${manager?` <button class="cfm" data-tdel="${esc(t.id)}">🗑</button>`:''}</span>
       </label>`;
     };
-    $('todoList').innerHTML = (open.length ? open.map(row).join('') : '<p class="sub" style="margin:0 0 8px;font-size:12px;">Žiadne otvorené úlohy.</p>') +
-      (done.length ? `<h5 style="margin:14px 0 4px;font-size:11px;letter-spacing:.08em;color:#8f9297;">HOTOVÉ${done.some(t=>t.recur!==undefined&&t.recur!==null)?' (opakujúce sa sa samy znova otvoria)':''}</h5>${done.map(row).join('')}` : '');
+    $('todoList').innerHTML = open.length ? open.map(row).join('') : `<p class="sub" style="margin:0 0 8px;font-size:12px;">${manager?'Žiadne otvorené úlohy.':'Nemáš žiadne úlohy 👍'}</p>`;
     document.querySelectorAll('#todoList [data-todo]').forEach(x=>x.onchange=()=>setTodoDone(x.dataset.todo, x.checked));
     document.querySelectorAll('#todoList [data-tdel]').forEach(x=>x.onclick=()=>deleteTodo(x.dataset.tdel));
   }
@@ -4543,10 +4639,9 @@
     let html=`<a class="outline" id="ordersLink" href="objednavky.html" style="text-decoration:none;display:inline-flex;align-items:center">🍹 Objednávky</a>`;
     if(myName || manager){
       if(feat('board')) html+=`<button class="outline" id="boardBtn">📦 Chýba/Kúpiť${boardMissingCount()?` <span class="badge-manager" style="margin-left:4px;">${boardMissingCount()}</span>`:''}</button>`;
-      if(feat('checklists')) html+=`<button class="outline" id="extraBtn">✨ Navyše</button>`;
       if(feat('checklists') && myName && !manager) html+=`<button class="outline" id="myTakenBtn">🧾 Moje „vzal/a som si“</button>`;
       if(feat('checklists') && manager){ const tn=takenList().filter(e=>!e.r).length; html+=`<button class="outline" id="takenBtn">🧾 Vzal/a som si${tn?` <span class="badge-manager" style="margin-left:4px;">${tn}</span>`:''}</button>`; }
-      if(feat('todos')) html+=`<button class="outline" id="todoBtn">☑ To-do${todoOpenCount()?` <span class="badge-manager" style="margin-left:4px;">${todoOpenCount()}</span>`:''}</button>`;
+      if(feat('todos') || feat('checklists')){ const tc=feat('todos') ? todoOpenCount() : 0; html+=`<button class="outline" id="todoBtn">✅ Úlohy a navyše${tc?` <span class="badge-manager" style="margin-left:4px;">${tc}</span>`:''}</button>`; }
     }
     html+=`<button class="outline" id="helpBtn">❓ Návod</button>`;
     if(canShowInstall()) html+=`<button class="outline" id="installBtn">📲 Do mobilu</button>`;
