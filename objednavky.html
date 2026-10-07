@@ -117,7 +117,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-07</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-07b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -255,6 +255,15 @@ const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, 
 // "pracovný deň" (keď čašník cez Nastavenia > Zariadenie nastaví, že pracuje napr. včerajší deň - typicky
 // pri práci cez polnoc, nech tržba po polnoci ešte patrí k predošlej zmene), inak kalendárny deň platby
 const orderDayKey = o => o.businessDay || dateKey(new Date(o.paidAt));
+// Staré "rozdelené rovným dielom" platby (pred opravou): pôvodné objednávky ostali ako zaplatené popri podieloch
+// "Podiel účtu (i/N)" -> tržba 2×. Takúto pôvodnú objednávku (ten istý stôl, zaplatená do 15 s od podielu)
+// vynecháme zo súčtov aj zoznamov. Nové rozdelenia pôvodné objednávky rovno mažú, tam sa nič nefiltruje.
+const isSplitPart = o => o.items.length === 1 && /^Podiel účtu \(\d+\/\d+\)$/.test(o.items[0].name || '');
+function splitDupFilter(paid) {
+  const parts = paid.filter(isSplitPart);
+  if (!parts.length) return paid;
+  return paid.filter(o => isSplitPart(o) || !parts.some(p => p.tableId === o.tableId && Math.abs((p.paidAt || 0) - (o.paidAt || 0)) < 15000));
+}
 // "YYYY-MM-DD" -> Date objekt (lokálny čas, nie UTC ako by dal new Date(string))
 const parseISODate = s => { const [y, mo, da] = s.split('-').map(Number); return new Date(y, mo - 1, da); };
 // "YYYY-MM-DD" -> krátky zápis "D.M." pre odznak v hlavičke
@@ -262,6 +271,22 @@ const dayShort = s => { const [y, mo, da] = s.split('-').map(Number); return `${
 const str = (v, max = 100) => String(v ?? '').trim().slice(0, max);
 const num = v => Math.round(Number(String(v ?? '').replace(',', '.')) * 100) / 100;
 function fail(msg) { toast(msg); throw new Error(msg); }
+// Meno k účtu stola (napr. "P1 · Kvasničák") - meta/guests/{tableId} = { n: meno, t: kedy }. Dá sa kedykoľvek
+// zmeniť, pri presune účtu sa presunie na nový stôl a po vyplatení celého účtu samo zmizne.
+let tableGuests = {};
+const guestOf = id => { const g = tableGuests[id]; return g && g.n ? String(g.n) : ''; };
+const clearGuest = id => db.ref('meta/guests/' + id).remove().catch(() => {});
+async function editGuest(id) {
+  const t = S.tables.find(x => x.id === id); if (!t) return;
+  const v = prompt(`Meno k účtu stola ${t.name} (napr. Kvasničák).\nPrázdne = zmazať meno.`, guestOf(id));
+  if (v === null) return;
+  const n = str(v, 40);
+  try {
+    if (n) await db.ref('meta/guests/' + id).set({ n, t: now() }); else await db.ref('meta/guests/' + id).remove();
+    toast(n ? `${t.name} · ${n} ✓` : 'Meno zmazané');
+  } catch (e) { toast('Nepodarilo sa uložiť meno'); }
+  render();
+}
 // História zmazaných objednávok/platieb pre vedúceho (kto, kedy, čo). Zapisuje sa až PO zmazaní a chyba (napr. ešte
 // nenahraté Firebase pravidlá pre "deletedLog") samotné zmazanie neblokuje - len sa nezaznamená.
 let delLog = null, delLogLoading = false;
@@ -325,6 +350,7 @@ async function callInner(m, [col, id, action], body) {
       (body.items || []).forEach(i => { const k = i.name + '|' + i.price; need[k] = (need[k] || 0) + Math.max(0, i.qty | 0); });
       const os = tableOrders(id).sort((a, b) => a.createdAt - b.createdAt);
       const u = {}; const paidItems = [];
+      let leftOnTable = false;   // ostane po platbe na stole ešte niečo? (ak nie, meno k účtu zmizne)
       os.forEach(o => {
         let changed = false;
         const items = o.items.map(it => {
@@ -342,15 +368,18 @@ async function callInner(m, [col, id, action], body) {
           // úplne vyprázdnená pôvodná objednávka sa ZMAŽE - všetky jej položky sú už v novej platbe nižšie.
           // (predtým sa označila ako zaplatená s 0 položkami a v Uzávierke strašila ako riadok "0,00 €")
           if (!items.length) u[o.id] = null;
-          else u[o.id + '/items'] = items;
-        }
+          else { u[o.id + '/items'] = items; leftOnTable = true; }
+        } else if (o.items.length) leftOnTable = true;
       });
       if (!paidItems.length) fail('Nič na zaplatenie');
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
       const newKey = db.ref('orders').push().key;
-      u[newKey] = { no: r.snapshot.val(), tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30),
+      const guest = guestOf(id);
+      u[newKey] = { no: r.snapshot.val(), tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30), ...(guest ? { guest } : {}),
         note: '', items: paidItems, status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}) };
-      return db.ref('orders').update(u);
+      await db.ref('orders').update(u);
+      if (!leftOnTable && guest) clearGuest(id);   // celý účet vyplatený -> meno zmizne
+      return;
     }
     // Rozdelenie CELÉHO účtu rovným dielom medzi N ľudí (napr. 4 kamoši, každý platí svoju 1/4,
     // nezávisle od toho, kto si čo presne objednal). Na rozdiel od paySome sa tu neporovnávajú
@@ -365,9 +394,12 @@ async function callInner(m, [col, id, action], body) {
       const parts = Math.max(2, Math.min(20, Math.round(num(body.parts)) || 0));
       if (!(parts >= 2)) fail('Zadaj aspoň 2 ľudí');
       const u = {};
-      os.forEach(o => { u[o.id + '/status'] = 'zaplatena'; u[o.id + '/paidAt'] = now(); if (bizDay) u[o.id + '/businessDay'] = bizDay; });
+      // pôvodné objednávky sa ZMAŽÚ - nahradia ich podiely nižšie. (Predtým sa označili ako zaplatené a v Uzávierke
+      // sa tak tržba rátala DVAKRÁT: pôvodný účet + podiely. Staré takéto dvojice odfiltruje splitDupFilter.)
+      os.forEach(o => { u[o.id] = null; });
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
       const n0 = r.snapshot.val();
+      const guest = guestOf(id);
       const totalCents = Math.round(total * 100);
       const baseCents = Math.floor(totalCents / parts);
       let remainingCents = totalCents;
@@ -376,11 +408,13 @@ async function callInner(m, [col, id, action], body) {
         const amountCents = isLast ? remainingCents : baseCents;
         remainingCents -= amountCents;
         const key = db.ref('orders').push().key;
-        u[key] = { no: ((n0 - 1 + i) % 999) + 1, tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30), note: '',
+        u[key] = { no: ((n0 - 1 + i) % 999) + 1, tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30), note: '', ...(guest ? { guest } : {}),
           items: [{ name: `Podiel účtu (${i + 1}/${parts})`, price: Math.round(amountCents) / 100, qty: 1 }],
           status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}) };
       }
-      return db.ref('orders').update(u);
+      await db.ref('orders').update(u);
+      if (guest) clearGuest(id);   // celý účet vyplatený -> meno zmizne
+      return;
     }
     // Odstránenie (stornovanie) položky z účtu stola bez platby - napr. omylom objednané, alebo hosť
     // zmenil názor. Funguje len na ešte NEzaplatené položky (rovnaká hranica ako pri rušení objednávky).
@@ -425,7 +459,14 @@ async function callInner(m, [col, id, action], body) {
       if (!os.length) fail('Stôl nemá žiadne otvorené objednávky');
       const u = {};
       os.forEach(o => { u[o.id + '/tableId'] = target.id; u[o.id + '/tableName'] = target.name; });
-      return db.ref('orders').update(u);
+      await db.ref('orders').update(u);
+      // meno k účtu ide s účtom; ak už cieľový stôl meno má (spájajú sa dva účty), mená sa spoja
+      const gFrom = guestOf(id), gTo = guestOf(target.id);
+      if (gFrom) {
+        const n = gTo && gTo !== gFrom ? str(gTo + ' + ' + gFrom, 40) : gFrom;
+        try { await db.ref('meta/guests/' + target.id).set({ n, t: now() }); await clearGuest(id); } catch (e) {}
+      }
+      return;
     }
   }
   if (col === 'access') {
@@ -708,6 +749,13 @@ function prune() {
   const u = {}, limit = now() - 30 * 864e5;
   S.orders.forEach(o => { if (o.status === 'zaplatena' && o.paidAt < limit) u[o.id] = null; });
   if (Object.keys(u).length) db.ref('orders').update(u).catch(() => {});
+  // zabudnuté mená k účtom: stôl už neexistuje, alebo je bez účtu a meno je staršie ako 12 hodín
+  const ug = {}, glimit = now() - 12 * 3600e3;
+  Object.keys(tableGuests || {}).forEach(id => {
+    const g = tableGuests[id] || {};
+    if (!S.tables.some(t => t.id === id) || (!tableOrders(id).length && (g.t || 0) < glimit)) ug[id] = null;
+  });
+  if (Object.keys(ug).length) db.ref('meta/guests').update(ug).catch(() => {});
   // vybavené položky z nástenky staršie ako 7 dní sa potichu zmažú (mazanie smie len vedúci, preto len tu)
   if (isManager) {
     const ub = {}, blimit = now() - 7 * 864e5;
@@ -748,7 +796,7 @@ function connect() {
     if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (role === 'uzavierka' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (!user) {
-      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); db.ref('employees/list').off(); db.ref('access').off(); db.ref('queue').off(); db.ref('attractions').off(); db.ref('sessions').off(); db.ref('queueLog').off(); db.ref('board').off(); listening = false; }
+      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); db.ref('employees/list').off(); db.ref('access').off(); db.ref('queue').off(); db.ref('attractions').off(); db.ref('sessions').off(); db.ref('queueLog').off(); db.ref('board').off(); db.ref('meta/guests').off(); tableGuests = {}; listening = false; }
       live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null, attractions: null, sessions: null, queueLog: null, board: null }; pruned = false;
       // Nikto nie je prihlásený - skús automaticky prihlásiť toto zariadenie na spoločný účet, nech
       // zamestnanec nemusí poznať žiadne heslo (identifikuje sa až potom menom + svojím kódom).
@@ -771,6 +819,8 @@ function connect() {
     db.ref('sessions').on('value', s => { live.sessions = s.val() || {}; tryRender(); }, () => { live.sessions = {}; tryRender(); errH(); });
     db.ref('queueLog').on('value', s => { live.queueLog = s.val() || {}; tryRender(); }, () => { live.queueLog = {}; tryRender(); errH(); });
     db.ref('board').on('value', s => { live.board = s.val() || {}; tryRender(); }, () => { live.board = {}; tryRender(); errH(); });
+    // mená k účtom stolov (nepovinné - keď sa nenačítajú, appka funguje ďalej bez nich)
+    db.ref('meta/guests').on('value', s => { tableGuests = s.val() || {}; tryRender(); }, () => { tableGuests = {}; });
     listening = true;
   });
 }
@@ -873,7 +923,7 @@ function render() {
   $('#backBtn').textContent = showBoard ? '‹ Späť' : '‹ Stoly';
   $('#cart').classList.add('hide');
   if (showBoard) { $('#title').textContent = 'Chýba / Kúpiť'; renderBoard(); return; }
-  $('#title').textContent = inTable ? S.tables.find(t => t.id === tableId).name
+  $('#title').textContent = inTable ? S.tables.find(t => t.id === tableId).name + (guestOf(tableId) ? ' · ' + guestOf(tableId) : '')
     : (role === 'casnik' && showHist) ? 'História platieb'
     : (role === 'casnik' && showQueue) ? 'Rezervácie'
     : (role === 'atrakcie' && showQueueHist) ? 'História rezervácií'
@@ -913,7 +963,7 @@ function tableTile(t) {
   const st = os.some(o => o.status === 'hotova') ? '<span class="pill p-hotova">Hotové</span>'
            : os.some(o => o.status === 'nova') ? '<span class="pill p-nova">Na bare</span>' : '';
   return `<button class="tbl ${os.length ? 'busy' : ''}" style="${t.color ? `border-left:6px solid ${t.color}` : ''}" onclick="openTable('${t.id}')">
-    <b>${esc(t.name)}</b>${os.length ? `<small>${eur(sumOrders(os))}</small>${st}` : '<small>voľný</small>'}</button>`;
+    <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}${os.length ? `<small>${eur(sumOrders(os))}</small>${st}` : '<small>voľný</small>'}</button>`;
 }
 function renderTables() {
   const groups = {};
@@ -1317,7 +1367,7 @@ function renderHistory() {
   const wasFocused = document.activeElement && document.activeElement.id === 'histFilterInput';
   const selPos = wasFocused ? document.activeElement.selectionStart : null;
   const isToday = dateKey(histDate) === todayISO();
-  let paid = S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(histDate)).sort((a, b) => b.paidAt - a.paidAt);
+  let paid = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(histDate))).sort((a, b) => b.paidAt - a.paidAt);
   const total = sumOrders(paid);
   const q = fold(histFilter || '');
   if (q) paid = paid.filter(o => fold(o.tableName || '').includes(q) || String(o.no).includes(q) || o.items.some(i => fold(i.name || '').includes(q)));
@@ -1333,7 +1383,7 @@ function renderHistory() {
       <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p></div>
     <input id="histFilterInput" value="${esc(histFilter)}" placeholder="🔍 Hľadať (stôl, položka, č. objednávky)…" style="margin-top:10px" oninput="histFilter=this.value;renderHistory()">
     ${paid.length ? `<div class="card" style="padding:0;margin-top:12px">${paid.map(o => `<div class="line">
-        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)} · #${o.no}
+        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}
           <small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small></div>
         <span>${eur(sumOrders([o]))}</span>
       </div>`).join('')}</div>` : `<div class="empty">${q ? 'Nič nenájdené.' : 'Za tento deň zatiaľ nič nebolo zaplatené.'}</div>`}
@@ -1448,7 +1498,12 @@ function renderTable() {
   </div>` : '';
 
   const lastOrder = lastTableOrder();
-  $('#app').innerHTML = readyBanner() + moveUi + tableReservationsBlock(tableId) + attractionsOnTableBlock(tableId) + prev + (S.menu.length ? `
+  // meno k účtu stola - pridať / zmeniť kedykoľvek počas sedenia (po vyplatení celého účtu zmizne samo)
+  const guest = guestOf(tableId);
+  const guestUi = `<div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 14px">
+    <span>${guest ? `👤 <b>${esc(guest)}</b>` : '<span class="muted">👤 Účet zatiaľ bez mena</span>'}</span>
+    <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="editGuest('${tableId}')">${guest ? '✎ Zmeniť meno' : '+ Pridať meno'}</button></div>`;
+  $('#app').innerHTML = readyBanner() + guestUi + moveUi + tableReservationsBlock(tableId) + attractionsOnTableBlock(tableId) + prev + (S.menu.length ? `
     <h2 style="${os.length ? 'margin-top:22px' : ''}">Nová objednávka</h2>
     ${lastOrder ? `<button class="btn ghost" style="margin-bottom:10px" onclick="repeatLastOrder()">🔁 Zopakovať poslednú objednávku (#${lastOrder.no})</button>` : ''}
     <div id="favs" style="margin-bottom:14px"></div>
@@ -1892,7 +1947,7 @@ function renderUzavierka() {
   }
   const isToday = dateKey(uzavDate) === todayISO();
   // prázdne "zaplatené" objednávky (staré zvyšky po rozdelení platby, 0,00 €) sa nezobrazujú ani nerátajú
-  const paid = S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(uzavDate));
+  const paid = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(uzavDate)));
   const total = sumOrders(paid);
   const agg = {};
   paid.forEach(o => o.items.forEach(i => {
@@ -1969,7 +2024,7 @@ function renderUzavierka() {
 
     ${txns.length ? `<h2 style="margin-top:22px">Jednotlivé platby</h2><div class="card" style="padding:0">
       ${txns.map(o => `<div class="line" style="align-items:center">
-        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)} · #${o.no}
+        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}
           <small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small></div>
         <span>${eur(sumOrders([o]))}</span>
         ${isManager ? `<button class="btn ghost" style="width:auto;padding:6px 10px;margin-left:8px" onclick="delPaidOrder('${o.id}')">✕</button>` : ''}
@@ -1992,7 +2047,7 @@ function deletedLogBlock(day) {
 function payDayKey() { return `${uzavDate.getFullYear()}-${String(uzavDate.getMonth() + 1).padStart(2, '0')}-${String(uzavDate.getDate()).padStart(2, '0')}`; }
 function savePayroll() { store.set('payroll', payroll); }
 function dayPaidOrders(date) {
-  return S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(date));
+  return splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(date)));
 }
 // Tržba rozpočítaná po jednotlivých položkách (podľa názvu) - na výpočet, koľko z toho je vylúčené z percent
 // (konkrétna položka, napr. len "Pixel", nie celá kategória "Hry"), aj pre CSV export.
