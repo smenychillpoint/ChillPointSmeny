@@ -2116,27 +2116,38 @@ function renderSettings() {
   const TABLE_COLORS = ['', '#e5484d', '#f2994a', '#f2c94c', '#27ae60', '#17a398', '#2f80ed', '#9b51e0', '#eb5296'];
   const groupNames = allTableGroups();
   const hiddenG = hiddenGroupSet();
+  // ktoré farby už používa ktorá skupina - nech je pri výbere farby vidno, čo je obsadené
+  const NOGRP = 'Bez skupiny';
+  const colorUse = {};
+  S.tables.forEach(x => { if (x.color) (colorUse[x.color] = colorUse[x.color] || new Set()).add(x.group || NOGRP); });
+  const usedBy = (c, g) => c ? [...(colorUse[c] || [])].filter(x => x !== (g || NOGRP)) : [];
+  const colorBtn = (c, selected, onclick, g) => { const others = usedBy(c, g);
+    return `<button title="${c ? (others.length ? 'Obsadená: ' + esc(others.join(', ')) : 'Voľná farba') : 'Bez farby'}" onclick="${onclick}"
+      style="position:relative;width:26px;height:26px;border-radius:50%;flex:none;padding:0;background:${c || 'var(--bg)'};border:2px solid ${selected ? 'var(--ink)' : 'var(--line)'}">${others.length && !selected ? '<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;text-shadow:0 0 3px #000">✕</span>' : ''}</button>`; };
   const tRow = x => `<div class="set-row t table-row" style="grid-template-columns:28px 1fr 110px auto auto" data-table-id="${x.id}">
     <span class="dragHandle" title="Podrž a presuň – zmení poradie" onpointerdown="startTableDrag(event,'${x.id}')">⠿</span>
-    <input value="${esc(x.name)}" onchange="call('PUT','/api/tables/${x.id}',{name:this.value})">
+    <input value="${esc(x.name)}" onkeydown="if(event.key==='Enter')this.blur()" onchange="call('PUT','/api/tables/${x.id}',{name:this.value})">
     <select title="Presunúť do inej skupiny" onchange="call('PUT','/api/tables/${x.id}',{group:this.value})">
       <option value="">— bez skupiny —</option>${groupNames.map(g => `<option value="${esc(g)}" ${(x.group || '') === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}
     </select>
-    <div style="display:flex;gap:4px">${TABLE_COLORS.map(c => `
-      <button title="${c ? '' : 'Bez farby'}" onclick="call('PUT','/api/tables/${x.id}',{color:'${c}'})"
-        style="width:26px;height:26px;border-radius:50%;flex:none;background:${c || 'var(--bg)'};border:2px solid ${(x.color || '') === c ? 'var(--ink)' : 'var(--line)'}"></button>`).join('')}</div>
+    <div style="display:flex;gap:4px">${TABLE_COLORS.map(c => colorBtn(c, (x.color || '') === c, `call('PUT','/api/tables/${x.id}',{color:'${c}'})`, x.group)).join('')}</div>
     <button class="del" onclick="delTable('${x.id}')">Zmazať</button></div>`;
   // skupina = rozbaľovací blok (stav otvorenia si pamätá openTblGroups, nech sa po prekreslení nezatvorí)
   const groupBlock = (g, i) => {
     const list = S.tables.filter(x => (x.group || '') === g), isHidden = !!g && hiddenG.has(g), enc = grpArg(g);
-    return `<details ${openTblGroups.has(g) ? 'open' : ''} ontoggle="toggleTblGroupOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;${isHidden ? 'opacity:.8;border-style:dashed' : ''}">
+    // farba skupiny = farba, ktorú majú všetky jej stoly (ak majú rôzne, nie je vybraná žiadna)
+    const gColor = list.length && list.every(x => (x.color || '') === (list[0].color || '')) ? (list[0].color || '') : null;
+    return `<details ${openTblGroups.has(g) ? 'open' : ''} ontoggle="toggleTblGroupOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;${gColor ? `border-left:6px solid ${gColor};` : ''}${isHidden ? 'opacity:.8;border-style:dashed' : ''}">
       <summary style="cursor:pointer;font-weight:700">${g ? esc(g) : 'Bez skupiny'} <span class="muted" style="font-weight:400">(${list.length} ${list.length === 1 ? 'stôl' : (list.length >= 2 && list.length <= 4 ? 'stoly' : 'stolov')})</span>${isHidden ? ' <span class="muted" style="font-weight:400">· 🙈 skrytá pre čašníkov</span>' : ''}</summary>
-      ${g ? `<div class="row" style="gap:6px;flex-wrap:wrap;margin:10px 0">
+      ${g ? `<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0">
+        <input value="${esc(g)}" maxlength="20" title="Premenovať skupinu (Enter = uložiť)" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')this.blur()" onchange="renameTblGroup('${enc}',this.value)">
         <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="setTblGroupHidden('${enc}',${!isHidden})">${isHidden ? '👁 Zobraziť čašníkom' : '🙈 Skryť pred čašníkmi'}</button>
         ${!list.length ? `<button class="del" onclick="delTblGroup('${enc}')">Zmazať skupinu</button>` : ''}
       </div>` : '<div style="height:8px"></div>'}
+      ${list.length ? `<div class="row" style="gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><span class="muted" style="font-size:12px;margin-right:4px">Farba celej skupiny:</span>
+        ${TABLE_COLORS.map(c => colorBtn(c, gColor === c, `setTblGroupColor('${enc}','${c}')`, g)).join('')}</div>` : ''}
       ${list.map(tRow).join('') || '<p class="muted" style="font-size:13px;margin:4px 0">Zatiaľ žiadne stoly.</p>'}
-      <div class="set-row t" style="grid-template-columns:1fr auto;margin-top:8px"><input id="newTG-${i}" placeholder="Nový stôl${g ? ' v skupine ' + esc(g) : ''}, napr. ${g ? esc(g) + '1' : 'Terasa 2'}">
+      <div class="set-row t" style="grid-template-columns:1fr auto;margin-top:8px"><input id="newTG-${i}" placeholder="Nový stôl${g ? ' v skupine ' + esc(g) : ''}, napr. ${g ? esc(g) + '1' : 'Terasa 2'} (Enter = pridať)" onkeydown="if(event.key==='Enter'){event.preventDefault();addTableToGroup('${enc}','newTG-${i}')}">
         <button class="btn" style="width:auto" onclick="addTableToGroup('${enc}','newTG-${i}')">Pridať</button></div>
     </details>`;
   };
@@ -2175,10 +2186,14 @@ function renderSettings() {
 
   const stolyTab = `<h2>Stoly</h2><div class="card">
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)">
-        <input id="newGroup" maxlength="20" placeholder="Nová skupina, napr. Terasa alebo P" style="flex:1;min-width:160px">
+        <input id="newGroup" maxlength="20" placeholder="Nová skupina, napr. Terasa alebo P (Enter = vytvoriť)" style="flex:1;min-width:160px" onkeydown="if(event.key==='Enter'){event.preventDefault();createTblGroup()}">
         <label class="muted" style="font-size:13px;display:flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" id="newGroupHidden"> skryť pred čašníkmi</label>
         <button class="btn" style="width:auto" onclick="createTblGroup()">+ Vytvoriť skupinu</button>
       </div>
+      ${Object.keys(colorUse).length ? `<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;font-size:12px;margin-bottom:10px">
+        <span class="muted">Obsadené farby:</span>
+        ${TABLE_COLORS.filter(c => c && colorUse[c]).map(c => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:50%;background:${c};display:inline-block"></span>${esc([...colorUse[c]].join(', '))}</span>`).join('')}
+        <span class="muted">· ✕ na farbe = už ju má iná skupina</span></div>` : ''}
       <div id="tableList">${t || '<p class="muted">Zatiaľ žiadne stoly ani skupiny.</p>'}</div>
       ${S.tables.length > 1 ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Ťukni na skupinu – rozbalí sa a uvidíš jej stoly. Podrž ⠿ a presuň – zmení sa poradie stolov. Stôl presunieš do inej skupiny výberom v riadku.</p>' : ''}
       <p class="muted" style="font-size:12px;margin-top:6px">🙈 Skrytú skupinu čašníci na svojich zariadeniach nevidia (vedúci áno). Stôl zo skrytej skupiny, na ktorom je otvorený účet, sa im ukáže aj tak – nech sa nestratí nezaplatený účet. Nový stôl v skupine prevezme farbu skupiny.</p></div>`;
@@ -2333,7 +2348,36 @@ async function addTableToGroup(enc, inputId) {
   if (!name) return toast('Zadaj názov stola');
   const existing = S.tables.find(t => (t.group || '') === g && t.color);   // nový stôl prevezme farbu skupiny
   await call('POST', '/api/tables', { name, ...(g ? { group: g } : {}), color: existing ? existing.color : '' });
-  if (el) el.value = '';
+  // prekresliť hneď (inak by guard pri fokuse v inpute nový stôl neukázal) a vrátiť kurzor do poľa,
+  // nech sa dá rovno písať ďalší stôl a odklepnúť Enterom
+  openTblGroups.add(g); render();
+  const again = $('#' + inputId); if (again) again.focus();
+}
+// premenovanie skupiny = zmena "group" na všetkých jej stoloch + v zozname vytvorených/skrytých skupín
+async function renameTblGroup(enc, newName) {
+  const g = decodeURIComponent(enc), n = str(newName, 20);
+  if (!isManager) return;
+  if (!n || n === g) { render(); return; }
+  if (allTableGroups().includes(n)) { toast('Skupina s týmto názvom už existuje'); render(); return; }
+  const u = {};
+  S.tables.forEach(t => { if ((t.group || '') === g) u[t.id + '/group'] = n; });
+  const repl = arr => (arr || []).map(x => x === g ? n : x);
+  const groups = repl(S.access && S.access.tableGroups); if (!groups.includes(n)) groups.push(n);
+  try {
+    if (Object.keys(u).length) await db.ref('tables').update(u);
+    await call('PUT', '/api/access', { tableGroups: groups, hiddenGroups: repl(S.access && S.access.hiddenGroups) });
+    if (openTblGroups.delete(g)) openTblGroups.add(n);
+    toast(`Skupina premenovaná na ${n}`);
+  } catch (e) { toast('Nepodarilo sa premenovať skupinu'); }
+  render();
+}
+// jedna farba pre všetky stoly skupiny naraz
+async function setTblGroupColor(enc, c) {
+  if (!isManager) return;
+  const g = decodeURIComponent(enc), u = {};
+  S.tables.forEach(t => { if ((t.group || '') === g) u[t.id + '/color'] = c; });
+  if (!Object.keys(u).length) return toast('Skupina zatiaľ nemá stoly');
+  try { await db.ref('tables').update(u); } catch (e) { toast('Nepodarilo sa uložiť farbu'); }
 }
 async function delTable(id) { if (confirm('Zmazať stôl?')) await call('DELETE', '/api/tables/' + id); }
 
