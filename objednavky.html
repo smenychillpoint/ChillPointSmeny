@@ -24,8 +24,9 @@ input,select{font:inherit;color:var(--ink);background:var(--card);border:1px sol
 header{position:sticky;top:0;z-index:5;background:var(--brand);color:#fff;padding:env(safe-area-inset-top) 12px 0}
 .bar{display:flex;align-items:center;gap:8px;height:52px}
 .bar h1{font-size:17px;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.tabs{display:flex;gap:4px;padding-bottom:8px}
-.tabs button{flex:1;background:transparent;color:#c9d0cb;padding:9px 6px;font-weight:600}
+.tabs{display:flex;gap:4px;padding-bottom:8px;overflow-x:auto;scrollbar-width:none}
+.tabs button{flex:1;background:transparent;color:#c9d0cb;padding:9px 6px;font-weight:600;white-space:nowrap}
+.order li .li-minus{float:right;width:30px;height:28px;border-radius:8px;background:var(--bg);border:1px solid var(--line);color:var(--muted);font-size:18px;font-weight:800;line-height:1;padding:0}
 .tabs button.on{background:#ffffff1f;color:#fff}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#e25b3a;margin-left:6px;vertical-align:middle}
 .conn{font-size:12px;color:#9fb1a6}.conn.off{color:#ffb199}
@@ -110,6 +111,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
   <nav class="tabs">
     <button data-role="casnik">Čašník</button>
     <button data-role="bar">Bar <span id="barDot" class="dot hide"></span></button>
+    <button data-role="odniest">🚶 Odniesť <span id="serveDot" class="dot hide" style="background:var(--ok)"></span></button>
     <button data-role="atrakcie">🎮 Atrakcie</button>
     <button data-role="uzavierka" id="tabUzavierka" class="hide">📊 Uzávierka</button>
     <button data-role="nastavenia" id="tabNastavenia" class="hide">Nastavenia</button>
@@ -117,7 +119,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-07b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-07e</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -218,6 +220,7 @@ let boardType = 'missing';
 let warnedReservations = new Set();  // rezervácie, na ktoré sa už píplo (aby to nepípalo dookola)
 let histFilter = '';         // hľadanie v histórii platieb (meno stola, položka, číslo objednávky)
 let queueHistFilter = '';    // hľadanie v histórii rezervácií (meno)
+let moveOrderId = null, moveOrderTarget = '';   // "Prepísať na iný stôl" - ktorá objednávka sa presúva a kam
 let queuePrefillTable = null; // id stola, z ktorého sa otvorila "+ Rezervácia" - predvyplní sa v selecte na obrazovke Rezervácie
 let editingOptsFor = null;   // id položky menu, ktorej "možnosti pri pridaní" sa práve upravujú v Nastaveniach
 let attrDragId = null;       // id atrakcie, ktorá sa práve ťahá (preusporiadanie v Nastaveniach)
@@ -481,6 +484,11 @@ async function callInner(m, [col, id, action], body) {
         u.noPctItems = [...new Set(arr.map(x => str(x, 60)).filter(Boolean))].slice(0, 300);
       }
       // skupiny stolov: tableGroups = vytvorené skupiny (aj zatiaľ prázdne), hiddenGroups = skryté pre čašníkov
+      // farby kategórií menu: pole [{n: názov, c: farba}] (pole, nie objekt - názov kategórie môže mať bodku a pod.)
+      if (body.catColors !== undefined) {
+        u.catColors = (Array.isArray(body.catColors) ? body.catColors : [])
+          .map(x => ({ n: str(x && x.n, 40), c: str(x && x.c, 20) })).filter(x => x.n && /^#[0-9a-f]{6}$/i.test(x.c)).slice(0, 100);
+      }
       ['tableGroups', 'hiddenGroups'].forEach(k => {
         if (body[k] !== undefined) u[k] = [...new Set((Array.isArray(body[k]) ? body[k] : []).map(x => str(x, 20)).filter(Boolean))].slice(0, 100);
       });
@@ -548,6 +556,26 @@ async function callInner(m, [col, id, action], body) {
     }
     const o = S.orders.find(x => x.id === id); if (!o) fail('Objednávka neexistuje');
     if (m === 'POST' && action === 'status') return db.ref('orders/' + id).update({ status: body.status, [body.status + 'At']: now() });
+    // Prepísanie JEDNEJ objednávky na iný stôl (napr. omylom objednané na P1, patrí na P2) - aj keď je už na bare.
+    // (Celý účet stola naraz presúva tables/:id/moveTo.)
+    if (m === 'POST' && action === 'moveTo') {
+      if (o.status === 'zaplatena') fail('Zaplatenú objednávku už nejde presunúť');
+      const target = S.tables.find(x => x.id === body.targetId); if (!target) fail('Cieľový stôl neexistuje');
+      if (target.id === o.tableId) return;
+      return db.ref('orders/' + id).update({ tableId: target.id, tableName: target.name });
+    }
+    // Odobratie 1 kusu položky z objednávky, ktorá je ešte na bare / čaká na odnesenie (zákazník si to rozmyslel).
+    // Index + kontrola názvu, nech sa pri súbežnej zmene z iného zariadenia neodoberie iná položka.
+    if (m === 'POST' && action === 'removeItem') {
+      if (o.status === 'zaplatena') fail('Zaplatenú objednávku už nejde meniť');
+      const idx = body.idx | 0, it = o.items[idx];
+      if (!it || it.name !== body.name) fail('Objednávka sa medzitým zmenila – skús znova');
+      const items = o.items.map((x, i) => i === idx ? { ...x, qty: x.qty - 1 } : x).filter(x => x.qty > 0);
+      if (!items.length) await db.ref('orders/' + id).remove();
+      else await db.ref('orders/' + id + '/items').set(items);
+      logDeleted({ ...o, items: [{ ...it, qty: 1 }] });   // do histórie zmazaných (vedúci vidí v Uzávierke)
+      return;
+    }
     if (m === 'DELETE') {
       if (o.status === 'zaplatena' && !isManager) fail('Zaplatenú objednávku smie zmazať len vedúci');
       await db.ref('orders/' + id).remove();
@@ -576,6 +604,10 @@ async function callInner(m, [col, id, action], body) {
       const name = str(body.name, 40); if (!name) fail('Zadaj meno');
       const rec = { name, note: str(body.note, 60), type: str(body.type, 30), createdAt: now() };
       if (body.tableId) { const t = S.tables.find(x => x.id === body.tableId); if (t) rec.tableId = t.id; }
+      // rezervácia len "miesta" (bez konkrétneho stola): gauč / stolík, a počet osôb (aj pri stole či atrakcii)
+      if (!rec.tableId && (body.seat === 'gauc' || body.seat === 'stolik' || body.seat === 'any')) rec.seat = body.seat;
+      const people = Math.round(num(body.people));
+      if (people >= 1 && people <= 200) rec.people = people;
       // rezervácia na presný čas (napr. 18:00), prípadne aj na iný ako dnešný deň (napr. budúci pondelok) -
       // ak sa čas nezadá, ide o bežný poradovník "teraz" (dátum bez času sa ignoruje, nemá čo kotviť)
       if (body.time && /^([01]\d|2[0-3]):[0-5]\d$/.test(body.time)) {
@@ -596,7 +628,7 @@ async function callInner(m, [col, id, action], body) {
       const q = S.queue.find(x => x.id === id);
       if (q) {
         await db.ref('queueLog').push({
-          name: q.name, type: q.type || '', tableId: q.tableId || null,
+          name: q.name, type: q.type || '', tableId: q.tableId || null, ...(q.seat ? { seat: q.seat } : {}), ...(q.people ? { people: q.people } : {}),
           createdAt: q.createdAt, endedAt: now(), action: (body && body.action === 'served') ? 'served' : 'removed'
         });
       }
@@ -719,7 +751,7 @@ function onData(v) {
   const st = Object.fromEntries(S.orders.map(o => [o.id, o.status]));
   if (prevStatus) {
     if (role === 'bar' && S.orders.some(o => o.status === 'nova' && !prevStatus[o.id])) beep([880, 1320]);
-    if (role === 'casnik' && S.orders.some(o => o.status === 'hotova' && prevStatus[o.id] && prevStatus[o.id] !== 'hotova')) beep([660, 990, 1320]);
+    if ((role === 'casnik' || role === 'odniest') && S.orders.some(o => o.status === 'hotova' && prevStatus[o.id] && prevStatus[o.id] !== 'hotova')) beep([660, 990, 1320]);
   }
   prevStatus = st;
   safeRender();
@@ -852,10 +884,12 @@ function safeRender() {
   // na predvyplnenú/prázdnu hodnotu tesne predtým, než čašník klikne "Potvrdiť" - a suma sa buď stratí,
   // alebo sa potichu odošle nula namiesto zadanej sumy (presne bug nahlásený pri biliarde).
   if (finishSessionId) { pending = true; return; }
+  // ani kým je otvorený výber stola pri "Prepísať na iný stôl" (inak by sa rozbalený výber pri živej zmene zavrel)
+  if (moveOrderId) { pending = true; return; }
   render();
 }
 document.addEventListener('focusout', () => setTimeout(() => {
-  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId && !finishSessionId) { pending = false; render(); }
+  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId && !finishSessionId && !moveOrderId) { pending = false; render(); }
 }, 50));
 
 // ---------- zvuk ----------
@@ -914,6 +948,7 @@ function render() {
   if (role === 'uzavierka' && !canUzavierka) { role = 'casnik'; store.set('role', role); }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
   $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova'));
+  $('#serveDot').classList.toggle('hide', !open().some(o => o.status === 'hotova'));
   const inTable = role === 'casnik' && tableId && S.tables.some(t => t.id === tableId);
   if (role === 'casnik' && tableId && !inTable) tableId = null;
   if (role !== 'casnik') { showHist = false; showQueue = false; showQuickCash = false; }
@@ -927,9 +962,10 @@ function render() {
     : (role === 'casnik' && showHist) ? 'História platieb'
     : (role === 'casnik' && showQueue) ? 'Rezervácie'
     : (role === 'atrakcie' && showQueueHist) ? 'História rezervácií'
-    : { casnik: 'Stoly', bar: 'Bar – objednávky', atrakcie: 'Atrakcie', uzavierka: 'Denná uzávierka', nastavenia: 'Nastavenia' }[role];
+    : { casnik: 'Stoly', bar: 'Bar – pripraviť', odniest: 'Na odnesenie', atrakcie: 'Atrakcie', uzavierka: 'Denná uzávierka', nastavenia: 'Nastavenia' }[role];
   if (role === 'casnik') inTable ? (view === 'bill' ? renderBill() : renderTable()) : (showHist ? renderHistory() : showQueue ? renderQueue() : renderTables());
   else if (role === 'bar') renderBar();
+  else if (role === 'odniest') renderServe();
   else if (role === 'atrakcie') showQueueHist ? renderQueueHistory() : renderAtrakcie();
   else if (role === 'uzavierka') renderUzavierka();
   else renderSettings();
@@ -1072,7 +1108,14 @@ async function delBoardItem(id) {
 // Rezervácie - meno/číslo objednávky a čo presne je rezervované (konkrétny stôl, alebo atrakcia ako biliard,
 // ping-pong a pod.). Dostupné pre všetkých čašníkov. Keď je vybraná atrakcia, zápis sa zároveň ukáže aj
 // v poradovníku danej atrakcie na obrazovke Atrakcie (rovnaký záznam, len iný pohľad naň).
-const queueTargetLabel = q => q.tableId ? (S.tables.find(t => t.id === q.tableId)?.name || '') : (q.type || '');
+const SEAT_LABEL = { gauc: '🛋 Gauč', stolik: '🪑 Stolík', any: '📍 Miesto' };
+const queueTargetLabel = q => [
+  q.tableId ? (S.tables.find(t => t.id === q.tableId)?.name || '') : (q.seat ? SEAT_LABEL[q.seat] || '' : (q.type || '')),
+  q.people ? `👥 ${q.people} os.` : ''
+].filter(Boolean).join(' · ');
+// rozpísaná nová rezervácia - drží sa mimo DOM, nech ju živá zmena z iného zariadenia (prekreslenie) nevymaže
+let qForm = { kind: 'place', name: '', seat: '', people: '', tableId: '', attr: '', date: '', time: '', note: '' };
+const qFormReset = () => { qForm = { kind: 'place', name: '', seat: '', people: '', tableId: '', attr: '', date: '', time: '', note: '' }; };
 const fmtQTime = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 const isSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 // Ako fmtQTime, ale keď je rezervácia na iný deň ako dnes, pridá aj dátum (napr. "5.10. 18:00"), nech sa
@@ -1088,35 +1131,56 @@ function renderQueue() {
     </div>
   </div>`).join('');
   const attrTypes = [...new Set(S.attractions.map(a => a.type || 'Ostatné'))].sort((a, b) => a.localeCompare(b, 'sk'));
+  // otvorené zo stola ("+ Rezervácia" pri stole) -> rovno "Konkrétny stôl" s týmto stolom
+  if (queuePrefillTable) { qForm.kind = 'table'; qForm.tableId = queuePrefillTable; }
+  const f = qForm;
+  const seg = (val, label, cur, set) => `<button class="btn ${cur === val ? '' : 'ghost'}" style="width:auto;flex:1;padding:8px 10px;font-size:14px" onclick="${set}='${val}';render()">${label}</button>`;
+  const kindRow = `<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
+      ${seg('place', '📍 Len miesto', f.kind, 'qForm.kind')}${seg('table', '🍽 Konkrétny stôl', f.kind, 'qForm.kind')}${attrTypes.length ? seg('attr', '🎮 Atrakcia', f.kind, 'qForm.kind') : ''}</div>`;
+  const kindBody = f.kind === 'table'
+    ? `<select style="margin-top:6px" onchange="qForm.tableId=this.value"><option value="">— vyber stôl —</option>
+        ${visibleTables(f.tableId).map(t => `<option value="${t.id}" ${f.tableId === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</select>`
+    : f.kind === 'attr'
+    ? `<select style="margin-top:6px" onchange="qForm.attr=this.value"><option value="">— vyber atrakciu —</option>
+        ${attrTypes.map(t => `<option value="${esc(t)}" ${f.attr === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`
+    : `<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
+        ${seg('gauc', '🛋 Gauč', f.seat, 'qForm.seat')}${seg('stolik', '🪑 Stolík', f.seat, 'qForm.seat')}${seg('', 'Je to jedno', f.seat, 'qForm.seat')}</div>`;
   $('#app').innerHTML = `
     ${S.queue.length ? `<div class="card" style="padding:0">${rows}</div>` : '<div class="empty">Zatiaľ žiadne rezervácie.</div>'}
     <div class="card" style="margin-top:14px">
       <label class="muted" style="font-size:13px">Nová rezervácia</label>
-      <input id="qName" placeholder="Meno / číslo objednávky" style="margin-top:6px">
-      <select id="qTarget" style="margin-top:6px">
-        <option value="">Čo je rezervované? (voliteľné)</option>
-        ${S.tables.length ? `<optgroup label="Stôl">${visibleTables(queuePrefillTable).map(t => `<option value="table:${t.id}" ${queuePrefillTable === t.id ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>` : ''}
-        ${attrTypes.length ? `<optgroup label="Atrakcia">${attrTypes.map(t => `<option value="attr:${esc(t)}">${esc(t)}</option>`).join('')}</optgroup>` : ''}
-      </select>
-      <label class="muted" style="font-size:13px;margin-top:6px;display:block">Na presný dátum a čas (voliteľné - keď sa nezadá čas, ide rovno "teraz")</label>
-      <div class="row" style="margin-top:4px;gap:6px"><input id="qDate" type="date" value="${todayISO()}" style="flex:1"><input id="qTime" type="time" style="flex:1"></div>
-      <input id="qNote" placeholder="Poznámka (nepovinné)" style="margin-top:6px">
-      <button class="btn" style="margin-top:8px" onclick="addQueue()">Pridať</button>
+      <input id="qName" placeholder="Meno / číslo objednávky" style="margin-top:6px" value="${esc(f.name)}" oninput="qForm.name=this.value">
+      <label class="muted" style="font-size:13px;margin-top:10px;display:block">Čo sa rezervuje?</label>
+      ${kindRow}
+      ${kindBody}
+      <div class="row" style="gap:8px;align-items:center;margin-top:8px">
+        <label class="muted" style="font-size:13px;white-space:nowrap">👥 Počet osôb</label>
+        <input type="number" min="1" max="200" inputmode="numeric" placeholder="napr. 4" style="width:110px" value="${esc(f.people)}" oninput="qForm.people=this.value">
+      </div>
+      <label class="muted" style="font-size:13px;margin-top:10px;display:block">Na presný dátum a čas (voliteľné - keď sa nezadá čas, ide rovno "teraz")</label>
+      <div class="row" style="margin-top:4px;gap:6px"><input type="date" value="${esc(f.date || todayISO())}" style="flex:1" onchange="qForm.date=this.value"><input type="time" value="${esc(f.time)}" style="flex:1" onchange="qForm.time=this.value"></div>
+      <input placeholder="Poznámka (nepovinné, napr. oslava, pri okne)" style="margin-top:6px" value="${esc(f.note)}" oninput="qForm.note=this.value">
+      <button class="btn" style="margin-top:8px" onclick="addQueue()">📌 Pridať rezerváciu</button>
     </div>
     <button class="btn ghost" style="margin-top:14px;width:100%" onclick="showQueue=false;render()">← Späť na stoly</button>`;
   queuePrefillTable = null; // len na jedno otvorenie tejto obrazovky, nech nezostane "prilepené" pri ďalšej návšteve
 }
+let addingQueue = false;   // zámok proti dvojitému pridaniu (dvojťuk)
 async function addQueue() {
-  const name = $('#qName').value.trim(); if (!name) return toast('Zadaj meno');
-  const targetVal = $('#qTarget') ? $('#qTarget').value : '';
-  const body = { name, note: $('#qNote').value.trim() };
-  if (targetVal.startsWith('table:')) { const t = S.tables.find(x => x.id === targetVal.slice(6)); if (t) body.tableId = t.id; }
-  else if (targetVal.startsWith('attr:')) { body.type = targetVal.slice(5); }
-  const time = $('#qTime') ? $('#qTime').value : '';
-  if (time) { body.time = time; body.date = $('#qDate') ? $('#qDate').value : ''; }
-  await call('POST', '/api/queue', body);
-  $('#qName').value = ''; $('#qNote').value = ''; if ($('#qTarget')) $('#qTarget').value = ''; if ($('#qTime')) $('#qTime').value = '';
-  if ($('#qDate')) $('#qDate').value = todayISO();
+  const f = qForm, name = f.name.trim();
+  if (!name) return toast('Zadaj meno');
+  if (f.kind === 'table' && !f.tableId) return toast('Vyber stôl (alebo prepni na „Len miesto“)');
+  if (f.kind === 'attr' && !f.attr) return toast('Vyber atrakciu');
+  if (addingQueue) return;
+  const body = { name, note: f.note.trim() };
+  if (f.kind === 'table') body.tableId = f.tableId;
+  else if (f.kind === 'attr') body.type = f.attr;
+  else body.seat = f.seat || 'any';
+  if (String(f.people).trim()) body.people = f.people;
+  if (f.time) { body.time = f.time; body.date = f.date || todayISO(); }
+  addingQueue = true;
+  try { await call('POST', '/api/queue', body); qFormReset(); toast('Rezervácia pridaná 📌'); }
+  finally { addingQueue = false; render(); }
 }
 // Zámok proti omylom - aj odbavenie sa musí potvrdiť (predtým sa dalo omylom zmazať jedným klikom)
 async function serveQueue(id) {
@@ -1392,7 +1456,7 @@ function renderHistory() {
 }
 function shiftHist(n) { histDate = new Date(histDate.getFullYear(), histDate.getMonth(), histDate.getDate() + n); render(); }
 
-function openTable(id) { tableId = id; view = 'order'; cart = []; orderNote = ''; cat = null; q = ''; acctOpen = false; addAttrToTableOpen = false; render(); scrollTo(0, 0); }
+function openTable(id) { tableId = id; view = 'order'; moveOrderId = null; cart = []; orderNote = ''; cat = null; q = ''; acctOpen = false; addAttrToTableOpen = false; render(); scrollTo(0, 0); }
 
 // Atrakcie priamo z účtu stola - fyzicky pridáš atrakciu (napr. ping-pong) na tento stôl, s voľbou času
 // (teraz, alebo vlastný čas, ak sa zabudlo zapísať pri štarte), a potom ju tu vieš aj ukončiť/zrušiť.
@@ -1438,7 +1502,7 @@ function tableReservationsBlock(id) {
   if (!rs.length) return `<div class="card" style="margin-bottom:14px">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b>📌 Rezervácie stola</b>
-      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';showQueue=true;render()">+ Rezervácia</button>
+      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';tableId=null;view='order';showQueue=true;render()">+ Rezervácia</button>
     </div>
     <p class="muted" style="margin:6px 0 0;font-size:13px">Zatiaľ žiadna.</p>
   </div>`;
@@ -1446,11 +1510,11 @@ function tableReservationsBlock(id) {
   return `<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
     <div style="padding:14px 14px 0"><div class="row" style="justify-content:space-between;align-items:center">
       <b>📌 Rezervácie stola</b>
-      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';showQueue=true;render()">+ Rezervácia</button>
+      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';tableId=null;view='order';showQueue=true;render()">+ Rezervácia</button>
     </div></div>
     <div style="padding:10px 14px 14px">${rs.map(q => `
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px;flex-wrap:wrap;gap:6px">
-        <span>${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : ''}${esc(q.name)}${q.note ? ` <small class="muted">· ${esc(q.note)}</small>` : ''}</span>
+        <span>${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : ''}${esc(q.name)}${q.people ? ` <small class="muted">· 👥 ${q.people} os.</small>` : ''}${q.note ? ` <small class="muted">· ${esc(q.note)}</small>` : ''}</span>
         <div class="row" style="gap:6px">
           <button class="btn ok" style="width:auto;padding:6px 10px;font-size:13px" onclick="serveQueue('${q.id}')">Odbaviť ✓</button>
           <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="delQueue('${q.id}')">✕</button>
@@ -1492,7 +1556,8 @@ function renderTable() {
           <div class="row" style="gap:6px">
             ${o.status === 'hotova' ? `<button class="btn ok" style="width:auto;padding:6px 10px" onclick="setStatus('${o.id}','vydana')">Odnesené</button>` : ''}
             ${(o.status === 'nova' || o.status === 'vydana') ? `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="cancelOrder('${o.id}')">Zrušiť</button>` : ''}
-          </div></div>`).join('')}</div>` : ''}
+            ${moveOrderId === o.id ? '' : moveOrderBlock(o)}
+          </div>${moveOrderId === o.id ? moveOrderBlock(o) : ''}</div>`).join('')}</div>` : ''}
       <div style="margin-top:14px"><button class="btn ghost" onclick="billSel={};view='bill';render()">💶 Platba · ${eur(acctTotal)}</button></div>
     </div>` : ''}
   </div>` : '';
@@ -1510,7 +1575,7 @@ function renderTable() {
     <div class="search"><input id="q" type="search" placeholder="🔍 Hľadať položku…" value="${esc(q)}" oninput="q=this.value;renderItems()" autocomplete="off">
     ${q ? '<button onclick="q=\'\';render()">✕</button>' : ''}
     ${hasVoice ? '<button id="micBtn" title="Nadiktovať objednávku" onclick="startVoiceOrder()">🎤</button>' : ''}</div>
-    <div class="cats" id="cats">${cats.map(c => `<button class="${c === cat ? 'on' : ''}" onclick="cat=this.dataset.c;q='';render()" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+    <div class="cats" id="cats">${cats.map(c => `<button class="${c === cat ? 'on' : ''}" style="${catColor(c) ? `box-shadow:inset 0 -4px 0 ${catColor(c)}` : ''}" onclick="cat=this.dataset.c;q='';render()" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>
     <div class="items" id="items"></div>` : '<div class="empty">Menu je prázdne. Pridajte položky v Nastaveniach.</div>');
   if (S.menu.length) { renderItems(); renderFavs(); }
   renderCart();
@@ -1582,7 +1647,7 @@ function renderItems() {
   $('#cats').classList.toggle('hide', words.length > 0);
   const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
   el.innerHTML = list.length ? list.map(m => `
-    <button class="item" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}${words.length ? ' · ' + esc(m.category) : ''}</span>
+    <button class="item" style="${catColor(m.category) ? `box-shadow:inset 5px 0 0 ${catColor(m.category)}` : ''}" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}${words.length ? ' · ' + esc(m.category) : ''}</span>
     ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><span class="qminus" role="button" tabindex="0" onclick="event.stopPropagation();removeItem('${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();removeItem('${m.id}')}">−</span></div>` : ''}</button>`).join('')
     : '<div class="empty" style="grid-column:1/-1">Nič sa nenašlo</div>';
 }
@@ -1593,7 +1658,7 @@ function renderFavs() {
   if (!favs.length) { el.innerHTML = ''; return; }
   const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
   el.innerHTML = `<h3 style="margin:0 0 6px">⭐ Obľúbené</h3><div class="items">${favs.map(m => `
-    <button class="item" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}</span>
+    <button class="item" style="${catColor(m.category) ? `box-shadow:inset 5px 0 0 ${catColor(m.category)}` : ''}" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}</span>
     ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><span class="qminus" role="button" tabindex="0" onclick="event.stopPropagation();removeItem('${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();removeItem('${m.id}')}">−</span></div>` : ''}</button>`).join('')}</div>`;
 }
 // Rozparsuje nastavenie "možností pri pridaní" (napr. sóda/ľad/príchuť) z jednoduchého textového formátu:
@@ -1908,23 +1973,66 @@ async function payItems() {
 }
 
 const tableDot = tId => { const t = S.tables.find(x => x.id === tId); return (t && t.color) ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${t.color};margin-right:5px;vertical-align:middle"></span>` : ''; };
+// položky objednávky na bare / na odnesenie - pri každej "−" na odobratie 1 kusu (zákazník si to rozmyslel)
+const barItemsHtml = (o, withNotes) => `<ul>${o.items.map((i, idx) => `<li><b>${i.qty}×</b>${esc(i.name)}${withNotes && i.note ? `<i>${esc(i.note)}</i>` : ''}
+  <button class="li-minus" title="Odobrať 1 ks (zákazník si to rozmyslel)" onclick="barRemoveItem('${o.id}',${idx})">−</button></li>`).join('')}</ul>`;
+const guestTag = o => guestOf(o.tableId) ? ` <small style="margin-left:0;font-weight:700">👤 ${esc(guestOf(o.tableId))}</small>` : '';
+// Bar = len to, čo treba PRIPRAVIŤ. Hotové na odnesenie sú zvlášť v záložke "🚶 Odniesť" (renderServe).
 function renderBar() {
   const nove = open().filter(o => o.status === 'nova').sort((a, b) => a.createdAt - b.createdAt);
-  const hot = open().filter(o => o.status === 'hotova');
+  const hotN = open().filter(o => o.status === 'hotova').length;
   $('#app').innerHTML = `
-    <div class="row" style="justify-content:flex-end"><button class="btn ghost" style="width:auto;padding:8px 12px" onclick="toggleSound()">${sound ? '🔔 Zvuk zapnutý' : '🔕 Zvuk vypnutý'}</button></div>
+    <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
+      ${hotN ? `<button class="btn ghost" style="width:auto;padding:8px 12px" onclick="role='odniest';store.set('role',role);render()">🚶 Na odnesenie čaká: <b>${hotN}</b> →</button>` : '<span></span>'}
+      <button class="btn ghost" style="width:auto;padding:8px 12px" onclick="toggleSound()">${sound ? '🔔 Zvuk zapnutý' : '🔕 Zvuk vypnutý'}</button></div>
     <h2>Pripraviť (${nove.length})</h2>
     ${nove.length ? `<div class="bar-grid">${nove.map(o => `<div class="order nova">
-      <h3>${tableDot(o.tableId)}${esc(o.tableName)} <span class="muted">#${o.no}</span><small>${ago(o.createdAt)}${o.waiter ? ' · ' + esc(o.waiter) : ''}</small></h3>
-      <ul>${o.items.map(i => `<li><b>${i.qty}×</b>${esc(i.name)}${i.note ? `<i>${esc(i.note)}</i>` : ''}</li>`).join('')}</ul>
+      <h3>${tableDot(o.tableId)}${esc(o.tableName)}${guestTag(o)} <span class="muted">#${o.no}</span><small>${ago(o.createdAt)}${o.waiter ? ' · ' + esc(o.waiter) : ''}</small></h3>
+      ${barItemsHtml(o, true)}
       ${o.note ? `<div class="note">${esc(o.note)}</div>` : ''}
+      ${moveOrderBlock(o)}
       <button class="btn ok" onclick="setStatus('${o.id}','hotova')">Hotové – na odnesenie</button></div>`).join('')}</div>`
-      : '<div class="empty">Žiadne nové objednávky ☕</div>'}
-    ${hot.length ? `<h2>Čaká na odnesenie (${hot.length})</h2><div class="bar-grid">${hot.map(o => `<div class="order hotova">
-      <h3>${tableDot(o.tableId)}${esc(o.tableName)} <span class="muted">#${o.no}</span><small>${ago(o.hotovaAt || o.createdAt)}</small></h3>
-      <ul>${o.items.map(i => `<li><b>${i.qty}×</b>${esc(i.name)}</li>`).join('')}</ul>
-      <div class="row"><button class="btn ghost" onclick="setStatus('${o.id}','nova')">Vrátiť</button>
-      <button class="btn ok" onclick="setStatus('${o.id}','vydana')">Odnesené</button></div></div>`).join('')}</div>` : ''}`;
+      : '<div class="empty">Žiadne nové objednávky ☕</div>'}`;
+}
+// Odniesť = hotové objednávky, ktoré treba zaniesť ku stolu (samostatná záložka, nemiešajú sa s prípravou)
+function renderServe() {
+  const hot = open().filter(o => o.status === 'hotova').sort((a, b) => (a.hotovaAt || a.createdAt) - (b.hotovaAt || b.createdAt));
+  $('#app').innerHTML = `<h2>Čaká na odnesenie (${hot.length})</h2>
+    ${hot.length ? `<div class="bar-grid">${hot.map(o => `<div class="order hotova">
+      <h3>${tableDot(o.tableId)}${esc(o.tableName)}${guestTag(o)} <span class="muted">#${o.no}</span><small>hotové ${ago(o.hotovaAt || o.createdAt)}</small></h3>
+      ${barItemsHtml(o, true)}
+      ${o.note ? `<div class="note">${esc(o.note)}</div>` : ''}
+      ${moveOrderBlock(o)}
+      <div class="row"><button class="btn ghost" onclick="setStatus('${o.id}','nova')">↩ Vrátiť na bar</button>
+      <button class="btn ok" onclick="setStatus('${o.id}','vydana')">✓ Odnesené</button></div></div>`).join('')}</div>`
+    : '<div class="empty">Nič nečaká na odnesenie 👍</div>'}`;
+}
+// "↔ Prepísať na iný stôl" pri jednej objednávke (bar, odniesť, účet stola) - zavretý = tlačidlo, otvorený = výber stola
+function moveOrderBlock(o) {
+  if (moveOrderId !== o.id) return `<button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="moveOrderId='${o.id}';moveOrderTarget='';render()">↔ Na iný stôl</button>`;
+  const others = visibleTables().filter(t => t.id !== o.tableId);
+  return `<div class="row" style="gap:6px;flex-wrap:wrap;width:100%">
+    <select style="flex:1;min-width:130px" onchange="moveOrderTarget=this.value"><option value="">— na ktorý stôl? —</option>
+      ${others.map(t => `<option value="${t.id}" ${moveOrderTarget === t.id ? 'selected' : ''}>${esc(t.name)}${guestOf(t.id) ? ' · ' + esc(guestOf(t.id)) : ''}</option>`).join('')}</select>
+    <button class="btn ok" style="width:auto;padding:8px 12px" onclick="confirmMoveOrder('${o.id}')">Prepísať</button>
+    <button class="btn ghost" style="width:auto;padding:8px 12px" onclick="moveOrderId=null;render()">Zrušiť</button></div>`;
+}
+async function confirmMoveOrder(id) {
+  const o = S.orders.find(x => x.id === id), t = S.tables.find(x => x.id === moveOrderTarget);
+  if (!o) { moveOrderId = null; render(); return; }
+  if (!t) return toast('Vyber stôl');
+  try { await call('POST', `/api/orders/${id}/moveTo`, { targetId: t.id }); toast(`#${o.no} prepísané z ${o.tableName} na ${t.name} ✓`); }
+  finally { moveOrderId = null; render(); }
+}
+let barRemoving = false;   // zámok proti dvojťuku (inak by sa odobrali 2 kusy)
+async function barRemoveItem(orderId, idx) {
+  const o = S.orders.find(x => x.id === orderId), it = o && o.items[idx];
+  if (!it || barRemoving) return;
+  const last = o.items.length === 1 && it.qty === 1;
+  if (!confirm(`Odobrať 1× ${it.name} z objednávky ${o.tableName} #${o.no}?${last ? '\nJe to posledná položka – zruší sa celá objednávka.' : ''}`)) return;
+  barRemoving = true;
+  try { await call('POST', `/api/orders/${orderId}/removeItem`, { idx, name: it.name }); toast(`Odobrané: 1× ${it.name}`); }
+  finally { barRemoving = false; }
 }
 function toggleSound() { sound = !sound; store.set('sound', sound); if (sound) beep([880]); render(); }
 
@@ -2209,7 +2317,15 @@ function renderSettings() {
   const groupKeys = [...groupNames, ...(S.tables.some(x => !x.group) ? [''] : [])];
   const t = groupKeys.map(groupBlock).join('');
   const cats = allCategories();
-  const menu = cats.map(c => `<h3 style="margin:14px 0 6px">${esc(c)}</h3>` + (S.menu.filter(m => m.category === c).map(m => `
+  // každá kategória = rozbaľovací blok (predvolene zbalený): farba kategórie, položky, pridanie novej položky
+  const menu = cats.map((c, ci) => { const cnt = S.menu.filter(m => m.category === c).length, cc = catColor(c), enc = grpArg(c);
+    return `<details ${openMenuCats.has(c) ? 'open' : ''} ontoggle="toggleMenuCatOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;${cc ? `border-left:6px solid ${cc}` : ''}">
+      <summary style="cursor:pointer;font-weight:700">${esc(c)} <span class="muted" style="font-weight:400">(${cnt} ${cnt === 1 ? 'položka' : (cnt >= 2 && cnt <= 4 ? 'položky' : 'položiek')})</span></summary>
+      <div class="row" style="gap:4px;align-items:center;flex-wrap:wrap;margin:10px 0">
+        <span class="muted" style="font-size:12px;margin-right:4px">Farba kategórie:</span>
+        ${TABLE_COLORS.map(col => `<button title="${col ? '' : 'Bez farby'}" onclick="setCatColor('${enc}','${col}')"
+          style="width:26px;height:26px;border-radius:50%;flex:none;padding:0;background:${col || 'var(--bg)'};border:2px solid ${cc === col ? 'var(--ink)' : 'var(--line)'}"></button>`).join('')}
+      </div>` + (S.menu.filter(m => m.category === c).map(m => `
     <div class="set-row"${(m.name || '').trim() ? '' : ' style="outline:2px solid var(--warn);border-radius:10px"'}>
       <input value="${esc(m.name)}" placeholder="(bez názvu - vidno len tu, doplň názov alebo zmaž ✕)" onchange="call('PUT','/api/menu/${m.id}',{name:this.value})">
       <input type="number" step="0.01" min="0" inputmode="decimal" value="${m.price}" onchange="call('PUT','/api/menu/${m.id}',{price:this.value})">
@@ -2226,7 +2342,12 @@ function renderSettings() {
           ${m.opts ? `<button class="btn ghost" style="width:auto;padding:8px 14px" onclick="call('PUT','/api/menu/${m.id}',{opts:''});editingOptsFor=null;render()">Vymazať možnosti</button>` : ''}
           <button class="btn ghost" style="width:auto;padding:8px 14px" onclick="editingOptsFor=null;render()">Zavrieť</button>
         </div>
-      </div>` : ''}`).join('') || '<p class="muted" style="font-size:13px">Zatiaľ žiadne položky.</p>')).join('');
+      </div>` : ''}`).join('') || '<p class="muted" style="font-size:13px">Zatiaľ žiadne položky.</p>') + `
+      <div class="set-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);grid-template-columns:1fr 90px auto">
+        <input id="nN-${ci}" placeholder="Nová položka v ${esc(c)}" onkeydown="if(event.key==='Enter'){event.preventDefault();$('#nP-${ci}').focus()}">
+        <input id="nP-${ci}" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00" onkeydown="if(event.key==='Enter'){event.preventDefault();addItemToCat('${enc}',${ci})}">
+        <button class="btn" style="width:auto" onclick="addItemToCat('${enc}',${ci})">+</button></div>
+    </details>`; }).join('');
   const empRows = (S.employees || []).map(e => `<div class="set-row t">
     <input value="${esc(e.name)}" disabled style="opacity:.75">
     <div class="row" style="gap:4px;align-items:center"><input type="number" min="0" step="0.1" inputmode="decimal" style="width:80px" value="${e.wage || ''}" placeholder="€/h"
@@ -2261,11 +2382,7 @@ function renderSettings() {
     <h2>Menu</h2><div class="card">
       <div class="set-row muted" style="font-size:13px"><span>Názov</span><span>Cena €</span><span class="cat">Kategória</span><span></span></div>
       ${menu || '<p class="muted">Najprv pridaj aspoň jednu kategóriu.</p>'}
-      <p class="muted" style="font-size:12px;margin-top:10px">Tlačidlo € pri položke zapne „vlastnú sumu": v objednávke sa namiesto pevnej ceny spýta presná suma (napr. biliard – 7,10 €), nech sa nemusí ťukať po centoch.</p>
-      ${cats.length ? `<div class="set-row" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">
-        <input id="nN" placeholder="Nová položka"><input id="nP" type="number" step="0.01" min="0" inputmode="decimal" placeholder="0,00">
-        <select id="nC" class="cat">${cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select>
-        <button class="btn" style="width:auto" onclick="addItemMenu()">+</button></div>` : ''}</div>`;
+      <p class="muted" style="font-size:12px;margin-top:10px">Ťukni na kategóriu – rozbalí sa. Novú položku pridáš dole v kategórii (názov → Enter → cena → Enter). Farba kategórie sa ukáže pri objednávaní (záložka kategórie aj dlaždice položiek). Tlačidlo € pri položke zapne „vlastnú sumu": v objednávke sa namiesto pevnej ceny spýta presná suma (napr. biliard – 7,10 €), nech sa nemusí ťukať po centoch.</p></div>`;
 
   const attrMenuOpts = S.menu.filter(m => (m.name || '').trim());
   const atrakcieTab = `<h2>Atrakcie (biliard, PlayStation, ping-pong, šípky...)</h2><div class="card">
@@ -2315,6 +2432,24 @@ function renderSettings() {
 
   const TAB_HTML = { stoly: stolyTab, menu: menuTab, atrakcie: atrakcieTab, zamestnanci: zamestnanciTab, zariadenie: zariadenieTab };
   $('#app').innerHTML = device + nav + TAB_HTML[settingsTab];
+}
+// farba kategórie menu (nastaví vedúci v Nastaveniach -> Menu); '' = bez farby
+const catColor = name => { const x = ((S.access && S.access.catColors) || []).find(x => x && x.n === name); return x ? x.c : ''; };
+async function setCatColor(enc, c) {
+  const name = decodeURIComponent(enc);
+  const list = ((S.access && S.access.catColors) || []).filter(x => x && x.n !== name);
+  if (c) list.push({ n: name, c });
+  await call('PUT', '/api/access', { catColors: list });
+}
+let openMenuCats = new Set();   // rozbalené kategórie v Nastaveniach -> Menu (prežije prekreslenie)
+function toggleMenuCatOpen(enc, open) { const c = decodeURIComponent(enc); if (open) openMenuCats.add(c); else openMenuCats.delete(c); }
+async function addItemToCat(enc, idx) {
+  const category = decodeURIComponent(enc), nEl = $('#nN-' + idx), pEl = $('#nP-' + idx);
+  const name = nEl ? nEl.value.trim() : '', price = pEl ? pEl.value.replace(',', '.') : '';
+  if (!name || price === '') return toast('Zadaj názov aj cenu');
+  await call('POST', '/api/menu', { name, price, category });
+  openMenuCats.add(category); render();
+  const again = $('#nN-' + idx); if (again) again.focus();   // rovno písať ďalšiu položku
 }
 function allCategories() {
   const set = new Set(S.categories.map(c => c.name));
@@ -2485,11 +2620,6 @@ async function clearUzavierkaPin() {
   if (!confirm('Zrušiť PIN pre uzávierku? Prístup bude mať už len vedúci.')) return;
   await call('PUT', '/api/access', { uzavierkaPin: '' });
 }
-async function addItemMenu() {
-  const name = $('#nN').value.trim(), price = $('#nP').value.replace(',', '.'), category = $('#nC').value;
-  if (!name || price === '') return toast('Zadajte názov a cenu');
-  await call('POST', '/api/menu', { name, price, category });
-}
 async function delItem(id) { if (confirm('Zmazať položku z menu?')) await call('DELETE', '/api/menu/' + id); }
 
 let gateLoginFails = 0;
@@ -2517,9 +2647,9 @@ function confirmGateLogin() {
 
 // ---------- navigácia ----------
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
-  role = b.dataset.role; store.set('role', role); tableId = null; showHist = false; showQueue = false; render(); scrollTo(0, 0);
+  role = b.dataset.role; store.set('role', role); tableId = null; showHist = false; showQueue = false; moveOrderId = null; render(); scrollTo(0, 0);
 });
-$('#backBtn').onclick = () => { tableId = null; showBoard = false; render(); };
+$('#backBtn').onclick = () => { tableId = null; showBoard = false; moveOrderId = null; render(); };
 setInterval(() => { if (role !== 'nastavenia') safeRender(); }, 30000); // obnoví "pred X min"
 
 // ---------- upozornenie na blížiacu sa rezerváciu ----------
