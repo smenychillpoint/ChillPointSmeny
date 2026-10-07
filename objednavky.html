@@ -119,7 +119,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-07e</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-07f</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1280,23 +1280,29 @@ function stationQueueBlock(type) {
   if (!rows.length) return '';
   const nowT = now();
   return `<div class="card" style="padding:0;margin-top:8px">${rows.map((q, i) => `<div class="line" style="align-items:center">
-    <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
+    <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${q.people ? `<small> · 👥 ${q.people} os.</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
     ${i === 0 ? `<button class="btn ok" style="width:auto" onclick="serveQueue('${q.id}')">Odbaviť ✓</button>`
                : `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="delQueue('${q.id}')">✕</button>`}
   </div>`).join('')}</div>`;
 }
 function queueFormBlock(type) {
   if (queueFormType !== type) return '';
-  const tid = slug(type);
+  // hodnoty sú v qfS (nie len v DOM) - živé prekreslenie z iného zariadenia rozpísaný formulár nevymaže
+  if (qfS.type !== type) qfS = { type, table: '', name: '', date: '', time: '', people: '' };
+  const f = qfS;
   return `<div class="card" style="margin-top:8px">
     <label class="muted" style="font-size:13px">Nová rezervácia – ${esc(type)}</label>
-    <select id="qfTable-${tid}" style="margin-top:6px">
+    <select style="margin-top:6px" onchange="qfS.table=this.value">
       <option value="">— vyber stôl —</option>
-      ${visibleTables().map(tb => `<option value="${tb.id}">${esc(tb.name)}</option>`).join('')}
+      ${visibleTables(f.table).map(tb => `<option value="${tb.id}" ${f.table === tb.id ? 'selected' : ''}>${esc(tb.name)}</option>`).join('')}
     </select>
-    <input id="qfName-${tid}" placeholder="alebo napíš meno (ak nesedí k žiadnemu stolu)" style="margin-top:6px">
+    <input placeholder="alebo napíš meno (ak nesedí k žiadnemu stolu)" style="margin-top:6px" value="${esc(f.name)}" oninput="qfS.name=this.value">
+    <div class="row" style="gap:8px;align-items:center;margin-top:6px">
+      <label class="muted" style="font-size:13px;white-space:nowrap">👥 Počet osôb</label>
+      <input type="number" min="1" max="200" inputmode="numeric" placeholder="nepovinné" style="width:110px" value="${esc(f.people)}" oninput="qfS.people=this.value">
+    </div>
     <label class="muted" style="font-size:13px;margin-top:6px;display:block">Na presný dátum a čas (voliteľné - keď sa nezadá čas, ide rovno "teraz")</label>
-    <div class="row" style="margin-top:4px;gap:6px"><input id="qfDate-${tid}" type="date" value="${todayISO()}" style="flex:1"><input id="qfTime-${tid}" type="time" style="flex:1"></div>
+    <div class="row" style="margin-top:4px;gap:6px"><input type="date" value="${esc(f.date || todayISO())}" style="flex:1" onchange="qfS.date=this.value"><input type="time" value="${esc(f.time)}" style="flex:1" onchange="qfS.time=this.value"></div>
     <button class="btn" style="margin-top:8px" onclick="addStationQueue('${esc(type).replace(/'/g, "\\'")}')">Pridať</button>
   </div>`;
 }
@@ -1410,19 +1416,20 @@ async function confirmFinishSession(id, restart) {
   render();
 }
 async function cancelSession(id) { if (confirm('Zrušiť bez platby? (napr. omylom spustené)')) await call('DELETE', '/api/sessions/' + id); }
+let qfS = { type: null, table: '', name: '', date: '', time: '', people: '' };   // rozpísaná rezervácia atrakcie
+let addingStationQueue = false;   // zámok proti dvojťuku
 async function addStationQueue(type) {
-  const tid = slug(type);
-  const sel = $('#qfTable-' + tid), nameInput = $('#qfName-' + tid), timeInput = $('#qfTime-' + tid), dateInput = $('#qfDate-' + tid);
-  const tableId = sel ? sel.value : '';
-  const table = tableId ? S.tables.find(t => t.id === tableId) : null;
-  const typedName = nameInput ? nameInput.value.trim() : '';
-  const name = table ? table.name : typedName;
+  const f = qfS.type === type ? qfS : { table: '', name: '', date: '', time: '', people: '' };
+  const table = f.table ? S.tables.find(t => t.id === f.table) : null;
+  const name = table ? table.name : f.name.trim();
   if (!name) return toast('Vyber stôl alebo napíš meno');
+  if (addingStationQueue) return;
   const body = { name, note: '', type, tableId: table ? table.id : null };
-  const time = timeInput ? timeInput.value : '';
-  if (time) { body.time = time; body.date = dateInput ? dateInput.value : ''; }
-  await call('POST', '/api/queue', body);
-  queueFormType = null; toast('Rezervácia pridaná ✓'); render();
+  if (String(f.people).trim()) body.people = f.people;
+  if (f.time) { body.time = f.time; body.date = f.date || todayISO(); }
+  addingStationQueue = true;
+  try { await call('POST', '/api/queue', body); queueFormType = null; qfS = { type: null, table: '', name: '', date: '', time: '', people: '' }; toast('Rezervácia pridaná ✓'); }
+  finally { addingStationQueue = false; render(); }
 }
 
 // História platieb podľa dátumu - dostupná pre všetkých čašníkov (nie len vedúceho), napr. keď sa
