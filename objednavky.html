@@ -93,6 +93,12 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .attr-row.drag-over,.table-row.drag-over{box-shadow:0 -3px 0 0 var(--accent)}
 .del{background:var(--warnbg);color:var(--warn);padding:10px 12px}
 .login{position:fixed;inset:0;z-index:30;background:var(--bg);display:grid;place-items:center;padding:20px}.login form{width:100%;max-width:360px;display:grid;gap:10px}
+/* vyskakovacie okná (možnosti položky, pracovný deň, prihlásenie): na nízkej obrazovke sa dajú rolovať a stránka pod nimi stojí */
+.login{overflow-y:auto;overscroll-behavior:contain}
+.login > .card,.login > form{max-height:calc(100dvh - 40px);overflow:auto}
+body:has(.login:not(.hide)){overflow:hidden}
+/* mobil na ležato: nižšia hlavička, okná od vrchu, košík menší - nech ostane miesto na obsah */
+@media(max-height:500px){.bar{height:42px}.tabs{padding-bottom:4px}.tabs button{padding:6px}.login{place-items:start center;padding:8px}.login > .card,.login > form{max-height:calc(100dvh - 16px)}.cart-list{max-height:26dvh}}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:20;max-width:90vw}
 .hide{display:none!important}
 @media (max-width:560px){.set-row{grid-template-columns:1fr 70px;}.set-row .cat{grid-column:1}.set-row .del{grid-column:2}}
@@ -119,7 +125,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-07f</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-08d</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -152,7 +158,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 <div id="bizDayModal" class="login hide">
   <div class="card">
     <h2 style="margin-top:0">Pracovný deň</h2>
-    <p class="muted" style="font-size:13px;margin:0 0 10px">Každá platba sa bežne zapíše pod dnešný dátum automaticky. Ak pracuješ cez polnoc a chceš, aby platby po polnoci ešte patrili k predošlému dňu (v Uzávierke aj Histórii), nastav si tu ten deň – platí len na tomto zariadení, kým ho nezmeníš späť.</p>
+    <p class="muted" style="font-size:13px;margin:0 0 10px">Pracovný deň trvá automaticky od 6:00 do 6:00 – platby po polnoci (do 5:59) sa samy započítajú k predošlému dňu, nič netreba nastavovať. Ručne tu deň nastav len výnimočne (napr. otvorené až po 6:00 ráno a tržba má patriť k včerajšku) – platí len na tomto zariadení, kým ho nezmeníš späť.</p>
     <input id="bizDayInput" type="date">
     <div class="row" style="gap:8px;margin-top:12px">
       <button class="btn" style="width:auto" onclick="saveBizDay()">Nastaviť</button>
@@ -207,9 +213,12 @@ let wantManagerLogin = false;   // true = zobraziť pôvodný formulár na prihl
 let deviceLoginFailed = false;  // automatické prihlásenie zariadenia zlyhalo (účet ešte nie je vo Firebase vytvorený)
 let deviceLoginAttempted = false;
 let uzavierkaUnlocked = false;   // niekto iný ako vedúci si toto zariadenie odomkol PIN-om pre Dennú uzávierku
-let uzavDate = new Date();   // deň zobrazený v Dennej uzávierke
+// Pracovný deň začína a končí o 6:00 ráno - platba o 1:30 v noci patrí ešte k predošlému dňu (zmena cez polnoc).
+const DAY_START_H = 6;
+const bizTodayDate = () => new Date(Date.now() - DAY_START_H * 3600e3);   // "dnešný" pracovný deň ako Date
+let uzavDate = bizTodayDate();   // deň zobrazený v Dennej uzávierke
 let showHist = false;        // história platieb podľa dátumu, dostupná pre všetkých čašníkov (nielen vedúceho)
-let histDate = new Date();
+let histDate = bizTodayDate();
 let showQueue = false;       // poradovník (napr. na biliard) - kto je ďalší na rade
 let showQueueHist = false;   // história poradovníka (kto čakal, ako dlho, či bol odbavený) - dostupné pre všetkých
 let showQuickCash = false;   // rýchla platba - len suma do tržby, bez viazania na stôl/položku
@@ -257,7 +266,8 @@ const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, 
 // deň (YYYY-MM-DD), ku ktorému sa zaplatená objednávka počíta v Uzávierke/Histórii - buď ručne nastavený
 // "pracovný deň" (keď čašník cez Nastavenia > Zariadenie nastaví, že pracuje napr. včerajší deň - typicky
 // pri práci cez polnoc, nech tržba po polnoci ešte patrí k predošlej zmene), inak kalendárny deň platby
-const orderDayKey = o => o.businessDay || dateKey(new Date(o.paidAt));
+const orderDayKey = o => o.businessDay || dateKey(new Date(o.paidAt - DAY_START_H * 3600e3));   // deň od 6:00 do 6:00
+const bizTodayISO = () => dateKey(bizTodayDate());
 // Staré "rozdelené rovným dielom" platby (pred opravou): pôvodné objednávky ostali ako zaplatené popri podieloch
 // "Podiel účtu (i/N)" -> tržba 2×. Takúto pôvodnú objednávku (ten istý stôl, zaplatená do 15 s od podielu)
 // vynecháme zo súčtov aj zoznamov. Nové rozdelenia pôvodné objednávky rovno mažú, tam sa nič nefiltruje.
@@ -299,7 +309,7 @@ function logDeleted(o) {
     const paid = o.status === 'zaplatena';
     const rec = { no: Number(o.no) || 0, tableName: str(o.tableName, 40), total: Math.round(sumOrders([o]) * 100) / 100,
       items: str((o.items || []).map(i => `${i.qty}× ${i.name}`).join(', '), 400), status: str(o.status, 20),
-      day: paid ? orderDayKey(o) : dateKey(new Date()), deletedAt: now(), by: str(who, 60) };
+      day: paid ? orderDayKey(o) : (bizDay || bizTodayISO()), deletedAt: now(), by: str(who, 60) };
     db.ref('deletedLog').push(rec).then(() => { if (!delLogLoading) { delLog = null; safeRender(); } }).catch(() => {});
   } catch (e) {}
 }
@@ -1437,7 +1447,7 @@ async function addStationQueue(type) {
 function renderHistory() {
   const wasFocused = document.activeElement && document.activeElement.id === 'histFilterInput';
   const selPos = wasFocused ? document.activeElement.selectionStart : null;
-  const isToday = dateKey(histDate) === todayISO();
+  const isToday = dateKey(histDate) === bizTodayISO();
   let paid = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(histDate))).sort((a, b) => b.paidAt - a.paidAt);
   const total = sumOrders(paid);
   const q = fold(histFilter || '');
@@ -1449,7 +1459,7 @@ function renderHistory() {
       <b style="text-align:center;flex:1">${fmtDay(histDate)}</b>
       <button class="btn ghost" style="width:auto" onclick="shiftHist(1)" ${isToday ? 'disabled' : ''}>Deň ›</button>
     </div>
-    ${!isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="histDate=new Date();render()">Dnes</button></div>` : ''}
+    ${!isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="histDate=bizTodayDate();render()">Dnes</button></div>` : ''}
     <div class="card"><div class="total"><span>Tržba za deň</span><span>${eur(total)}</span></div>
       <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p></div>
     <input id="histFilterInput" value="${esc(histFilter)}" placeholder="🔍 Hľadať (stôl, položka, č. objednávky)…" style="margin-top:10px" oninput="histFilter=this.value;renderHistory()">
@@ -1726,7 +1736,7 @@ function closeItemOptions() {
 }
 // ---------- pracovný deň (zápis tržby cez polnoc pod predošlý deň) - dostupné komukoľvek prihlásenému ----------
 function openBizDayModal() {
-  const inp = $('#bizDayInput'); if (inp) inp.value = bizDay || todayISO();
+  const inp = $('#bizDayInput'); if (inp) inp.value = bizDay || bizTodayISO();
   $('#bizDayModal').classList.remove('hide');
 }
 function closeBizDayModal() { $('#bizDayModal').classList.add('hide'); }
@@ -2060,7 +2070,10 @@ function renderUzavierka() {
       : '<div class="empty" style="padding:60px 20px">Uzávierka je dostupná len pre vedúceho. PIN pre ostatných zatiaľ nie je nastavený (Nastavenia).</div>';
     return;
   }
-  const isToday = dateKey(uzavDate) === todayISO();
+  // predošlé dni vidí LEN vedúci - ostatní (prístup cez PIN) vidia iba aktuálny deň (pri práci cez polnoc
+  // nastavený "pracovný deň"), bez šípok na prepínanie dní
+  if (!isManager) uzavDate = bizDay ? parseISODate(bizDay) : bizTodayDate();
+  const isToday = dateKey(uzavDate) === bizTodayISO();
   // prázdne "zaplatené" objednávky (staré zvyšky po rozdelení platby, 0,00 €) sa nezobrazujú ani nerátajú
   const paid = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(uzavDate)));
   const total = sumOrders(paid);
@@ -2094,8 +2107,9 @@ function renderUzavierka() {
     const hourly = (num(h) || 0) * (e.wage || 0), empTotal = hourly + (on ? splitShare + tipShare : 0);
     return `<div style="margin-bottom:10px;${on ? 'padding-bottom:10px;border-bottom:1px solid var(--line)' : ''}">
       <div class="row" style="gap:8px;align-items:center">
-        <label style="flex:1;display:flex;align-items:center;gap:6px"><input type="checkbox" ${on ? 'checked' : ''} onchange="togglePayrollEmp('${e.name.replace(/'/g, "\\'")}',this.checked)">${esc(e.name)}
-          <small class="muted">(${e.wage ? eur(e.wage) + '/h' : 'bez sadzby'})</small></label>
+        <label style="flex:1;display:flex;align-items:center;gap:6px"><input type="checkbox" ${on ? 'checked' : ''} onchange="togglePayrollEmp('${e.name.replace(/'/g, "\\'")}',this.checked)">${esc(e.name)}</label>
+        <!-- hodinová sadzba sa tu už nezobrazuje - vidí/mení ju len vedúci v Nastaveniach -> Zamestnanci -->
+        ${isManager && !e.wage ? '<small class="muted" title="Nastav v Nastaveniach -> Zamestnanci">bez sadzby</small>' : ''}
         <input type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="hodín" value="${h}" ${on ? '' : 'disabled'}
           oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)">
       </div>
@@ -2103,11 +2117,11 @@ function renderUzavierka() {
     </div>`; }).join('');
   $('#app').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:6px">
-      <button class="btn ghost" style="width:auto" onclick="shiftDay(-1)">‹ Deň</button>
+      ${isManager ? `<button class="btn ghost" style="width:auto" onclick="shiftDay(-1)">‹ Deň</button>` : ''}
       <b style="text-align:center;flex:1">${fmtDay(uzavDate)}</b>
-      <button class="btn ghost" style="width:auto" onclick="shiftDay(1)" ${isToday ? 'disabled' : ''}>Deň ›</button>
+      ${isManager ? `<button class="btn ghost" style="width:auto" onclick="shiftDay(1)" ${isToday ? 'disabled' : ''}>Deň ›</button>` : ''}
     </div>
-    ${!isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="uzavDate=new Date();render()">Dnes</button></div>` : ''}
+    ${isManager && !isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="uzavDate=bizTodayDate();render()">Dnes</button></div>` : ''}
     <div class="card"><div class="total"><span>Tržba za deň</span><span>${eur(total)}</span></div>
       <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p></div>
     ${cats.length ? cats.map(c => `<h2>${esc(c)}</h2><div class="card">${byCat[c].sort((a, b) => b.qty - a.qty).map(r => `
