@@ -21,6 +21,8 @@
     :root{--yellow:#f5bb16;--black:#0a0c0f;--panel:#17191d;--line:#34373c;--muted:#a7a9ad;--white:#fff;--red:#ff6c6c;--green:#5fd67a}
     *{box-sizing:border-box}
     body{margin:0;background:var(--black);color:var(--white);font-family:Arial,Helvetica,sans-serif;min-height:100vh}
+    /* poistka: nič nesmie byť širšie ako displej (inak mobil zmenší celú stránku a vpravo ostane prázdny pás) */
+    html,body{overflow-x:clip}
     button,select,input{font:inherit}button{cursor:pointer}
     .top{min-height:70px;padding:10px max(18px,calc((100vw - 1380px)/2));display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border-bottom:1px solid #2c2f33;position:sticky;top:0;background:#0a0c0ff2;backdrop-filter:blur(15px);z-index:10}
     .brand{display:flex;align-items:center;gap:10px}
@@ -81,8 +83,10 @@
 
     .bar{display:flex;align-items:center;justify-content:space-between;margin:34px 0 15px;flex-wrap:wrap;gap:10px}
     .bar h2{font-size:18px;margin:0}
-    .months{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-    .month{background:var(--panel);border:1px solid var(--line);padding:20px}
+    /* minmax(0,1fr) a min-width:0 - inak dlhý nezalomiteľný text v riadku zoznamu (.lsub) roztiahol kalendár
+       širšie ako displej a mobil zmenšil celú stránku (appka zaberala len ľavú časť obrazovky) */
+    .months{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px}
+    .month{background:var(--panel);border:1px solid var(--line);padding:20px;min-width:0}
     .month h3{text-transform:uppercase;font-size:23px;margin:0 0 18px}
     .month h3:after{content:"";display:block;width:68px;height:5px;background:var(--yellow);margin-top:9px}
     .week,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
@@ -425,7 +429,7 @@
     .sug-line span{color:#a9acb1;font-size:12px}
     .sug-note{margin:10px 0 0;font-size:11px;color:#8f9297}
     @media(max-width:560px){.day .cnt{font-size:10px;margin-top:2px}.day .need,.day .na{font-size:10px}.rd{width:7px;height:7px}.rdots{gap:2px}.lrow .rd{width:10px;height:10px}}
-    @media(max-width:880px){.hero,.months{grid-template-columns:1fr}.who{box-shadow:7px 7px 0 #ffffff42}.day{min-height:76px}.day small{display:none}}
+    @media(max-width:880px){.hero,.months{grid-template-columns:minmax(0,1fr)}.who{box-shadow:7px 7px 0 #ffffff42}.day{min-height:76px}.day small{display:none}}
     @media(max-width:560px){.top{padding:10px 13px}.brand small{display:none}.wrap{width:calc(100% - 20px);padding-top:24px}.hero{padding:20px;gap:22px}.hero h1{font-size:44px}.month{padding:10px}.week,.grid{gap:3px}.day{min-height:58px;padding:6px}.num{margin-bottom:5px;font-size:13px}.day strong{font-size:9px}.stat-row{grid-template-columns:1fr}.form-grid{grid-template-columns:1fr}}
   </style>
 </head>
@@ -651,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (Smeny); pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (index.html) · verzia 2026-10-08</div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (index.html) · verzia 2026-10-08b</div></footer>
   </main>
 
   <div class="modal" id="shiftModal">
