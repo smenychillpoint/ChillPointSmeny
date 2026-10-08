@@ -130,7 +130,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-08l</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-08n</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -2510,6 +2510,7 @@ function renderSettings() {
   const groupKeys = [...groupNames, ...(S.tables.some(x => !x.group) ? [''] : [])];
   const t = groupKeys.map(groupBlock).join('');
   const cats = allCategories();
+  const catUse = catColorUse();   // ktoré farby už majú ktoré kategórie
   // každá kategória = rozbaľovací blok (predvolene zbalený): farba kategórie, položky, pridanie novej položky
   const menu = cats.map((c, ci) => { const cnt = S.menu.filter(m => m.category === c).length, cc = catColor(c), enc = grpArg(c);
     return `<details class="mdrag" data-cat-key="${enc}" ${openMenuCats.has(c) ? 'open' : ''} ontoggle="toggleMenuCatOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;${cc ? `border-left:6px solid ${cc}` : ''}">
@@ -2524,9 +2525,12 @@ function renderSettings() {
         <input value="${esc(c)}" maxlength="40" title="Premenovať kategóriu (Enter = uložiť)" onkeydown="if(event.key==='Enter')this.blur()" onchange="renameCat('${enc}',this.value)">
       </div>
       <div class="row" style="gap:4px;align-items:center;flex-wrap:wrap;margin:10px 0">
-        <span class="muted" style="font-size:12px;margin-right:4px">Farba kategórie:</span>
-        ${TABLE_COLORS.map(col => `<button title="${col ? '' : 'Bez farby'}" onclick="setCatColor('${enc}','${col}')"
-          style="width:26px;height:26px;border-radius:50%;flex:none;padding:0;background:${col || 'var(--bg)'};border:2px solid ${cc === col ? 'var(--ink)' : 'var(--line)'}"></button>`).join('')}
+        <span class="muted" style="font-size:12px;margin-right:4px;width:100%">Farba kategórie (✕ = už ju má iná kategória):</span>
+        ${CAT_COLORS.map(col => { const others = col ? (catUse[col.toLowerCase()] || []).filter(n => n !== c) : [], sel = (cc || '').toLowerCase() === col;
+          return `<button title="${col ? (others.length ? 'Obsadená: ' + esc(others.join(', ')) : 'Voľná farba') : 'Bez farby'}" onclick="setCatColor('${enc}','${col}')"
+          style="position:relative;width:28px;height:28px;border-radius:50%;flex:none;padding:0;background:${col || 'var(--bg)'};border:${sel ? '3px solid var(--ink)' : '2px solid var(--line)'}">${others.length && !sel ? '<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;text-shadow:0 0 3px #000">✕</span>' : ''}</button>`; }).join('')}
+        <label title="Vlastná farba" style="display:inline-flex;align-items:center;gap:4px;font-size:12px;margin-left:4px">
+          <input type="color" value="${esc(cc || '#888888')}" style="width:34px;height:30px;padding:0;border-radius:8px;cursor:pointer" onchange="setCatColor('${enc}',this.value)">vlastná</label>
       </div>` + (S.menu.filter(m => m.category === c).map((m, mi, arr) => `
     <div class="set-row mdrag" data-menu-id="${m.id}"${(m.name || '').trim() ? '' : ' style="outline:2px solid var(--warn);border-radius:10px"'}>
       <div style="display:flex;align-items:center;gap:4px;min-width:0"><span class="dragHandle" style="flex:none;padding:6px 4px" title="Podrž a potiahni – zmení poradie produktov" onpointerdown="startMenuDrag(event,'item','${m.id}')">⠿</span>
@@ -2626,6 +2630,10 @@ function renderSettings() {
       <div class="set-row t" style="margin-top:10px"><input id="newC" placeholder="Názov novej kategórie, napr. Panáky">
       <button class="btn" style="width:auto" onclick="addCategory()">Pridať</button></div></div>
     <h2>Menu</h2><div class="card">
+      ${Object.keys(catUse).length ? `<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;font-size:12px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line)">
+        <span class="muted">Obsadené farby:</span>
+        ${Object.keys(catUse).map(col => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:50%;background:${esc(col)};display:inline-block"></span>${esc(catUse[col].join(', '))}</span>`).join('')}
+      </div>` : ''}
       <div class="set-row muted" style="font-size:13px"><span>Názov</span><span>Cena €</span><span class="cat">Kategória</span><span></span></div>
       ${menu || '<p class="muted">Najprv pridaj aspoň jednu kategóriu.</p>'}
       <p class="muted" style="font-size:12px;margin-top:10px">Ťukni na kategóriu – rozbalí sa. Novú položku pridáš dole v kategórii (názov → Enter → cena → Enter). Farba kategórie sa ukáže pri objednávaní (záložka kategórie aj dlaždice položiek). Tlačidlo € pri položke zapne „vlastnú sumu": v objednávke sa namiesto pevnej ceny spýta presná suma (napr. biliard – 7,10 €), nech sa nemusí ťukať po centoch.</p></div>`;
@@ -2689,6 +2697,15 @@ function renderSettings() {
 
   const TAB_HTML = { stoly: stolyTab, menu: menuTab, obrazovka: obrazovkaTab, atrakcie: atrakcieTab, zamestnanci: zamestnanciTab, zariadenie: zariadenieTab };
   $('#app').innerHTML = device + nav + TAB_HTML[settingsTab];
+}
+// paleta pre kategórie menu (viac farieb než pri stoloch) + dá sa vybrať aj úplne vlastná farba
+const CAT_COLORS = ['', '#e5484d', '#f76b15', '#f2994a', '#f2c94c', '#c9d43a', '#7cc242', '#27ae60', '#2fbf8f', '#17a398', '#12a5c4',
+  '#2f80ed', '#3e63dd', '#6e56cf', '#9b51e0', '#c050d8', '#d6409f', '#eb5296', '#a0522d', '#8d6e63', '#78909c'];
+// ktoré farby už majú ktoré kategórie (malými písmenami, nech #E5484D == #e5484d)
+function catColorUse() {
+  const use = {};
+  ((S.access && S.access.catColors) || []).forEach(x => { if (x && x.c && x.n) (use[x.c.toLowerCase()] = use[x.c.toLowerCase()] || []).push(x.n); });
+  return use;
 }
 // tlačidlo kategórie pri objednávaní celé vo farbe kategórie: nevybraná = jemne podfarbená + farebný okraj,
 // vybraná = plná farba s bielym textom. Bez nastavenej farby ostáva pôvodný vzhľad.
