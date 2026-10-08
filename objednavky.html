@@ -125,7 +125,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-08h</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-08j</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -966,7 +966,39 @@ const sumOrders = os => os.reduce((s, o) => s + o.items.reduce((a, i) => a + i.p
 const STAV = { nova: 'Na bare', hotova: 'Hotová – odniesť', vydana: 'Vydaná' };
 
 // ---------- render ----------
+// ---------- tlačidlo "Späť" na mobile (šípka / gesto) ----------
+// Appka nemá vlastné podstránky v histórii prehliadača, takže šípka späť zo stola vyhodila človeka rovno do Smien.
+// Keď je otvorený stôl, platba, história, rezervácie a pod., držíme v histórii jeden "strážny" záznam - šípka späť
+// ho zoberie a appka urobí jeden krok dozadu (platba -> stôl -> zoznam stolov). Na hlavnej obrazovke funguje
+// šípka normálne (napr. späť do Smien).
+let navGuard = false, navIgnorePop = false;
+const inSubView = () => !!(showBoard || moveOrderId || (role === 'casnik' && (tableId || showHist || showQueue || showQuickCash)) || (role === 'atrakcie' && showQueueHist));
+function navBackStep() {
+  if (moveOrderId) moveOrderId = null;
+  else if (showBoard) showBoard = false;
+  else if (role === 'casnik' && tableId && view === 'bill') view = 'order';
+  else if (role === 'casnik' && tableId) tableId = null;
+  else if (showHist) showHist = false;
+  else if (showQueue) showQueue = false;
+  else if (showQuickCash) showQuickCash = false;
+  else if (showQueueHist) showQueueHist = false;
+}
+function syncNavHistory() {
+  try {
+    const sub = inSubView();
+    if (sub && !navGuard) { history.pushState({ cpGuard: 1 }, ''); navGuard = true; }
+    else if (!sub && navGuard) { navGuard = false; navIgnorePop = true; history.back(); }   // odobrať strážny záznam
+  } catch (e) {}
+}
+window.addEventListener('popstate', () => {
+  if (navIgnorePop) { navIgnorePop = false; return; }
+  if (!navGuard) return;            // na hlavnej obrazovke - nech prehliadač ide normálne späť
+  navGuard = false;
+  navBackStep();
+  render(); scrollTo(0, 0);         // render() podľa potreby pridá nový strážny záznam
+});
 function render() {
+  syncNavHistory();
   // Prihlasovacie "brány": kým nie je nikto prihlásený (zariadenie ešte len skúša automatický vstup),
   // alebo kým vedúci chce zadať svoj e-mail/heslo, alebo kým bežný zamestnanec ešte nezadal svoje meno
   // + kód, zobrazí sa vždy len jedna z troch vrstiev nižšie (cez CSS position:fixed prekryjú celú appku).
@@ -2181,7 +2213,7 @@ function renderUzavierka() {
       <div class="total"><span id="payPctLabel">Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''}${sharers.length ? ', delí sa ' + sharers.length : ''})</span><span id="payPct">${eur(sharers.length ? pctAmount : 0)}</span></div>
       <div class="total"><span id="payTipLabel">Trinkgeľ${checkedNames.length ? ' (rozdelené medzi ' + checkedNames.length + ')' : ''}</span><span id="payTip">${eur(tip)}</span></div>
       <div class="total" style="border-top:2px solid var(--ink);padding-top:8px;margin-top:6px"><b>Výplaty spolu</b><b id="payGrand">${eur(hourlyTotal + (sharers.length ? pctAmount : 0) + (checkedNames.length ? tip : 0))}</b></div>
-      <button class="btn ghost" style="margin-top:10px" onclick="downloadPayrollCsv()">⬇️ Stiahnuť výplaty (CSV pre Excel)</button>
+      <button class="btn ghost" style="margin-top:10px" onclick="downloadPayrollCsv()">⬇️ Stiahnuť / zdieľať výplaty (CSV pre Excel)</button>
     </div>
 
     ${txns.length ? `<h2 style="margin-top:22px">Jednotlivé platby</h2><div class="card" style="padding:0">
@@ -2302,7 +2334,7 @@ function payShares(dayHours, pctAmount, tip) {
   return { names, sharers, splitShare: sharers.length ? pctAmount / sharers.length : 0, tipShare: names.length ? tip / names.length : 0, shares: n => !ns.has(n) };
 }
 const payNoteHtml = (hourly, sharing, splitShare, tip, tipShare, total) =>
-  `hodinovka ${eur(hourly)} + ${sharing ? 'podiel z tržby ' + eur(splitShare) : '<i>bez podielu z %</i>'}${tip > 0 ? ' + trinkgeľ ' + eur(tipShare) : ''} = <b>${eur(total)}</b>`;
+  `hodinovka ${eur(hourly)} + ${sharing ? 'podiel z tržby ' + eur(splitShare) : '<i>bez podielu z %</i>'} = hodinovka a percentá <b>${eur(hourly + (sharing ? splitShare : 0))}</b>${tip > 0 ? ` · + trinkgeľ ${eur(tipShare)} = spolu <b>${eur(total)}</b>` : ''}`;
 async function setPayPct(val) { if (!isManager) return; await call('PUT', '/api/access', { payPct: val }); toast('Percentá uložené ✓'); }
 async function toggleNoShareEmp(name, share) {
   if (!isManager) return;
@@ -2317,7 +2349,7 @@ function setPayrollTip(val) {
 }
 // Stiahne výplatný prehľad za daný deň ako CSV (otvorí sa priamo v Exceli). Bodkočiarka ako oddeľovač
 // a BOM na začiatku, nech Excel v slovenčine správne rozpozná kódovanie aj oddeľovač stĺpcov.
-function downloadPayrollCsv() {
+async function downloadPayrollCsv() {
   const paidToday = dayPaidOrders(uzavDate);
   const total = sumOrders(paidToday);
   const dayHours = dayHoursOf(payDayKey());
@@ -2328,13 +2360,14 @@ function downloadPayrollCsv() {
   const { names, sharers, splitShare, tipShare, shares } = payShares(dayHours, pctAmount, tip);
   const pctPaid = sharers.length ? pctAmount : 0, tipPaid = names.length ? tip : 0;   // reálne vyplatené (ak sa nikto nedelí, nič)
   let hourlyTotal = 0;
-  const rows = [['Meno', 'Odpracované hodiny', 'Hodinovka €/h', 'Hodinovka spolu €', 'Podiel z tržby €', 'Trinkgeľ €', 'Spolu €']];
+  // sadzbu €/h vidí len vedúci (aj v CSV) - ostatní (prístup cez PIN) dostanú súbor bez tohto stĺpca
+  const rows = [['Meno', 'Odpracované hodiny', ...(isManager ? ['Hodinovka €/h'] : []), 'Hodinovka spolu €', 'Podiel z tržby €', 'Hodinovka + percentá €', 'Trinkgeľ €', 'Spolu €']];
   (S.employees || []).forEach(e => {
     if (!(e.name in dayHours)) return;
     const h = num(dayHours[e.name]) || 0;
     const hourly = h * (e.wage || 0), share = shares(e.name) ? splitShare : 0;
     hourlyTotal += hourly;
-    rows.push([e.name, h, e.wage || 0, hourly.toFixed(2), share.toFixed(2), tipShare.toFixed(2), (hourly + share + tipShare).toFixed(2)]);
+    rows.push([e.name, h, ...(isManager ? [e.wage || 0] : []), hourly.toFixed(2), share.toFixed(2), (hourly + share).toFixed(2), tipShare.toFixed(2), (hourly + share + tipShare).toFixed(2)]);
   });
   rows.push([]);
   rows.push(['Tržba za deň €', total.toFixed(2)]);
@@ -2345,13 +2378,23 @@ function downloadPayrollCsv() {
   if (noShareSet().size) rows.push(['Nedelia sa o percentá', [...noShareSet()].join(', ')]);
   rows.push(['Trinkgeľ spolu €', tipPaid.toFixed(2)]);
   rows.push(['Hodinovky spolu €', hourlyTotal.toFixed(2)]);
+  rows.push(['Hodinovky + percentá spolu €', (hourlyTotal + pctPaid).toFixed(2)]);
   rows.push(['Výplaty spolu €', (hourlyTotal + pctPaid + tipPaid).toFixed(2)]);
   const esc2 = v => { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const csv = '﻿' + rows.map(r => r.map(esc2).join(';')).join('\r\n');
+  const fname = `vyplaty_${payDayKey()}.csv`;
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  // na mobile ponúkne "Zdieľať" (WhatsApp, e-mail, Disk...); kde to nejde (počítač), súbor sa normálne stiahne
+  try {
+    const file = new File([blob], fname, { type: 'text/csv' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Výplaty ' + payDayKey(), text: 'Výplaty za ' + fmtDay(uzavDate) });
+      return;
+    }
+  } catch (e) { if (e && e.name === 'AbortError') return; }   // zrušené zdieľanie = nič nesťahovať
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `vyplaty_${payDayKey()}.csv`;
+  a.href = url; a.download = fname;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
@@ -2520,12 +2563,16 @@ function renderSettings() {
       <p class="muted" style="font-size:12px;margin-top:6px">Atrakcie s rovnakým typom sa v záložke Atrakcie zoskupia pod jeden nadpis. Prepojením na cenníkovú položku (v Menu vyššie – jej cena = € za hodinu) sa tržba z atrakcie počíta jednotne s cenníkom (kategória, uzávierka). Pri každej atrakcii vyberieš, čo sa stane po kliknutí na Ukončiť: „⏱ Suma podľa času" predvyplní sumu podľa odohraného času, zaokrúhlenú na pol hodiny (35 min ≈ pol sadzby, 55 min ≈ celá sadzba) – dá sa vždy prepísať. „✎ Pýtať sumu ručne" nechá pole prázdne a sumu zadáš sám (napr. biliard s fyzickým počítadlom) – prepojenie na cenník (kvôli kategórii) môže ostať, len sa cena nebude navrhovať. Atrakcia bez prepojenia na cenník sa vždy pýta ručne. Viac atrakcií môže zdieľať tú istú cenníkovú položku (napr. 3 biliardové stoly).</p></div>`;
 
   const noPctSet = new Set((S.access && S.access.noPctItems) || []);
+  // každá kategória zbalená (prehľadnejšie); v hlavičke vidno, koľko jej položiek je bez % - rozbalí sa ťuknutím
   const noPctBlock = cats.map(c => {
     const items = S.menu.filter(m => m.category === c && (m.name || '').trim());
     if (!items.length) return '';
-    return `<div class="muted" style="font-size:12px;margin:8px 0 2px">${esc(c)}</div>
-      ${items.map(m => `<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:14px">
-        <input type="checkbox" ${noPctSet.has(m.name) ? 'checked' : ''} onchange="toggleNoPctItem('${m.name.replace(/'/g, "\\'")}',this.checked)">${esc(m.name)}</label>`).join('')}`;
+    const nOff = items.filter(m => noPctSet.has(m.name)).length, enc = grpArg(c);
+    return `<details ${openNoPctCats.has(c) ? 'open' : ''} ontoggle="toggleNoPctCatOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:6px">
+      <summary style="cursor:pointer;font-weight:700;font-size:14px">${esc(c)} <span class="muted" style="font-weight:400">${nOff ? `· bez %: <b style="color:var(--warn)">${nOff}</b> z ${items.length}` : `· ${items.length} ${items.length === 1 ? 'položka' : (items.length <= 4 ? 'položky' : 'položiek')}, všetky s %`}</span></summary>
+      <div style="margin-top:8px">${items.map(m => `<label style="display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:14px">
+        <input type="checkbox" style="width:auto" ${noPctSet.has(m.name) ? 'checked' : ''} onchange="toggleNoPctItem('${m.name.replace(/'/g, "\\'")}',this.checked)">${esc(m.name)}</label>`).join('')}</div>
+    </details>`;
   }).join('');
   const zamestnanciTab = `<h2>Percentá z tržby pre personál</h2><div class="card">
       <div class="row" style="gap:8px;align-items:center">
@@ -2539,7 +2586,7 @@ function renderSettings() {
       <p class="muted" style="font-size:12px;margin-top:8px">Sadzba €/h sa použije vo Výplatnej kalkulačke v Dennej uzávierke (čašníci ju tam nevidia). Kto má odškrtnuté „delí sa o %“, nedostane podiel z percent (napr. brigádnik len na hodinovku) – jeho časť sa rozdelí medzi ostatných; trinkgeľ dostane každý s hodinami.</p></div>
     <h2>Bez % z tržby</h2><div class="card">
       <p class="muted" style="font-size:13px;margin:0">Z týchto konkrétnych položiek (napr. len Pixel, nie celé Hry) sa personálu neráta percentuálny podiel z tržby vo Výplatnej kalkulačke – platí pre všetky dni, kým to tu nezmeníš.</p>
-      <div style="margin-top:8px;max-height:280px;overflow:auto">${noPctBlock || '<p class="muted" style="font-size:13px">Najprv pridaj položky do menu.</p>'}</div></div>`;
+      <div style="margin-top:8px">${noPctBlock || '<p class="muted" style="font-size:13px">Najprv pridaj položky do menu.</p>'}</div></div>`;
 
   const zariadenieTab = `<h2>Prístup do uzávierky</h2><div class="card">
       <label class="muted" style="font-size:13px">PIN, ktorým sa do Dennej uzávierky dostane aj niekto iný ako vedúci (napr. keď nie si na prevádzke)</label>
@@ -2561,6 +2608,8 @@ async function setCatColor(enc, c) {
   if (c) list.push({ n: name, c });
   await call('PUT', '/api/access', { catColors: list });
 }
+let openNoPctCats = new Set();   // rozbalené kategórie v "Bez % z tržby" (Nastavenia -> Zamestnanci)
+function toggleNoPctCatOpen(enc, open) { const c = decodeURIComponent(enc); if (open) openNoPctCats.add(c); else openNoPctCats.delete(c); }
 let openMenuCats = new Set();   // rozbalené kategórie v Nastaveniach -> Menu (prežije prekreslenie)
 function toggleMenuCatOpen(enc, open) { const c = decodeURIComponent(enc); if (open) openMenuCats.add(c); else openMenuCats.delete(c); }
 async function addItemToCat(enc, idx) {
