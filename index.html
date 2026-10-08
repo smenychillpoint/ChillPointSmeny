@@ -104,8 +104,15 @@
 
     .modal{position:fixed;inset:0;background:#000b;z-index:30;display:none;place-items:center;padding:18px}
     .modal.open{display:grid}
-    .box{width:min(560px,100%);max-height:90vh;overflow:auto;background:#17191d;border:1px solid #484b50;padding:24px;position:relative}
-    .close{position:absolute;right:12px;top:10px;border:0;background:transparent;color:#aaa;font-size:28px}
+    .box{width:min(560px,100%);max-height:90vh;max-height:calc(100dvh - 36px);overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;background:#17191d;border:1px solid #484b50;padding:24px;position:relative}
+    /* krížik ostane viditeľný aj pri rolovaní dlhého okna (predtým odroloval preč) */
+    .close{position:sticky;top:0;float:right;z-index:3;margin:-14px -12px 0 8px;width:40px;height:40px;border:0;border-radius:50%;background:#17191dee;color:#aaa;font-size:28px;line-height:1}
+    /* kým je otvorené okno, stránka pod ním sa neroluje */
+    body:has(.modal.open){overflow:hidden}
+    /* mobil: okno takmer na celú obrazovku; políčka 16px, inak iPhone pri ťuknutí do políčka priblíži celú stránku */
+    @media(max-width:560px){.modal{padding:8px}.box{padding:16px;max-height:calc(100dvh - 16px)}input,select,textarea{font-size:16px}}
+    /* mobil na ležato (nízka obrazovka): okno od vrchu, menej okrajov, nech sa zmestí čo najviac */
+    @media(max-height:500px){.modal{padding:6px;place-items:start center}.box{padding:14px 16px;max-height:calc(100dvh - 12px)}.box h2{font-size:20px}}
     .box h2{margin:0 35px 5px 0;text-transform:capitalize}
     .sub{color:var(--muted);font-size:14px}
     .section-title{color:var(--yellow);font-size:12px;font-weight:800;letter-spacing:.1em;margin:20px 0 10px;text-transform:uppercase}
@@ -644,7 +651,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (Smeny); pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (index.html) · verzia 2026-10-07</div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (index.html) · verzia 2026-10-08</div></footer>
   </main>
 
   <div class="modal" id="shiftModal">
