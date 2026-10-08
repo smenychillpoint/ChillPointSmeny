@@ -94,6 +94,8 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .dragHandle{cursor:grab;touch-action:none;color:var(--muted);text-align:center;font-size:18px;user-select:none;padding:6px 0}
 .attr-row.dragging,.table-row.dragging{opacity:.4}
 .attr-row.drag-over,.table-row.drag-over{box-shadow:0 -3px 0 0 var(--accent)}
+.mdrag.dragging{opacity:.4}
+.mdrag.drag-over{box-shadow:0 -4px 0 0 var(--accent)}
 .del{background:var(--warnbg);color:var(--warn);padding:10px 12px}
 .login{position:fixed;inset:0;z-index:30;background:var(--bg);display:grid;place-items:center;padding:20px}.login form{width:100%;max-width:360px;display:grid;gap:10px}
 /* vyskakovacie okná (možnosti položky, pracovný deň, prihlásenie): na nízkej obrazovke sa dajú rolovať a stránka pod nimi stojí */
@@ -128,7 +130,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-08k</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-08l</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -935,7 +937,7 @@ function unlockUzavierka() {
 let pending = false;
 function safeRender() {
   if (document.activeElement?.tagName === 'INPUT') { pending = true; return; }
-  if (attrDragId || tableDragId) { pending = true; return; } // neprekresľovať uprostred ťahania atrakcie/stola v Nastaveniach
+  if (attrDragId || tableDragId || menuDrag) { pending = true; return; } // neprekresľovať uprostred ťahania atrakcie/stola v Nastaveniach
   // Neprekresľovať, kým je otvorený formulár na zadanie sumy za atrakciu (sessionFinishBlock) - inak
   // by prípadná živá zmena z iného zariadenia (ktokoľvek z tímu) prepísala rozostavaný input naspäť
   // na predvyplnenú/prázdnu hodnotu tesne predtým, než čašník klikne "Potvrdiť" - a suma sa buď stratí,
@@ -946,7 +948,7 @@ function safeRender() {
   render();
 }
 document.addEventListener('focusout', () => setTimeout(() => {
-  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId && !finishSessionId && !moveOrderId) { pending = false; render(); }
+  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId && !menuDrag && !finishSessionId && !moveOrderId) { pending = false; render(); }
 }, 50));
 
 // ---------- zvuk ----------
@@ -1700,7 +1702,7 @@ function renderTable() {
     search: hasMenu ? `<div class="search" style="margin-bottom:10px"><input id="q" type="search" placeholder="🔍 Hľadať položku…" value="${esc(q)}" oninput="q=this.value;renderItems()" autocomplete="off">
       ${q ? '<button onclick="q=\'\';render()">✕</button>' : ''}
       ${hasVoice ? '<button id="micBtn" title="Nadiktovať objednávku" onclick="startVoiceOrder()">🎤</button>' : ''}</div>` : '',
-    cats: hasMenu ? `<div class="cats${lay.bigCats ? ' big' : ''}" id="cats">${cats.map(c => `<button class="${c === cat ? 'on' : ''}" style="${catColor(c) ? `box-shadow:inset 0 -4px 0 ${catColor(c)}` : ''}" onclick="cat=this.dataset.c;q='';render()" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>`
+    cats: hasMenu ? `<div class="cats${lay.bigCats ? ' big' : ''}" id="cats">${cats.map(c => `<button class="${c === cat ? 'on' : ''}" style="${catBtnStyle(c, c === cat)}" onclick="cat=this.dataset.c;q='';render()" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>`
       : '<div class="empty">Menu je prázdne. Pridajte položky v Nastaveniach.</div>',
     items: hasMenu ? '<div class="items" id="items" style="margin-bottom:16px"></div>' : '',
     account: prev,
@@ -2510,8 +2512,9 @@ function renderSettings() {
   const cats = allCategories();
   // každá kategória = rozbaľovací blok (predvolene zbalený): farba kategórie, položky, pridanie novej položky
   const menu = cats.map((c, ci) => { const cnt = S.menu.filter(m => m.category === c).length, cc = catColor(c), enc = grpArg(c);
-    return `<details ${openMenuCats.has(c) ? 'open' : ''} ontoggle="toggleMenuCatOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;${cc ? `border-left:6px solid ${cc}` : ''}">
+    return `<details class="mdrag" data-cat-key="${enc}" ${openMenuCats.has(c) ? 'open' : ''} ontoggle="toggleMenuCatOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;${cc ? `border-left:6px solid ${cc}` : ''}">
       <summary style="cursor:pointer;font-weight:700;display:flex;align-items:center;gap:6px">
+        <span class="dragHandle" title="Podrž a potiahni – zmení poradie kategórií" onclick="event.preventDefault()" onpointerdown="startMenuDrag(event,'cat','${enc}')">⠿</span>
         <span style="flex:1">${esc(c)} <span class="muted" style="font-weight:400">(${cnt} ${cnt === 1 ? 'položka' : (cnt >= 2 && cnt <= 4 ? 'položky' : 'položiek')})</span></span>
         <button class="btn ghost" style="width:auto;padding:4px 10px" title="Posunúť kategóriu vyššie" ${ci === 0 ? 'disabled' : ''} onclick="event.preventDefault();event.stopPropagation();moveCat('${enc}',-1)">▲</button>
         <button class="btn ghost" style="width:auto;padding:4px 10px" title="Posunúť kategóriu nižšie" ${ci === cats.length - 1 ? 'disabled' : ''} onclick="event.preventDefault();event.stopPropagation();moveCat('${enc}',1)">▼</button>
@@ -2525,8 +2528,9 @@ function renderSettings() {
         ${TABLE_COLORS.map(col => `<button title="${col ? '' : 'Bez farby'}" onclick="setCatColor('${enc}','${col}')"
           style="width:26px;height:26px;border-radius:50%;flex:none;padding:0;background:${col || 'var(--bg)'};border:2px solid ${cc === col ? 'var(--ink)' : 'var(--line)'}"></button>`).join('')}
       </div>` + (S.menu.filter(m => m.category === c).map((m, mi, arr) => `
-    <div class="set-row"${(m.name || '').trim() ? '' : ' style="outline:2px solid var(--warn);border-radius:10px"'}>
-      <input value="${esc(m.name)}" placeholder="(bez názvu - vidno len tu, doplň názov alebo zmaž ✕)" onchange="call('PUT','/api/menu/${m.id}',{name:this.value})">
+    <div class="set-row mdrag" data-menu-id="${m.id}"${(m.name || '').trim() ? '' : ' style="outline:2px solid var(--warn);border-radius:10px"'}>
+      <div style="display:flex;align-items:center;gap:4px;min-width:0"><span class="dragHandle" style="flex:none;padding:6px 4px" title="Podrž a potiahni – zmení poradie produktov" onpointerdown="startMenuDrag(event,'item','${m.id}')">⠿</span>
+      <input value="${esc(m.name)}" placeholder="(bez názvu - vidno len tu, doplň názov alebo zmaž ✕)" onchange="call('PUT','/api/menu/${m.id}',{name:this.value})"></div>
       <input type="number" step="0.01" min="0" inputmode="decimal" value="${m.price}" onchange="call('PUT','/api/menu/${m.id}',{price:this.value})">
       <select class="cat" onchange="call('PUT','/api/menu/${m.id}',{category:this.value})">${cats.map(c2 => `<option value="${esc(c2)}" ${c2 === m.category ? 'selected' : ''}>${esc(c2)}</option>`).join('')}</select>
       <div style="display:flex;gap:4px"><button class="btn ghost" style="width:auto;padding:4px 8px" title="${m.fav ? 'Obľúbené – klikni pre zrušenie' : 'Označiť ako obľúbené'}" onclick="call('PUT','/api/menu/${m.id}',{fav:${!m.fav}})">${m.fav ? '⭐' : '☆'}</button>
@@ -2686,6 +2690,13 @@ function renderSettings() {
   const TAB_HTML = { stoly: stolyTab, menu: menuTab, obrazovka: obrazovkaTab, atrakcie: atrakcieTab, zamestnanci: zamestnanciTab, zariadenie: zariadenieTab };
   $('#app').innerHTML = device + nav + TAB_HTML[settingsTab];
 }
+// tlačidlo kategórie pri objednávaní celé vo farbe kategórie: nevybraná = jemne podfarbená + farebný okraj,
+// vybraná = plná farba s bielym textom. Bez nastavenej farby ostáva pôvodný vzhľad.
+function catBtnStyle(c, on) {
+  const col = catColor(c); if (!col) return '';
+  return on ? `background:${col};border-color:${col};color:#fff;text-shadow:0 1px 2px #0005`
+            : `background:${col}2e;border-color:${col};border-width:2px`;
+}
 // farba kategórie menu (nastaví vedúci v Nastaveniach -> Menu); '' = bez farby
 const catColor = name => { const x = ((S.access && S.access.catColors) || []).find(x => x && x.n === name); return x ? x.c : ''; };
 async function setCatColor(enc, c) {
@@ -2733,6 +2744,52 @@ async function renameCat(enc, to) {
     toast(`Kategória premenovaná na ${to} ✓`);
   } catch (e) {}
   render();
+}
+// ---------- presúvanie ťahaním v Nastaveniach -> Menu (podrž ⠿ a potiahni) - kategórie aj produkty v kategórii ----------
+// Rovnaký princíp ako pri stoloch/atrakciách (Pointer Events - myš aj dotyk). Produkt sa dá pustiť len v jeho kategórii.
+let menuDrag = null;   // { kind: 'cat' | 'item', id, over }
+const menuDragSel = kind => kind === 'cat' ? '[data-cat-key]' : '[data-menu-id]';
+function startMenuDrag(e, kind, id) {
+  e.preventDefault(); e.stopPropagation();
+  menuDrag = { kind, id, over: null };
+  const row = e.currentTarget.closest(menuDragSel(kind)); if (row) row.classList.add('dragging');
+  document.addEventListener('pointermove', onMenuDragMove);
+  document.addEventListener('pointerup', endMenuDrag, { once: true });
+  document.addEventListener('pointercancel', endMenuDrag, { once: true });
+}
+function onMenuDragMove(e) {
+  if (!menuDrag) return;
+  const sel = menuDragSel(menuDrag.kind);
+  document.querySelectorAll(sel).forEach(r => r.classList.remove('drag-over'));
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  let row = el && el.closest(sel);
+  if (row && menuDrag.kind === 'item') {   // produkt len v rámci svojej kategórie
+    const a = S.menu.find(x => x.id === menuDrag.id), b = S.menu.find(x => x.id === row.dataset.menuId);
+    if (!a || !b || a.category !== b.category) row = null;
+  }
+  const key = row ? (menuDrag.kind === 'cat' ? row.dataset.catKey : row.dataset.menuId) : null;
+  if (row && key !== menuDrag.id) { row.classList.add('drag-over'); menuDrag.over = key; } else menuDrag.over = null;
+  if (e.clientY < 70) window.scrollBy(0, -14); else if (e.clientY > innerHeight - 70) window.scrollBy(0, 14);   // pri okraji posúvať stránku
+}
+async function endMenuDrag() {
+  document.removeEventListener('pointermove', onMenuDragMove);
+  document.querySelectorAll('.mdrag.dragging, .mdrag.drag-over').forEach(r => r.classList.remove('dragging', 'drag-over'));
+  const d = menuDrag; menuDrag = null;
+  if (!d || !d.over) { render(); return; }
+  try {
+    if (d.kind === 'cat') {
+      const list = allCategories(), from = list.indexOf(decodeURIComponent(d.id)), to = list.indexOf(decodeURIComponent(d.over));
+      if (from < 0 || to < 0) return;
+      const [moved] = list.splice(from, 1); list.splice(to, 0, moved);
+      await call('PUT', '/api/access', { catOrder: list });
+    } else {
+      const mi = S.menu.find(x => x.id === d.id); if (!mi) return;
+      const list = S.menu.filter(x => x.category === mi.category), from = list.findIndex(x => x.id === d.id), to = list.findIndex(x => x.id === d.over);
+      if (from < 0 || to < 0) return;
+      const [moved] = list.splice(from, 1); list.splice(to, 0, moved);
+      await call('POST', '/api/menu/_/reorder', { ids: list.map(x => x.id) });
+    }
+  } finally { render(); }
 }
 async function moveMenuItem(id, dir) {
   const mi = S.menu.find(x => x.id === id); if (!mi) return;
