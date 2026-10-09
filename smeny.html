@@ -655,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-09 · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-09b · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <div class="modal" id="shiftModal">
@@ -3127,7 +3127,8 @@
     const subs = feat('swaps') ? openSubs().length : 0;
     const flexN = feat('flexwant') ? openFlex().length : 0;
     // zmeškané úlohy: deň úlohy (pri opakovanej tento týždňový výskyt) už prešiel a nikto ju neodškrtol
-    const lateTodos = feat('todos') ? todoList().filter(t=>{ const d=todoTargetDay(t); return d && d<tk && !todoEffectiveDone(t); }) : [];
+    // úlohy, ktoré sa v svoj deň nespravili a automaticky sa presunuli ďalej (jednorazové s pôvodným dňom v minulosti)
+    const lateTodos = feat('todos') ? todoList().filter(t=>!!todoRolledDay(t)) : [];
     return { toClose, shortDays, swapsN, warnN, cfPending, cfAny, defects, taken, subs, flexN, lateTodos, noticesActive:noticesActive.length, noticesUnread };
   }
   const scrollToId=id=>{ const el=$(id); try{ if(el && el.scrollIntoView) el.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){} };
@@ -3181,7 +3182,7 @@
       + (c.noticesActive ? chip('notices', c.noticesUnread, `📣 Oznamy, ktoré niekto nečítal: ${c.noticesUnread}`, '✓ Všetky oznamy sú prečítané') : '')
       + (feat('checklists') && c.defects ? chip('defects', c.defects, `🛠 Nevyriešené závady: ${c.defects}`, '') : '')
       + (feat('checklists') && c.taken ? chip('taken', c.taken, `🧾 Nevysporiadané "vzal/a som si": ${c.taken}`, '') : '')
-      + (feat('todos') ? chip('latetodo', c.lateTodos.length, `☑ Zmeškané úlohy: ${c.lateTodos.length}`, '✓ Žiadne zmeškané úlohy') : '');
+      + (feat('todos') ? chip('latetodo', c.lateTodos.length, `↪ Nespravené, presunuté úlohy: ${c.lateTodos.length}`, '✓ Žiadne presunuté úlohy') : '');
     document.querySelectorAll('#todayCards [data-today]').forEach(x=>x.onclick=()=>openShift(x.dataset.today));
     document.querySelectorAll('#todayChips [data-tc]').forEach(x=>x.onclick=()=>dashAction(x.dataset.tc));
   }
@@ -4106,7 +4107,17 @@
   // deň, ku ktorému sa úloha viaže: jednorazová = jej deň, opakujúca sa = tohtotýždňový výskyt (napr. tento pondelok)
   function todoTargetDay(t){
     if(t.recur!==undefined && t.recur!==null) return iso(new Date(recurPeriodStart(t.recur)));
-    return t.day||'';
+    return todoRolledDay(t) || t.day || '';
+  }
+  // Automatický presun: jednorazová úloha, ktorá sa v svoj deň nespravila, sa sama presunie na najbližší deň
+  // (dnes alebo neskôr), kedy je niekto na smene - uvidia ju a odškrtnú tí, čo sú vtedy na smene. Počíta sa
+  // živo (nič sa neprepisuje v databáze), pôvodný deň ostáva v t.day (zobrazí sa ako "↪ presunuté z …").
+  function todoRolledDay(t){
+    if(!t.day || (t.recur!==undefined && t.recur!==null) || t.done) return '';
+    const tk=todayKey(); if(t.day>=tk) return '';
+    const d=new Date();
+    for(let i=0;i<45;i++){ const k=iso(d); const o=dayObj(k); if(!o.off && (o.employees||[]).length) return k; d.setDate(d.getDate()+1); }
+    return tk;   // nikto nie je na smene ani v najbližších dňoch - aspoň dnešok
   }
   // komu sa úloha zobrazí a kto ju môže odškrtnúť (to isté): vedúci všetko; zamestnanec len to, čo sa ho týka.
   // Počíta sa živo zo smien - keď vedúci niekoho vyradí zo smeny, úloha mu hneď zmizne.
@@ -4272,10 +4283,10 @@
       const dEff=todoEffectiveDone(t);
       let dayHtml='';
       if(todoHasDay(t)){
-        const tk=todayKey(), ppl=todoDayPeople(t.day);
-        const when = t.day===tk ? 'dnes' : fmtDay(t.day);
-        const late = !dEff && t.day<tk ? ' <span style="color:#ff9c9c;">(zmeškané)</span>' : '';
-        dayHtml=` <span class="ckby">📅 ${esc(when)}${ppl.length?` · na smene: ${esc(ppl.join(', '))}`:''}</span>${late}`;
+        const tk=todayKey(), eff=todoTargetDay(t), ppl=todoDayPeople(eff);
+        const when = eff===tk ? 'dnes' : fmtDay(eff);
+        const moved = eff!==t.day ? ` <span style="color:#ffb347;">↪ presunuté z ${esc(fmtDay(t.day))}</span>` : '';
+        dayHtml=` <span class="ckby">📅 ${esc(when)}${ppl.length?` · na smene: ${esc(ppl.join(', '))}`:''}</span>${moved}`;
       }
       return `<label class="switch-row" style="margin-bottom:6px;">
         <input type="checkbox" data-todo="${esc(t.id)}" ${dEff?'checked':''} ${canToggle?'':'disabled'}>
@@ -4715,9 +4726,9 @@
   function message(id,text){ $(id).textContent=text; $(id).classList.add('show'); }
 
   function renderTopRight(){
-    let html=`<a class="outline" id="ordersLink" href="objednavky.html" style="text-decoration:none;display:inline-flex;align-items:center">🍹 Objednávky</a>`;
+    // Objednávky a Chýba/Kúpiť sú na úvodnej stránke (index.html) - tu len cesta späť na úvod
+    let html=`<a class="outline" id="homeLink" href="./" style="text-decoration:none;display:inline-flex;align-items:center">🏠 Úvod</a>`;
     if(myName || manager){
-      if(feat('board')) html+=`<button class="outline" id="boardBtn">📦 Chýba/Kúpiť${boardMissingCount()?` <span class="badge-manager" style="margin-left:4px;">${boardMissingCount()}</span>`:''}</button>`;
       if(feat('checklists') && myName && !manager) html+=`<button class="outline" id="myTakenBtn">🧾 Moje „vzal/a som si“</button>`;
       if(feat('checklists') && manager){ const tn=takenList().filter(e=>!e.r).length; html+=`<button class="outline" id="takenBtn">🧾 Vzal/a som si${tn?` <span class="badge-manager" style="margin-left:4px;">${tn}</span>`:''}</button>`; }
       if(feat('todos') || feat('checklists')){ const tc=feat('todos') ? todoOpenCount() : 0; html+=`<button class="outline" id="todoBtn">✅ Úlohy a navyše${tc?` <span class="badge-manager" style="margin-left:4px;">${tc}</span>`:''}</button>`; }
