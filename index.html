@@ -14,105 +14,293 @@
   <meta name="apple-mobile-web-app-title" content="ChillPoint">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
   <style>
-    :root{--yellow:#f5bb16;--black:#0a0c0f;--panel:#17191d;--line:#34373c;--muted:#a7a9ad;--white:#fff;--red:#ff6c6c;--green:#5fd67a}
+    :root{--yellow:#f5bb16;--black:#0a0c0f;--panel:#17191d;--line:#34373c;--muted:#a7a9ad;--white:#fff;--red:#ff6c6c;--green:#5fd67a;--blue:#6fb3ff}
     *{box-sizing:border-box}
     html,body{margin:0;background:var(--black);color:var(--white);font-family:Arial,Helvetica,sans-serif;overflow-x:clip}
-    .wrap{width:min(560px,100% - 28px);margin:0 auto;padding:22px 0 40px}
-    .brand{display:flex;align-items:center;gap:12px;margin-bottom:26px}
-    .logo{width:52px;height:52px;border:3px solid var(--yellow);border-radius:50%;display:grid;place-items:center;font-weight:900;color:var(--yellow);font-size:15px}
-    .brand b{display:block;font-size:20px;letter-spacing:.06em;line-height:1}
+    .wrap{width:min(560px,100% - 28px);margin:0 auto;padding:20px 0 40px}
+    .top{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+    .logo{width:48px;height:48px;border:3px solid var(--yellow);border-radius:50%;display:grid;place-items:center;font-weight:900;color:var(--yellow);font-size:14px;flex:none}
+    .brand{flex:1;min-width:0}
+    .brand b{display:block;font-size:19px;letter-spacing:.06em;line-height:1}
     .brand small{display:block;color:var(--muted);font-size:11px;letter-spacing:.12em;margin-top:4px;text-transform:uppercase}
-    h1{font-size:30px;margin:0 0 18px;text-transform:uppercase;letter-spacing:.02em}
-    .tiles{display:grid;gap:12px}
-    .tile{display:flex;align-items:center;gap:16px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);color:var(--white);
-      padding:20px 18px;text-decoration:none;font:inherit;cursor:pointer;border-radius:0;-webkit-tap-highlight-color:transparent}
+    .who{font-size:13px;text-align:right;color:var(--muted)}
+    .who b{color:var(--white);display:block;font-size:14px}
+    .who button{background:none;border:0;color:var(--yellow);font:inherit;font-size:12px;cursor:pointer;padding:2px 0;text-decoration:underline}
+    h1{font-size:28px;margin:0 0 16px;text-transform:uppercase}
+    h2{font-size:12px;letter-spacing:.12em;color:var(--muted);margin:22px 0 8px;text-transform:uppercase}
+    .card{background:var(--panel);border:1px solid var(--line);padding:16px;margin-bottom:12px}
+    .card.today{border-color:var(--yellow);background:#1d1a0f}
+    .card.hand{border-color:#2f5b8a;background:#0f1824}
+    .card h3{margin:0 0 10px;font-size:16px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+    .today h3{color:var(--yellow)}.hand h3{color:var(--blue)}
+    .people{font-size:14px;line-height:1.5;margin-bottom:10px}
+    .stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+    .stat{background:#0d0f11;border:1px solid var(--line);padding:8px 10px;text-decoration:none;color:var(--white);display:block;cursor:pointer;font:inherit;text-align:left}
+    .stat small{display:block;color:var(--muted);font-size:11px}
+    .stat b{font-size:20px}
+    .note{font-size:13px;color:#d9dbde;margin-top:10px;line-height:1.45}
+    .hitem{border-top:1px solid #23344a;padding:10px 0}
+    .hitem:first-of-type{border-top:0;padding-top:0}
+    .hitem p{margin:0 0 6px;font-size:14px;line-height:1.45;white-space:pre-wrap}
+    .meta{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+    .btn{background:var(--yellow);color:#111;border:0;font:inherit;font-weight:800;padding:12px 16px;cursor:pointer;text-transform:uppercase;letter-spacing:.03em}
+    .btn.sm{padding:6px 10px;font-size:12px}
+    .btn.ghost{background:transparent;color:var(--white);border:1px solid var(--line)}
+    .btn:disabled{opacity:.5}
+    input,select,textarea{width:100%;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:11px;font:inherit;font-size:16px;margin-bottom:10px}
+    textarea{min-height:80px;resize:vertical}
+    .err{color:var(--red);font-size:13px;min-height:18px;margin-bottom:6px}
+    .link{background:none;border:0;color:var(--muted);text-decoration:underline;font:inherit;font-size:13px;cursor:pointer;padding:6px 0}
+    .tiles{display:grid;gap:10px}
+    .tile{display:flex;align-items:center;gap:16px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-left:6px solid var(--yellow);color:var(--white);
+      padding:18px 16px;text-decoration:none;font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
     .tile:hover,.tile:focus-visible{border-color:var(--yellow);outline:none}
-    .tile:active{transform:scale(.99)}
-    .tile .ic{font-size:34px;flex:0 0 46px;text-align:center}
+    .tile .ic{font-size:30px;flex:0 0 42px;text-align:center}
     .tile .tx{flex:1;min-width:0}
-    .tile .tx b{display:block;font-size:21px;text-transform:uppercase;letter-spacing:.03em}
-    .tile .tx span{display:block;color:var(--muted);font-size:13px;margin-top:4px;line-height:1.35}
-    .tile .arr{color:var(--yellow);font-size:24px;font-weight:900}
-    .tile.main{border-left:6px solid var(--yellow)}
-    .tile .tx .badge{display:inline-block;background:var(--yellow);color:#111;font-weight:900;font-size:14px;padding:2px 8px;margin:0 0 0 8px;vertical-align:middle;letter-spacing:0}
+    .tile .tx b{display:block;font-size:19px;text-transform:uppercase;letter-spacing:.03em}
+    .tile .tx span{display:block;color:var(--muted);font-size:13px;margin-top:3px;line-height:1.35}
+    .tile .tx .badge{display:inline-block;background:var(--yellow);color:#111;font-weight:900;font-size:13px;padding:2px 8px;margin:0 0 0 8px;vertical-align:middle;letter-spacing:0}
+    .tile .arr{color:var(--yellow);font-size:22px;font-weight:900}
+    .tile.dashed{border-left-style:dashed;border-left-color:var(--blue)}
     .shop{background:#111316;border:1px solid var(--line);border-top:0;padding:4px 16px 16px;display:none}
     .shop.open{display:block}
     .shop h5{margin:14px 0 6px;font-size:11px;letter-spacing:.1em;color:var(--muted)}
-    .shop .it{padding:8px 0;border-bottom:1px solid #26292d;font-size:15px;display:flex;gap:8px}
+    .shop .it{padding:8px 0;border-bottom:1px solid #26292d;font-size:15px}
     .shop .it small{color:var(--muted)}
-    .shop .empty{color:var(--muted);font-size:13px;padding:6px 0}
-    .shop a.go{display:block;margin-top:14px;text-align:center;background:var(--yellow);color:#111;font-weight:800;text-decoration:none;padding:12px;text-transform:uppercase;letter-spacing:.03em}
+    .empty{color:var(--muted);font-size:13px;padding:6px 0}
+    .shop a.go{display:block;margin-top:14px;text-align:center;background:var(--yellow);color:#111;font-weight:800;text-decoration:none;padding:12px;text-transform:uppercase}
+    table.acc{width:100%;border-collapse:collapse;font-size:13px}
+    table.acc th{color:var(--muted);font-weight:400;font-size:11px;text-align:center;padding:4px 2px}
+    table.acc th:first-child,table.acc td:first-child{text-align:left}
+    table.acc td{border-top:1px solid #26292d;padding:8px 2px;text-align:center}
+    table.acc input{width:20px;height:20px;margin:0;accent-color:var(--yellow)}
     footer{color:var(--muted);font-size:11px;opacity:.6;text-align:center;margin-top:28px}
+    .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--yellow);color:#111;font-weight:700;padding:10px 16px;z-index:9;max-width:90vw}
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="brand"><div class="logo">CP</div><div><b>CHILL POINT</b><small>Laser aréna Trnava</small></div></div>
-    <h1>Kam ideš?</h1>
-    <div class="tiles">
-      <a class="tile main" href="smeny.html">
-        <span class="ic">📅</span>
-        <span class="tx"><b>Smeny</b><span>Rozpis zmien, úlohy a navyše, vzal/a som si, potvrdenie účasti</span></span>
-        <span class="arr">›</span>
-      </a>
-      <a class="tile main" href="objednavky.html">
-        <span class="ic">🍹</span>
-        <span class="tx"><b>Objednávky</b><span>Stoly, bar, atrakcie, platby a uzávierka</span></span>
-        <span class="arr">›</span>
-      </a>
-      <div>
-        <button class="tile main" id="shopTile" aria-expanded="false">
-          <span class="ic">📦</span>
-          <span class="tx"><b>Čo treba kúpiť <span class="badge" id="shopCount" hidden></span></b><span id="shopSub">Chýba / kúpiť – ťukni a pozri zoznam</span></span>
-          <span class="arr" id="shopArr">▾</span>
-        </button>
-        <div class="shop" id="shop"><div class="empty">Načítavam…</div></div>
-      </div>
-    </div>
-    <!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-    <footer>🏠 Úvod (index.html) · verzia 2026-10-09</footer>
-  </div>
+  <div class="wrap" id="app"><p class="empty">Načítavam…</p></div>
   <script>
-    // Úvodná stránka: rozcestník Smeny / Objednávky / Čo treba kúpiť. Nákupný zoznam sa číta naživo z tej istej
-    // Firebase ako obe appky (board/) - len na čítanie; pridáva a odškrtáva sa v Smenách (smeny.html#kupit).
-    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const shop = document.getElementById('shop'), tile = document.getElementById('shopTile');
-    let board = null, loadErr = false;
-    tile.onclick = () => {
-      const open = !shop.classList.contains('open');
-      shop.classList.toggle('open', open); tile.setAttribute('aria-expanded', open);
-      document.getElementById('shopArr').textContent = open ? '▴' : '▾';
-    };
-    function renderShop() {
-      const goBtn = '<a class="go" href="smeny.html#kupit">➕ Pridať / odškrtnúť v Smenách</a>';
-      if (loadErr) { shop.innerHTML = '<div class="empty">Zoznam sa nepodarilo načítať. Otvor ho v Smenách.</div>' + goBtn; return; }
-      if (!board) return;
-      const list = Object.values(board).filter(b => b && typeof b.text === 'string' && !b.done).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
-      const missing = list.filter(b => b.type !== 'buy'), buy = list.filter(b => b.type === 'buy');
-      const row = b => `<div class="it">${b.type === 'buy' ? '🛒' : '🧺'} <span><b>${esc(b.text)}</b>${b.qty ? ' · ' + esc(b.qty) : ''} <small>${esc(b.author || '')}</small></span></div>`;
-      const cnt = document.getElementById('shopCount');
-      cnt.hidden = !list.length; cnt.textContent = list.length;
-      document.getElementById('shopSub').textContent = list.length ? `Chýba: ${missing.length} · Kúpiť: ${buy.length} – ťukni a pozri zoznam` : 'Nič nechýba 👍';
-      shop.innerHTML = `<h5>🧺 CHÝBA</h5>${missing.length ? missing.map(row).join('') : '<div class="empty">Nič nechýba.</div>'}
-        <h5>🛒 KÚPIŤ</h5>${buy.length ? buy.map(row).join('') : '<div class="empty">Zatiaľ nič na kúpenie.</div>'}${goBtn}`;
+  // ===== ÚVODNÁ STRÁNKA ChillPoint =====
+  // Rozcestník + nástenka "Dnes" + odovzdávka smeny + jedno prihlásenie pre Smeny aj Objednávky
+  // (nastaví cp_myname pre Smeny a waiter pre Objednávky) + vedúci nastavuje prístupy zamestnancov.
+  const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
+  // zdieľané zariadenie (rovnaké ako v Objednávkach) - aby sa dali čítať rezervácie a odovzdávky
+  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk', DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
+  // časti, ku ktorým vedúci nastavuje prístup (settings/hubAccess/e/<meno>/<kľúč> = false -> nemá prístup)
+  const AREAS = [['smeny', '📅 Smeny'], ['objednavky', '🍹 Objednávky'], ['kupit', '📦 Kúpiť'], ['odovzdavka', '📝 Odovzdávka']];
+  const DAY_NAMES = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const enc = n => encodeURIComponent(n).replace(/\./g, '%2E');
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const hhmm = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  // pracovný deň od 6:00 do 6:00 - o 1:00 v noci je to ešte "dnešný" večer (rovnako ako Uzávierka)
+  const bizDate = () => new Date(Date.now() - 6 * 3600e3);
+  const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} }, del: k => { try { localStorage.removeItem(k); } catch (e) {} } };
+  function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+
+  let me = ls.get('cp_myname') || '';
+  let user = null, isMgr = false, authReady = false;
+  let emps = [], day = {}, todos = {}, board = {}, notices = {}, queue = {}, handover = {}, access = {};
+  let ui = { mgrForm: false, err: '', shopOpen: false, accOpen: false, handDraft: '' };
+
+  const allowed = key => isMgr || !me || ((access.e || {})[enc(me)] || {})[key] !== false;
+
+  // ---- prihlásenie zamestnanca (rovnaký kód ako v Smenách aj Objednávkach) ----
+  let fails = 0;
+  const blurNow = () => { try { document.activeElement && document.activeElement.blur(); } catch (e) {} };
+  function empLogin() {
+    ui.lName = $('lName').value; blurNow();   // inak by render() (guard na fokus) neukázal chybu
+    const lock = Number(ls.get('cp_lockuntil') || 0);
+    if (Date.now() < lock) { ui.err = `Príliš veľa pokusov. Skús to o ${Math.ceil((lock - Date.now()) / 1000)} s.`; return render(); }
+    const name = $('lName').value, code = $('lCode').value.trim();
+    const e = emps.find(x => x.name === name);
+    if (!e) { ui.err = 'Vyber svoje meno.'; return render(); }
+    if (String(e.code) !== code) {
+      if (++fails >= 5) { fails = 0; ls.set('cp_lockuntil', String(Date.now() + 60000)); ui.err = 'Príliš veľa pokusov. Skús to o minútu.'; }
+      else ui.err = 'Nesprávny kód.';
+      return render();
     }
+    if (((access.e || {})[enc(name)] || {}).smeny === false && ((access.e || {})[enc(name)] || {}).objednavky === false) { ui.err = 'Nemáš prístup. Ozvi sa vedúcemu.'; return render(); }
+    fails = 0; ui.err = ''; me = name;
+    ls.set('cp_myname', name); ls.set('waiter', JSON.stringify(name));   // Smeny + Objednávky naraz
+    toast(`Vitaj, ${name.split(' ')[0]}!`); render();
+  }
+  async function mgrLogin() {
+    const pw = $('mPass').value; blurNow();
+    if (!pw) { ui.err = 'Zadaj heslo.'; return render(); }
     try {
-      firebase.initializeApp({
-        apiKey: "AIzaSyB-2HeoePKrcsdawvI1LCOTQ6vWjibItpU",
-        authDomain: "chillpoint-smeny-350c4.firebaseapp.com",
-        databaseURL: "https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app",
-        projectId: "chillpoint-smeny-350c4",
-        storageBucket: "chillpoint-smeny-350c4.firebasestorage.app",
-        messagingSenderId: "251580957782",
-        appId: "1:251580957782:web:801f838e4cd65abb4027f7"
-      });
-      firebase.database().ref('board').on('value', s => { board = s.val() || {}; renderShop(); }, () => { loadErr = true; renderShop(); });
-    } catch (e) { loadErr = true; renderShop(); }
-    if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
-      window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+      await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION);
+      await firebase.auth().signInWithEmailAndPassword(MANAGER_EMAIL, pw);
+      ui.err = ''; ui.mgrForm = false; toast('Prihlásený ako vedúci ⚡');
+    } catch (e) { ui.err = 'Nesprávne heslo.'; render(); }
+  }
+  async function logout() {
+    if (isMgr) { try { await firebase.auth().signOut(); } catch (e) {} }   // zariadenie sa potom prihlási znova samo
+    me = ''; ls.del('cp_myname'); ls.set('waiter', JSON.stringify(''));
+    ui = { mgrForm: false, err: '', shopOpen: false, accOpen: false, handDraft: '' };
+    render();
+  }
+
+  // ---- nástenka "Dnes" ----
+  function todayTodos(key) {
+    const wd = new Date(key + 'T12:00:00').getDay(), dayStart = new Date(key + 'T00:00:00').getTime();
+    let total = 0, done = 0;
+    Object.values(todos || {}).forEach(t => {
+      if (!t || typeof t.text !== 'string') return;
+      if (t.recur !== undefined && t.recur !== null) {
+        if (Number(t.recur) !== wd) return;
+        total++; if (t.doneAt && t.doneAt >= dayStart) done++;
+      } else if (t.day) {
+        // dnešné + nesplnené z minulých dní (tie sa samy presúvajú ďalej)
+        if (t.day === key || (!t.done && t.day < key)) { total++; if (t.done) done++; }
+      }
+    });
+    return { total, done };
+  }
+  function todayReservations(key) {
+    const from = new Date(key + 'T00:00:00').getTime(), to = from + 30 * 3600e3;   // do 6:00 ďalšieho dňa
+    const q = Object.values(queue || {}).filter(r => r && (!r.reserveAt || (r.reserveAt >= from && r.reserveAt < to))).length;
+    return q + ((day && day.reservations) ? Object.keys(day.reservations).length : 0);
+  }
+  function latestNotice(key) {
+    return Object.values(notices || {}).filter(n => n && n.text && (!n.expires || n.expires >= key)).sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
+  }
+  const boardOpen = () => Object.values(board || {}).filter(b => b && typeof b.text === 'string' && !b.done);
+
+  // ---- odovzdávka smeny (meta/handover) ----
+  async function sendHandover() {
+    const text = ($('hText').value || '').trim().slice(0, 600); blurNow();
+    if (!text) { toast('Napíš, čo má vedieť ďalšia smena.'); return; }
+    try { await firebase.database().ref('meta/handover').push({ text, author: isMgr && !me ? 'Vedúci' : me, t: Date.now() }); ui.handDraft = ''; toast('Odovzdávka uložená ✓'); render(); }
+    catch (e) { toast('Nepodarilo sa uložiť.'); }
+  }
+  async function markRead(id) {
+    if (!me) return;
+    try { await firebase.database().ref(`meta/handover/${id}/r/${enc(me)}`).set(Date.now()); } catch (e) { toast('Nepodarilo sa uložiť.'); }
+  }
+  async function delHandover(id) { if (isMgr && confirm('Zmazať túto odovzdávku?')) { try { await firebase.database().ref('meta/handover/' + id).remove(); } catch (e) {} } }
+
+  // ---- nastavenie prístupov (len vedúci) ----
+  async function setAccess(name, key, on) {
+    if (!isMgr) return;
+    try { await firebase.database().ref(`settings/hubAccess/e/${enc(name)}/${key}`).set(on ? null : false); }
+    catch (e) { toast('Nepodarilo sa uložiť (len vedúci).'); }
+  }
+
+  // ---- vykreslenie ----
+  function render() {
+    // nerušiť písanie odovzdávky / prihlasovacích údajov pri živej zmene dát
+    const ae = document.activeElement && document.activeElement.id;
+    if (ae === 'hText' || ae === 'lCode' || ae === 'mPass') return;
+    const app = $('app');
+    const logged = !!me || isMgr;
+    const head = `<div class="top"><div class="logo">CP</div><div class="brand"><b>CHILL POINT</b><small>Laser aréna Trnava</small></div>
+      ${logged ? `<div class="who"><b>${isMgr ? '⚡ Vedúci' : '👤 ' + esc(me)}</b><button onclick="logout()">odhlásiť</button></div>` : ''}</div>`;
+    if (!logged) {
+      app.innerHTML = head + `<h1>Prihlás sa</h1><div class="card">
+        ${ui.mgrForm ? `<input type="password" id="mPass" placeholder="Heslo vedúceho" autocomplete="current-password" onkeydown="if(event.key==='Enter')mgrLogin()">
+          <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="mgrLogin()">Prihlásiť vedúceho</button>
+          <button class="link" onclick="ui.mgrForm=false;ui.err='';render()">‹ späť na zamestnanca</button>`
+        : `<select id="lName"><option value="">— vyber svoje meno —</option>${emps.map(e => `<option value="${esc(e.name)}" ${ui.lName === e.name ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
+          <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
+          <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
+          <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
+        </div><footer>🏠 Úvod (index.html) · verzia 2026-10-09b</footer>`;
+      return;
     }
+    const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
+    const td = todayTodos(key), resN = todayReservations(key), miss = boardOpen(), notice = latestNotice(key);
+    // odovzdávky za posledné 3 dni, najnovšie hore
+    const hands = Object.entries(handover || {}).map(([id, h]) => ({ id, ...h })).filter(h => h && h.text && h.t > Date.now() - 3 * 864e5).sort((a, b) => b.t - a.t).slice(0, 5);
+    const cntStr = `${miss.length}`;
+    let html = head;
+    html += `<div class="card today"><h3><span>📅 Dnes · ${DAY_NAMES[bd.getDay()]} ${bd.getDate()}. ${bd.getMonth() + 1}.</span>${day && day.off ? '<span style="color:var(--muted);font-size:12px">bez prevádzky</span>' : ''}</h3>
+      <div class="people">👥 ${ppl.length ? ppl.map(esc).join(', ') : '<span style="color:var(--muted)">nikto nie je prihlásený</span>'}</div>
+      <div class="stats">
+        <a class="stat" href="smeny.html#ulohy"><small>Úlohy</small><b>${td.done} / ${td.total}</b></a>
+        <a class="stat" href="objednavky.html#rezervacie"><small>Rezervácie</small><b>${resN}</b></a>
+        <button class="stat" onclick="ui.shopOpen=!ui.shopOpen;render();document.getElementById('shopTile').scrollIntoView({behavior:'smooth'})"><small>Chýba / kúpiť</small><b>${miss.length}</b></button>
+      </div>
+      ${day && day.note ? `<div class="note">📝 ${esc(day.note)}</div>` : ''}
+      ${notice ? `<div class="note">📣 ${esc(notice.text.length > 160 ? notice.text.slice(0, 160) + '…' : notice.text)}</div>` : ''}
+    </div>`;
+    if (allowed('odovzdavka')) {
+      html += `<div class="card hand"><h3><span>📝 Odovzdávka smeny</span></h3>
+        ${hands.length ? hands.map(h => { const reads = Object.keys(h.r || {}).map(k => { try { return decodeURIComponent(k); } catch (e) { return k; } });
+          const mine = me && reads.includes(me);
+          return `<div class="hitem"><p>${esc(h.text)}</p><div class="meta"><span>${esc(h.author || '')} · ${new Date(h.t).getDate()}. ${new Date(h.t).getMonth() + 1}. ${hhmm(h.t)}${isMgr ? ` · prečítali: ${reads.length ? esc(reads.join(', ')) : 'zatiaľ nikto'}` : ''}</span>
+            <span>${me && h.author !== me ? (mine ? '<span style="color:var(--green)">✓ prečítané</span>' : `<button class="btn sm" onclick="markRead('${h.id}')">✓ Prečítané</button>`) : ''}${isMgr ? ` <button class="btn sm ghost" onclick="delHandover('${h.id}')">🗑</button>` : ''}</span></div></div>`; }).join('')
+          : '<div class="empty">Zatiaľ žiadna odovzdávka za posledné 3 dni.</div>'}
+        <div style="margin-top:12px"><textarea id="hText" maxlength="600" placeholder="Čo má vedieť ďalšia smena? (napr. došiel ľad, zbraň č. 4 nefunguje…)" oninput="ui.handDraft=this.value">${esc(ui.handDraft)}</textarea>
+          <button class="btn sm" onclick="sendHandover()">Uložiť odovzdávku</button></div>
+      </div>`;
+    }
+    html += `<h2>Kam ideš?</h2><div class="tiles">`;
+    if (allowed('smeny')) html += `<a class="tile" href="smeny.html"><span class="ic">📅</span><span class="tx"><b>Smeny</b><span>Rozpis zmien, úlohy a navyše, vzal/a som si</span></span><span class="arr">›</span></a>`;
+    if (allowed('objednavky')) html += `<a class="tile" href="objednavky.html"><span class="ic">🍹</span><span class="tx"><b>Objednávky</b><span>Stoly, bar, atrakcie, platby a uzávierka</span></span><span class="arr">›</span></a>`;
+    if (allowed('kupit')) {
+      const row = b => `<div class="it">${b.type === 'buy' ? '🛒' : '🧺'} <b>${esc(b.text)}</b>${b.qty ? ' · ' + esc(b.qty) : ''} <small>${esc(b.author || '')}</small></div>`;
+      const m = miss.filter(b => b.type !== 'buy'), y = miss.filter(b => b.type === 'buy');
+      html += `<div><button class="tile" id="shopTile" onclick="ui.shopOpen=!ui.shopOpen;render()"><span class="ic">📦</span><span class="tx"><b>Čo treba kúpiť${miss.length ? `<span class="badge">${cntStr}</span>` : ''}</b><span>${miss.length ? `Chýba: ${m.length} · Kúpiť: ${y.length}` : 'Nič nechýba 👍'}</span></span><span class="arr">${ui.shopOpen ? '▴' : '▾'}</span></button>
+        <div class="shop ${ui.shopOpen ? 'open' : ''}"><h5>🧺 CHÝBA</h5>${m.length ? m.map(row).join('') : '<div class="empty">Nič nechýba.</div>'}
+          <h5>🛒 KÚPIŤ</h5>${y.length ? y.map(row).join('') : '<div class="empty">Zatiaľ nič na kúpenie.</div>'}<a class="go" href="smeny.html#kupit">➕ Pridať / odškrtnúť v Smenách</a></div></div>`;
+    }
+    html += `</div>`;
+    if (isMgr) {
+      html += `<h2>Nastavenia</h2><div class="card"><button class="tile" style="border-left-color:var(--muted);padding:12px 14px" onclick="ui.accOpen=!ui.accOpen;render()"><span class="ic" style="font-size:22px">⚙</span><span class="tx"><b style="font-size:15px">Prístupy zamestnancov</b><span>Kto čo vidí na úvode a kam sa dostane</span></span><span class="arr">${ui.accOpen ? '▴' : '▾'}</span></button>
+        ${ui.accOpen ? `<p class="empty" style="margin:10px 0">Odškrtni, kam zamestnanec nemá mať prístup. Platí pre úvodnú stránku aj pre prihlásenie do Smien a Objednávok. Vedúci vidí vždy všetko.</p>
+          <table class="acc"><tr><th>Zamestnanec</th>${AREAS.map(a => `<th>${a[1]}</th>`).join('')}</tr>
+          ${emps.map(e => { const a = (access.e || {})[enc(e.name)] || {}; return `<tr><td>${esc(e.name)}</td>${AREAS.map(([k]) => `<td><input type="checkbox" ${a[k] === false ? '' : 'checked'} onchange="setAccess('${esc(e.name).replace(/'/g, "\\'")}','${k}',this.checked)"></td>`).join('')}</tr>`; }).join('')}</table>` : ''}
+      </div>`;
+    }
+    html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-09b</footer>`;
+    app.innerHTML = html;
+  }
+
+  // ---- Firebase ----
+  try {
+    firebase.initializeApp({
+      apiKey: "AIzaSyB-2HeoePKrcsdawvI1LCOTQ6vWjibItpU",
+      authDomain: "chillpoint-smeny-350c4.firebaseapp.com",
+      databaseURL: "https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "chillpoint-smeny-350c4",
+      storageBucket: "chillpoint-smeny-350c4.firebasestorage.app",
+      messagingSenderId: "251580957782",
+      appId: "1:251580957782:web:801f838e4cd65abb4027f7"
+    });
+    const db = firebase.database();
+    const on = (path, set) => db.ref(path).on('value', s => { set(s.val()); render(); }, () => { set(null); render(); });
+    // verejne čitateľné (aj bez prihlásenia)
+    on('employees/list', v => { emps = (Array.isArray(v) ? v : Object.values(v || {})).filter(e => e && e.name).sort((a, b) => a.name.localeCompare(b.name, 'sk')); });
+    on('todos', v => { todos = v || {}; });
+    on('board', v => { board = v || {}; });
+    on('notices', v => { notices = v || {}; });
+    on('settings/hubAccess', v => { access = v || {}; });
+    // deň sa mení o 6:00 - pri zmene sa prepojí na nový deň
+    let dayKey = '';
+    const watchDay = () => { const k = iso(bizDate()); if (k === dayKey) return; if (dayKey) db.ref('schedule/days/' + dayKey).off(); dayKey = k; on('schedule/days/' + k, v => { day = v || {}; }); };
+    watchDay(); setInterval(() => { watchDay(); render(); }, 60000);
+    // rezervácie a odovzdávky potrebujú prihlásenie - ak nikto nie je prihlásený, prihlási sa zariadenie (ako v Objednávkach)
+    let authOn = false;
+    firebase.auth().onAuthStateChanged(async u => {
+      user = u; isMgr = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL;
+      if (!u) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); } catch (e) {} return; }
+      if (!authOn) { authOn = true; on('queue', v => { queue = v || {}; }); on('meta/handover', v => { handover = v || {}; }); }
+      render();
+    });
+  } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
+  render();
+  window.addEventListener('focusout', () => setTimeout(render, 50));   // dokresliť odložené zmeny po dopísaní
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  }
   </script>
 </body>
 </html>

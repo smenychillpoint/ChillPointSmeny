@@ -655,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-09b · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-09c · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <div class="modal" id="shiftModal">
@@ -1215,6 +1215,8 @@
   let statsSort={key:'wkndDays',dir:-1};
   let periods=[], periodsRef=null;
   let featCfg={}, featRef=null;
+  let hubAccess={};   // settings/hubAccess/e/<meno>/<smeny|objednavky|kupit|odovzdavka> = false -> zamestnanec nemá prístup
+  const hubAllowed=(name,key)=>{ const k=encodeURIComponent(name).replace(/\./g,'%2E'); return ((hubAccess.e||{})[k]||{})[key]!==false; };
   let checkCfg={open:[],close:[]}, checkRef=null, ckDraft='', ckDirty=false, myTakenDraft='';
   // "vzal/a som si" - výber položiek z cenníka kliknutím (my = zamestnanec sám sebe, mgr = vedúci zapisuje za niekoho)
   let takenCarts={ my:{}, mgr:{} }, takenCat={ my:'', mgr:'' }, takenDay={ my:'', mgr:'' }, mgrTakenEmp='', mgrTakenNote='', takenSaving=false;
@@ -1464,7 +1466,15 @@
       if(!boardHashDone){ boardHashDone=true; if(location.hash==='#kupit'){ try{ history.replaceState(null,'',location.pathname); }catch(e){} openBoard(); } }
     }, err=>{ board={}; });
     menuRef.on('value', snap=>{ menu=snap.val()||{}; renderAll(); }, err=>{ menu={}; });
-    todosRef.on('value', snap=>{ todos=snap.val()||{}; renderAll(); }, err=>{ todos={}; });
+    let todoHashDone=false;   // úvodná stránka: "smeny.html#ulohy" -> rovno okno Úlohy a navyše
+    todosRef.on('value', snap=>{ todos=snap.val()||{}; renderAll();
+      if(!todoHashDone){ todoHashDone=true; if(location.hash==='#ulohy'){ try{ history.replaceState(null,'',location.pathname); }catch(e){} openTodo(); } }
+    }, err=>{ todos={}; });
+    // prístupy nastavené vedúcim na úvodnej stránke (settings/hubAccess): kto má Smeny vypnuté, odhlási sa
+    rtdb.ref('settings/hubAccess').on('value', snap=>{ hubAccess=snap.val()||{};
+      if(myName && !manager && !hubAllowed(myName,'smeny')){ myName=''; localStorage.removeItem('cp_myname'); showToast('Nemáš prístup do Smien. Ozvi sa vedúcemu.', 4000); }
+      renderAll();
+    }, err=>{});
     weekWantRef.on('value', snap=>{ weekWant=snap.val()||{}; renderAll(); }, err=>{ weekWant={}; });
     // Vypínanie funkcií
     featRef.on('value', snap=>{ featCfg=snap.val()||{}; renderAll(); }, err=>{});
@@ -4714,11 +4724,13 @@
       if(loginFails>=5){ loginFails=0; localStorage.setItem('cp_lockuntil',String(Date.now()+60000)); return heroLoginError('Príliš veľa pokusov. Skús to o minútu.'); }
       return heroLoginError('Nesprávny kód.');
     }
+    if(!hubAllowed(name,'smeny')) return heroLoginError('Nemáš prístup do Smien. Ozvi sa vedúcemu.');
     loginFails=0; myName=name; localStorage.setItem('cp_myname',myName);
+    try{ localStorage.setItem('waiter', JSON.stringify(name)); }catch(e){}   // jedno prihlásenie aj pre Objednávky
     showToast(`Vitaj, ${name.split(' ')[0]}!`);
     renderAll();
   }
-  function doLogout(){ myName=''; localStorage.removeItem('cp_myname'); renderAll(); }
+  function doLogout(){ myName=''; localStorage.removeItem('cp_myname'); try{ localStorage.setItem('waiter', JSON.stringify('')); }catch(e){} renderAll(); }
   let heroErrMsg='';
   function heroLoginError(m){ heroErrMsg=m; renderAll(); }
 

@@ -131,7 +131,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-09</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-09b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -239,6 +239,9 @@ let boardType = 'missing';
 let warnedReservations = new Set();  // rezervácie, na ktoré sa už píplo (aby to nepípalo dookola)
 let histFilter = '';         // hľadanie v histórii platieb (meno stola, položka, číslo objednávky)
 let queueHistFilter = '';    // hľadanie v histórii rezervácií (meno)
+// prístupy zamestnancov nastavené vedúcim na úvodnej stránke (settings/hubAccess/e/<meno>/objednavky = false)
+let hubAccess = {};
+const hubAllowed = (name, key) => ((hubAccess.e || {})[encodeURIComponent(name).replace(/\./g, '%2E')] || {})[key] !== false;
 let moveOrderId = null, moveOrderTarget = '';   // "Prepísať na iný stôl" - ktorá objednávka sa presúva a kam
 let queuePrefillTable = null; // id stola, z ktorého sa otvorila "+ Rezervácia" - predvyplní sa v selecte na obrazovke Rezervácie
 let editingOptsFor = null;   // id položky menu, ktorej "možnosti pri pridaní" sa práve upravujú v Nastaveniach
@@ -914,6 +917,7 @@ function connect() {
     db.ref('board').on('value', s => { live.board = s.val() || {}; tryRender(); }, () => { live.board = {}; tryRender(); errH(); });
     // mená k účtom stolov (nepovinné - keď sa nenačítajú, appka funguje ďalej bez nich)
     db.ref('meta/guests').on('value', s => { tableGuests = s.val() || {}; tryRender(); }, () => { tableGuests = {}; });
+    db.ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; tryRender(); }, () => { hubAccess = {}; });
     // výplaty (hodiny + trinkgeľ) zdieľané medzi zariadeniami; pri prvom načítaní sa prenesú staré lokálne údaje
     let payFirst = true;
     db.ref('meta/payroll').on('value', s => { sharedPay = s.val() || {}; if (payFirst) { payFirst = false; migrateLocalPayroll(); } tryRender(); }, () => { sharedPay = {}; });
@@ -1024,8 +1028,11 @@ function render() {
   const user = auth.currentUser;
   const showManagerForm = wantManagerLogin && !isManager;
   const curWaiter = store.get('waiter', '');
-  const waiterVerified = curWaiter && (S.employees || []).some(e => e.name === curWaiter);
+  // prístup nastavený vedúcim na úvodnej stránke - kto má Objednávky vypnuté, ostane na prihlasovacej bráne
+  const waiterBlocked = curWaiter && !hubAllowed(curWaiter, 'objednavky');
+  const waiterVerified = curWaiter && !waiterBlocked && (S.employees || []).some(e => e.name === curWaiter);
   const showGate = !!user && !isManager && !showManagerForm && !waiterVerified;
+  if (showGate && waiterBlocked && $('#gateErr')) $('#gateErr').textContent = `${curWaiter}: nemáš prístup do Objednávok. Ozvi sa vedúcemu.`;
   $('#login').classList.toggle('hide', !showManagerForm);
   $('#employeeGate').classList.toggle('hide', !showGate);
   if (showGate) {
@@ -3088,9 +3095,11 @@ function confirmGateLogin() {
     if (err) err.textContent = 'Nesprávny kód';
     return;
   }
+  if (!hubAllowed(name, 'objednavky')) { if (err) err.textContent = 'Nemáš prístup do Objednávok. Ozvi sa vedúcemu.'; return; }
   gateLoginFails = 0;
   if (err) err.textContent = '';
   store.set('waiter', name);
+  try { localStorage.setItem('cp_myname', name); } catch (e) {}   // jedno prihlásenie aj pre Smeny a úvod
   toast('Prihlásený ako ' + name + ' ✓');
   render();
 }
@@ -3124,6 +3133,8 @@ function checkReservationReminders() {
 }
 setInterval(checkReservationReminders, 20000);
 
+// z úvodnej stránky "objednavky.html#rezervacie" -> rovno zoznam rezervácií
+if (location.hash === '#rezervacie') { role = 'casnik'; showQueue = true; try { history.replaceState(null, '', location.pathname); } catch (e) {} }
 connect();
 </script>
 </body>
