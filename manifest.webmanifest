@@ -1,7 +1,7 @@
 {
-  "name": "ChillPoint smeny",
-  "short_name": "Smeny",
-  "description": "Kalendár smien pre ChillPoint Laser Aréna Trnava",
+  "name": "ChillPoint",
+  "short_name": "ChillPoint",
+  "description": "ChillPoint Laser Aréna Trnava – smeny, objednávky a nákupný zoznam",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -49,7 +49,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .cats.big{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;overflow:visible;padding-bottom:12px}
 .cats.big button{font-size:17px;font-weight:700;padding:16px 10px;white-space:normal;line-height:1.2;border-radius:12px}
 .items{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
-.item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:left;min-height:70px;position:relative}
+.item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:left;min-height:70px;position:relative;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 .item span{display:block;color:var(--muted);font-size:14px}
 .item .q{position:absolute;top:8px;right:8px;background:var(--accent);color:#fff;border-radius:99px;min-width:24px;height:24px;font-size:13px;font-weight:700;display:grid;place-items:center;padding:0 6px}
 .item .qwrap{position:absolute;top:8px;right:8px;display:flex;align-items:center;gap:2px}
@@ -94,6 +94,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .dragHandle{cursor:grab;touch-action:none;color:var(--muted);text-align:center;font-size:18px;user-select:none;padding:6px 0}
 .attr-row.dragging,.table-row.dragging{opacity:.4}
 .attr-row.drag-over,.table-row.drag-over{box-shadow:0 -3px 0 0 var(--accent)}
+[data-group-drop].drag-over{outline:3px dashed var(--accent);background:var(--warnbg)}
 .mdrag.dragging{opacity:.4}
 .mdrag.drag-over{box-shadow:0 -4px 0 0 var(--accent)}
 .del{background:var(--warnbg);color:var(--warn);padding:10px 12px}
@@ -114,7 +115,7 @@ body:has(.login:not(.hide)){overflow:hidden}
   <div class="bar">
     <button id="backBtn" class="back hide">‹ Stoly</button>
     <h1 id="title">Objednávky</h1>
-    <a href="index.html" class="back" style="text-decoration:none">📅 Smeny</a>
+    <a href="smeny.html" class="back" style="text-decoration:none">📅 Smeny</a>
     <button id="boardTopBtn" class="back" onclick="showBoard=true;render()" title="Chýba / Kúpiť">📦</button>
     <button id="logoutTop" class="back" onclick="logout()" title="Odhlásiť toto zariadenie">⎋</button>
     <span id="conn" class="conn">●</span>
@@ -130,7 +131,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-08n</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-09</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -160,6 +161,10 @@ body:has(.login:not(.hide)){overflow:hidden}
     <p style="text-align:center;margin-top:10px"><a href="#" onclick="closeItemOptions();return false" style="font-size:13px">Zrušiť</a></p>
   </div>
 </div>
+<!-- malé rýchle okno: výber počtu kusov (podržanie položky) / rýchla poznámka k položke v košíku -->
+<div id="quickModal" class="login hide" onclick="if(event.target===this)closeQuickModal()">
+  <div class="card" style="width:100%;max-width:380px" id="quickModalBody"></div>
+</div>
 <div id="bizDayModal" class="login hide">
   <div class="card">
     <h2 style="margin-top:0">Pracovný deň</h2>
@@ -176,7 +181,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
 <script>
-// Rovnaký Firebase projekt ako appka na smeny (index.html) - jedna databáza pre obe.
+// Rovnaký Firebase projekt ako appka na smeny (smeny.html) - jedna databáza pre obe.
 window.FIREBASE_CONFIG = {
   apiKey: "AIzaSyB-2HeoePKrcsdawvI1LCOTQ6vWjibItpU",
   authDomain: "chillpoint-smeny-350c4.firebaseapp.com",
@@ -1085,12 +1090,21 @@ function visibleTables(keepId) {
   if (!h.size) return S.tables;
   return S.tables.filter(t => !h.has(t.group || '') || t.id === keepId || tableOrders(t.id).length);
 }
+// ako dávno bola na stole posledná objednávka - nech čašník vidí, ku ktorému stolu sa dlho nikto nevrátil
+// (nad 45 min oranžovo, nad 90 min červeno)
+function lastOrderTag(os) {
+  const last = Math.max(...os.map(o => o.createdAt || 0)); if (!last) return '';
+  const min = Math.floor((now() - last) / 60000);
+  const txt = min < 1 ? 'práve teraz' : (min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${min % 60} min`);
+  const col = min >= 90 ? 'var(--warn)' : (min >= 45 ? 'var(--accent)' : 'var(--muted)');
+  return `<small style="color:${col};font-weight:${min >= 45 ? 700 : 400}">⏱ ${txt}</small>`;
+}
 function tableTile(t) {
   const os = tableOrders(t.id);
   const st = os.some(o => o.status === 'hotova') ? '<span class="pill p-hotova">Hotové</span>'
            : os.some(o => o.status === 'nova') ? '<span class="pill p-nova">Na bare</span>' : '';
   return `<button class="tbl ${os.length ? 'busy' : ''}" style="${t.color ? `border-left:6px solid ${t.color}` : ''}" onclick="openTable('${t.id}')">
-    <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}${os.length ? `<small>${eur(sumOrders(os))}</small>${st}` : '<small>voľný</small>'}</button>`;
+    <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}${os.length ? `<small>${eur(sumOrders(os))}</small>${lastOrderTag(os)}${st}` : '<small>voľný</small>'}</button>`;
 }
 function renderTables() {
   const groups = {};
@@ -1677,6 +1691,7 @@ function renderTable() {
     ${acctOpen ? `<div style="padding:0 14px 14px">
       <div class="cart-list">${acctRows.map(r => `
         <div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span>
+          <button class="btn ok" style="width:auto;padding:6px 10px;font-size:15px" title="Ešte 1 to isté (pridá do košíka)" onclick="acctPlusOne('${esc(r.name).replace(/'/g, "\\'")}',${r.price})">+1</button>
           <button class="del" style="width:auto;padding:6px 8px;font-size:13px" title="Odstrániť z účtu" onclick="removeAcctItem('${esc(r.name).replace(/'/g, "\\'")}',${r.price})">✕</button></div>`).join('')}</div>
       ${pending.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">${pending.map(o => `
         <div class="row" style="justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
@@ -1781,7 +1796,7 @@ function renderItems() {
   $('#cats').classList.toggle('hide', words.length > 0);
   const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
   el.innerHTML = list.length ? list.map(m => `
-    <button class="item" style="${catColor(m.category) ? `box-shadow:inset 5px 0 0 ${catColor(m.category)}` : ''}" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}${words.length ? ' · ' + esc(m.category) : ''}</span>
+    <button class="item" style="${catColor(m.category) ? `box-shadow:inset 5px 0 0 ${catColor(m.category)}` : ''}" onclick="itemTap('${m.id}')" onpointerdown="lpStart('${m.id}')" onpointerup="lpCancel()" onpointerleave="lpCancel()" onpointercancel="lpCancel()" oncontextmenu="return false"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}${words.length ? ' · ' + esc(m.category) : ''}</span>
     ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><span class="qminus" role="button" tabindex="0" onclick="event.stopPropagation();removeItem('${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();removeItem('${m.id}')}">−</span></div>` : ''}</button>`).join('')
     : '<div class="empty" style="grid-column:1/-1">Nič sa nenašlo</div>';
 }
@@ -1792,7 +1807,7 @@ function renderFavs() {
   if (!favs.length) { el.innerHTML = ''; return; }
   const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
   el.innerHTML = `<h3 style="margin:0 0 6px">⭐ Obľúbené</h3><div class="items">${favs.map(m => `
-    <button class="item" style="${catColor(m.category) ? `box-shadow:inset 5px 0 0 ${catColor(m.category)}` : ''}" onclick="addItem('${m.id}')"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}</span>
+    <button class="item" style="${catColor(m.category) ? `box-shadow:inset 5px 0 0 ${catColor(m.category)}` : ''}" onclick="itemTap('${m.id}')" onpointerdown="lpStart('${m.id}')" onpointerup="lpCancel()" onpointerleave="lpCancel()" onpointercancel="lpCancel()" oncontextmenu="return false"><b>${esc(m.name)}</b><span>${m.customPrice ? '✎ vlastná suma' : eur(m.price)}</span>
     ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><span class="qminus" role="button" tabindex="0" onclick="event.stopPropagation();removeItem('${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();removeItem('${m.id}')}">−</span></div>` : ''}</button>`).join('')}</div>`;
 }
 // Rozparsuje nastavenie "možností pri pridaní" (napr. sóda/ľad/príchuť) z jednoduchého textového formátu:
@@ -1950,9 +1965,68 @@ function setDiscount(i) {
   }
   render();
 }
+// ---------- rýchla poznámka k položke v košíku: ťuknutím na hotové možnosti (+ vlastný text) ----------
+const QUICK_NOTES = ['bez ľadu', 's ľadom', 's citrónom', 'bez slamky', 'veľké', 'malé', 'teplé', 'studené', 'bez cukru', 'neskôr'];
+let noteEdit = null;   // { i, picks: Set, text }
+function closeQuickModal() { $('#quickModal').classList.add('hide'); noteEdit = null; }
 function setNote(i) {
-  const n = prompt('Poznámka k položke (napr. bez ľadu):', cart[i].note);
-  if (n !== null) { cart[i].note = n.trim(); render(); }
+  if (!cart[i]) return;
+  // existujúcu poznámku rozložíme späť na ťuknuté možnosti + zvyšok ako vlastný text
+  const parts = String(cart[i].note || '').split(' · ').map(s => s.trim()).filter(Boolean);
+  noteEdit = { i, picks: new Set(parts.filter(p => QUICK_NOTES.includes(p))), text: parts.filter(p => !QUICK_NOTES.includes(p)).join(' · ') };
+  renderNoteModal();
+  $('#quickModal').classList.remove('hide');
+}
+function renderNoteModal() {
+  if (!noteEdit || !cart[noteEdit.i]) return closeQuickModal();
+  const mi = S.menu.find(x => x.id === cart[noteEdit.i].menuId);
+  $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 4px">📝 Poznámka</h3><p class="muted" style="margin:0 0 10px">${esc(mi ? mi.name : '')}</p>
+    <div class="row" style="flex-wrap:wrap;gap:6px">${QUICK_NOTES.map((n, k) => `<button type="button" class="btn ${noteEdit.picks.has(n) ? '' : 'ghost'}" style="width:auto;padding:9px 12px" onclick="toggleQuickNote(${k})">${esc(n)}</button>`).join('')}</div>
+    <input id="noteText" placeholder="Vlastná poznámka (nepovinné)" value="${esc(noteEdit.text)}" oninput="noteEdit.text=this.value" style="margin-top:10px" onkeydown="if(event.key==='Enter')saveNoteModal()">
+    <div class="row" style="gap:6px;margin-top:10px"><button class="btn" onclick="saveNoteModal()">Uložiť</button><button class="btn ghost" onclick="closeQuickModal()">Zrušiť</button></div>`;
+}
+function toggleQuickNote(k) { const n = QUICK_NOTES[k]; if (noteEdit.picks.has(n)) noteEdit.picks.delete(n); else noteEdit.picks.add(n); renderNoteModal(); }
+function saveNoteModal() {
+  if (!noteEdit || !cart[noteEdit.i]) return closeQuickModal();
+  const note = [...QUICK_NOTES.filter(n => noteEdit.picks.has(n)), String(noteEdit.text || '').trim()].filter(Boolean).join(' · ').slice(0, 120);
+  cart[noteEdit.i].note = note; closeQuickModal(); render();
+}
+
+// ---------- podržanie položky = výber počtu kusov (2, 3, 4…) namiesto ťukania viackrát ----------
+let lpTimer = null, lpFired = false;
+function lpStart(id) {
+  lpFired = false; clearTimeout(lpTimer);
+  lpTimer = setTimeout(() => { lpFired = true; openQtyPicker(id); }, 450);
+}
+function lpCancel() { clearTimeout(lpTimer); }
+// klik na dlaždicu - ak práve skončilo dlhé podržanie, klik sa ignoruje (inak by sa pridal ešte 1 kus navyše)
+function itemTap(id) { if (lpFired) { lpFired = false; return; } addItem(id); }
+function openQtyPicker(id) {
+  const mi = S.menu.find(x => x.id === id); if (!mi) return;
+  // položky s vlastnou sumou alebo s možnosťami idú po jednom (každá môže byť iná)
+  if (mi.customPrice || (mi.opts && parseOpts(mi.opts).length)) { lpFired = false; return addItem(id); }
+  try { navigator.vibrate && navigator.vibrate(30); } catch (e) {}
+  $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 4px">Koľko kusov?</h3><p class="muted" style="margin:0 0 10px">${esc(mi.name)} · ${eur(mi.price)}</p>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">${[2, 3, 4, 5, 6, 8, 10, 12].map(n => `<button class="btn" style="padding:16px 0;font-size:20px" onclick="addQty('${id}',${n})">${n}×</button>`).join('')}</div>
+    <button class="btn ghost" style="margin-top:10px" onclick="closeQuickModal()">Zrušiť</button>`;
+  $('#quickModal').classList.remove('hide');
+}
+function addQty(id, n) {
+  const c = cart.find(x => x.menuId === id && !x.note && x.price == null);
+  c ? c.qty = Math.min(99, c.qty + n) : cart.push({ menuId: id, qty: n, note: '' });
+  closeQuickModal(); renderItems(); renderFavs(); renderCart();
+  const mi = S.menu.find(x => x.id === id); toast(`+${n}× ${mi ? mi.name : ''}`);
+}
+
+// ---------- "+1 to isté" priamo z účtu stola (ďalšie pivo bez hľadania v menu) ----------
+function acctPlusOne(name, price) {
+  const mi = S.menu.find(x => x.name === name && Number(x.price) === Number(price)) || S.menu.find(x => x.name === name);
+  if (!mi) return toast('Túto položku nejde pridať znova (nie je v menu)');
+  if (mi.customPrice) cart.push({ menuId: mi.id, qty: 1, note: '', price: Number(price) });   // napr. biliard - rovnaká suma
+  else if (mi.opts && parseOpts(mi.opts).length) return addItem(mi.id);                       // vyberie možnosti
+  else { const c = cart.find(x => x.menuId === mi.id && !x.note && x.price == null); c ? c.qty++ : cart.push({ menuId: mi.id, qty: 1, note: '' }); }
+  cartOpen = true; renderItems(); renderFavs(); renderCart();
+  toast(`+1 ${mi.name} v košíku – odošli na bar`);
 }
 
 function renderCart() {
@@ -2494,7 +2568,7 @@ function renderSettings() {
     // farba skupiny = farba, ktorú majú všetky jej stoly (ak majú rôzne, nie je vybraná žiadna)
     const gColor = list.length && list.every(x => (x.color || '') === (list[0].color || '')) ? (list[0].color || '') : null;
     return `<details ${openTblGroups.has(g) ? 'open' : ''} ontoggle="toggleTblGroupOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;${gColor ? `border-left:6px solid ${gColor};` : ''}${isHidden ? 'opacity:.8;border-style:dashed' : ''}">
-      <summary style="cursor:pointer;font-weight:700">${g ? esc(g) : 'Bez skupiny'} <span class="muted" style="font-weight:400">(${list.length} ${list.length === 1 ? 'stôl' : (list.length >= 2 && list.length <= 4 ? 'stoly' : 'stolov')})</span>${isHidden ? ' <span class="muted" style="font-weight:400">· 🙈 skrytá pre čašníkov</span>' : ''}</summary>
+      <summary data-group-drop="${enc}" style="cursor:pointer;font-weight:700;border-radius:8px;padding:2px 4px">${g ? esc(g) : 'Bez skupiny'} <span class="muted" style="font-weight:400">(${list.length} ${list.length === 1 ? 'stôl' : (list.length >= 2 && list.length <= 4 ? 'stoly' : 'stolov')})</span>${isHidden ? ' <span class="muted" style="font-weight:400">· 🙈 skrytá pre čašníkov</span>' : ''}</summary>
       ${g ? `<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0">
         <input value="${esc(g)}" maxlength="20" title="Premenovať skupinu (Enter = uložiť)" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')this.blur()" onchange="renameTblGroup('${enc}',this.value)">
         <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="setTblGroupHidden('${enc}',${!isHidden})">${isHidden ? '👁 Zobraziť čašníkom' : '🙈 Skryť pred čašníkmi'}</button>
@@ -2621,7 +2695,7 @@ function renderSettings() {
         ${TABLE_COLORS.filter(c => c && colorUse[c]).map(c => `<span style="display:inline-flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:50%;background:${c};display:inline-block"></span>${esc([...colorUse[c]].join(', '))}</span>`).join('')}
         <span class="muted">· ✕ na farbe = už ju má iná skupina</span></div>` : ''}
       <div id="tableList">${t || '<p class="muted">Zatiaľ žiadne stoly ani skupiny.</p>'}</div>
-      ${S.tables.length > 1 ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Ťukni na skupinu – rozbalí sa a uvidíš jej stoly. Podrž ⠿ a presuň – zmení sa poradie stolov. Stôl presunieš do inej skupiny výberom v riadku.</p>' : ''}
+      ${S.tables.length > 1 ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Ťukni na skupinu – rozbalí sa a uvidíš jej stoly. Podrž ⠿ a potiahni – zmení sa poradie stolov. Do inej skupiny stôl presunieš tak, že ho pustíš na jej stôl alebo na jej nadpis (ide to aj pri zbalenej skupine), prípadne výberom skupiny v riadku.</p>' : ''}
       <p class="muted" style="font-size:12px;margin-top:6px">🙈 Skrytú skupinu čašníci na svojich zariadeniach nevidia (vedúci áno). Stôl zo skrytej skupiny, na ktorom je otvorený účet, sa im ukáže aj tak – nech sa nestratí nezaplatený účet. Nový stôl v skupine prevezme farbu skupiny.</p></div>`;
 
   const menuTab = `<h2>Kategórie</h2><div class="card">
@@ -2941,28 +3015,45 @@ function startTableDrag(e, id) {
   document.addEventListener('pointerup', endTableDrag, { once: true });
   document.addEventListener('pointercancel', endTableDrag, { once: true });
 }
+// Stôl sa dá pustiť na iný stôl (poradie; ak je v inej skupine, presunie sa aj do nej) alebo na nadpis skupiny
+// (presunie sa do tej skupiny, na jej koniec - funguje aj pri zbalenej skupine).
+let tableDragGroup = null;   // zakódovaný názov skupiny, nad ktorej nadpisom je prst (null = nie nad nadpisom)
 function onTableDragMove(e) {
   if (!tableDragId) return;
   const el = document.elementFromPoint(e.clientX, e.clientY);
-  const row = el && el.closest('[data-table-id]');
-  document.querySelectorAll('#tableList [data-table-id]').forEach(r => r.classList.remove('drag-over'));
+  const row = el && el.closest('[data-table-id]'), head = !row && el && el.closest('[data-group-drop]');
+  document.querySelectorAll('#tableList [data-table-id], #tableList [data-group-drop]').forEach(r => r.classList.remove('drag-over'));
+  tableDragOverId = null; tableDragGroup = null;
   if (row && row.dataset.tableId !== tableDragId) { row.classList.add('drag-over'); tableDragOverId = row.dataset.tableId; }
-  else tableDragOverId = null;
+  else if (head) { head.classList.add('drag-over'); tableDragGroup = head.dataset.groupDrop; }
+  if (e.clientY < 70) window.scrollBy(0, -14); else if (e.clientY > innerHeight - 70) window.scrollBy(0, 14);   // pri okraji posúvať stránku
 }
 async function endTableDrag() {
   document.removeEventListener('pointermove', onTableDragMove);
-  document.querySelectorAll('#tableList [data-table-id]').forEach(r => r.classList.remove('dragging', 'drag-over'));
-  const fromId = tableDragId, toId = tableDragOverId;
-  tableDragId = null; tableDragOverId = null;
-  if (!fromId || !toId || fromId === toId) { render(); return; }
+  document.querySelectorAll('#tableList [data-table-id], #tableList [data-group-drop]').forEach(r => r.classList.remove('dragging', 'drag-over'));
+  const fromId = tableDragId, toId = tableDragOverId, toGroupEnc = tableDragGroup;
+  tableDragId = null; tableDragOverId = null; tableDragGroup = null;
+  if (!fromId || (!toId && toGroupEnc === null) || fromId === toId) { render(); return; }
   const list = [...S.tables]; // S.tables je už zoradené podľa "order"
   const fromIdx = list.findIndex(x => x.id === fromId);
-  const toIdx = list.findIndex(x => x.id === toId);
-  if (fromIdx === -1 || toIdx === -1) { render(); return; }
-  const [moved] = list.splice(fromIdx, 1);
-  list.splice(toIdx, 0, moved);
-  try { await call('POST', '/api/tables/_/reorder', { order: list.map(x => x.id) }); }
-  finally { render(); }
+  if (fromIdx === -1) { render(); return; }
+  const moved = list[fromIdx];
+  // cieľová skupina: skupina stola, na ktorý sa pustilo, alebo skupina, na ktorej nadpis sa pustilo
+  const target = toId ? list.find(x => x.id === toId) : null;
+  const newGroup = target ? (target.group || '') : decodeURIComponent(toGroupEnc);
+  const toIdx = target ? list.findIndex(x => x.id === toId) : -1;   // index PRED vybratím (ťah nadol = za cieľ, nahor = pred cieľ)
+  list.splice(fromIdx, 1);
+  if (target) list.splice(toIdx, 0, moved);
+  else { const lastIdx = list.map(x => x.group || '').lastIndexOf(newGroup); list.splice(lastIdx + 1, 0, moved); }
+  try {
+    if ((moved.group || '') !== newGroup) {
+      const ex = S.tables.find(t => (t.group || '') === newGroup && t.color);   // v novej skupine prevezme jej farbu
+      await call('PUT', '/api/tables/' + fromId, { group: newGroup, ...(ex ? { color: ex.color } : {}) });
+      openTblGroups.add(newGroup);
+      toast(`${moved.name} → ${newGroup || 'Bez skupiny'}`);
+    }
+    await call('POST', '/api/tables/_/reorder', { order: list.map(x => x.id) });
+  } finally { render(); }
 }
 async function setEmployeeWage(name, wage) {
   if (!isManager) return;
