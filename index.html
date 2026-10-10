@@ -171,7 +171,7 @@
   function latestNotice(key) {
     return Object.values(notices || {}).filter(n => n && n.text && (!n.expires || n.expires >= key)).sort((a, b) => (b.ts || 0) - (a.ts || 0))[0];
   }
-  const boardOpen = () => Object.values(board || {}).filter(b => b && typeof b.text === 'string' && !b.done);
+  const boardOpen = () => Object.entries(board || {}).map(([id, b]) => ({ id, ...b })).filter(b => b && typeof b.text === 'string' && !b.done).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
 
   // ---- odovzdávka smeny (meta/handover) ----
   async function sendHandover() {
@@ -186,6 +186,24 @@
   }
   async function delHandover(id) { if (isMgr && confirm('Zmazať túto odovzdávku?')) { try { await firebase.database().ref('meta/handover/' + id).remove(); } catch (e) {} } }
 
+  // ---- Chýba / Kúpiť priamo na úvode (rovnaký zoznam board/ ako v Smenách a Objednávkach) ----
+  const whoAmI = () => isMgr && !me ? 'Vedúci' : (me || 'Vedúci');
+  async function addBoard() {
+    const text = ($('bText').value || '').trim().slice(0, 120), qty = ($('bQty').value || '').trim().slice(0, 30); blurNow();
+    if (!text) { toast('Napíš, čo chýba alebo čo kúpiť.'); return; }
+    const doc = { text, type: ui.bType === 'buy' ? 'buy' : 'missing', author: whoAmI().slice(0, 60), createdAt: Date.now(), ...(qty ? { qty } : {}) };
+    try { await firebase.database().ref('board').push(doc); ui.bText = ''; ui.bQty = ''; toast(doc.type === 'buy' ? 'Pridané na nákup 🛒' : 'Pridané – chýba 🧺'); render(); }
+    catch (e) { toast('Nepodarilo sa uložiť.'); }
+  }
+  async function setBoardDone(id, val) {
+    try { await firebase.database().ref('board/' + id).update({ done: !!val, doneAt: val ? Date.now() : null }); }
+    catch (e) { toast('Nepodarilo sa uložiť.'); }
+  }
+  async function delBoard(id) {
+    if (!isMgr || !confirm('Zmazať túto položku?')) return;
+    try { await firebase.database().ref('board/' + id).remove(); } catch (e) { toast('Nepodarilo sa zmazať.'); }
+  }
+
   // ---- nastavenie prístupov (len vedúci) ----
   async function setAccess(name, key, on) {
     if (!isMgr) return;
@@ -197,7 +215,7 @@
   function render() {
     // nerušiť písanie odovzdávky / prihlasovacích údajov pri živej zmene dát
     const ae = document.activeElement && document.activeElement.id;
-    if (ae === 'hText' || ae === 'lCode' || ae === 'mPass') return;
+    if (ae === 'hText' || ae === 'lCode' || ae === 'mPass' || ae === 'bText' || ae === 'bQty') return;
     const app = $('app');
     const logged = !!me || isMgr;
     const head = `<div class="top"><div class="logo">CP</div><div class="brand"><b>CHILL POINT</b><small>Laser aréna Trnava</small></div>
@@ -211,7 +229,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div><footer>🏠 Úvod (index.html) · verzia 2026-10-09b</footer>`;
+        </div><footer>🏠 Úvod (index.html) · verzia 2026-10-09c</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -245,11 +263,29 @@
     if (allowed('smeny')) html += `<a class="tile" href="smeny.html"><span class="ic">📅</span><span class="tx"><b>Smeny</b><span>Rozpis zmien, úlohy a navyše, vzal/a som si</span></span><span class="arr">›</span></a>`;
     if (allowed('objednavky')) html += `<a class="tile" href="objednavky.html"><span class="ic">🍹</span><span class="tx"><b>Objednávky</b><span>Stoly, bar, atrakcie, platby a uzávierka</span></span><span class="arr">›</span></a>`;
     if (allowed('kupit')) {
-      const row = b => `<div class="it">${b.type === 'buy' ? '🛒' : '🧺'} <b>${esc(b.text)}</b>${b.qty ? ' · ' + esc(b.qty) : ''} <small>${esc(b.author || '')}</small></div>`;
+      // otvorené položky s tlačidlom "✓ doplnené/kúpené", vybavené (7 dní) s "↺ vrátiť", vedúci môže mazať
+      const row = b => `<div class="it" style="display:flex;align-items:center;gap:8px"><span style="flex:1;min-width:0">${b.type === 'buy' ? '🛒' : '🧺'} <b>${esc(b.text)}</b>${b.qty ? ' · ' + esc(b.qty) : ''} <small>${esc(b.author || '')}</small></span>
+        <button class="btn sm" onclick="setBoardDone('${b.id}',true)">${b.type === 'buy' ? '✓ kúpené' : '✓ doplnené'}</button>${isMgr ? `<button class="btn sm ghost" onclick="delBoard('${b.id}')">🗑</button>` : ''}</div>`;
+      const doneRow = b => `<div class="it" style="display:flex;align-items:center;gap:8px;opacity:.55"><span style="flex:1;min-width:0"><s>${b.type === 'buy' ? '🛒' : '🧺'} ${esc(b.text)}${b.qty ? ' · ' + esc(b.qty) : ''}</s></span>
+        <button class="btn sm ghost" onclick="setBoardDone('${b.id}',false)">↺ vrátiť</button>${isMgr ? `<button class="btn sm ghost" onclick="delBoard('${b.id}')">🗑</button>` : ''}</div>`;
       const m = miss.filter(b => b.type !== 'buy'), y = miss.filter(b => b.type === 'buy');
+      const doneList = Object.entries(board || {}).map(([id, b]) => ({ id, ...b })).filter(b => b && typeof b.text === 'string' && b.done && (b.doneAt || 0) > Date.now() - 7 * 864e5).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+      const bType = ui.bType === 'buy' ? 'buy' : 'missing';
       html += `<div><button class="tile" id="shopTile" onclick="ui.shopOpen=!ui.shopOpen;render()"><span class="ic">📦</span><span class="tx"><b>Čo treba kúpiť${miss.length ? `<span class="badge">${cntStr}</span>` : ''}</b><span>${miss.length ? `Chýba: ${m.length} · Kúpiť: ${y.length}` : 'Nič nechýba 👍'}</span></span><span class="arr">${ui.shopOpen ? '▴' : '▾'}</span></button>
-        <div class="shop ${ui.shopOpen ? 'open' : ''}"><h5>🧺 CHÝBA</h5>${m.length ? m.map(row).join('') : '<div class="empty">Nič nechýba.</div>'}
-          <h5>🛒 KÚPIŤ</h5>${y.length ? y.map(row).join('') : '<div class="empty">Zatiaľ nič na kúpenie.</div>'}<a class="go" href="smeny.html#kupit">➕ Pridať / odškrtnúť v Smenách</a></div></div>`;
+        <div class="shop ${ui.shopOpen ? 'open' : ''}">
+          <div style="padding-top:12px">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
+              <button class="btn sm ${bType === 'missing' ? '' : 'ghost'}" onclick="ui.bType='missing';render()">🧺 Chýba</button>
+              <button class="btn sm ${bType === 'buy' ? '' : 'ghost'}" onclick="ui.bType='buy';render()">🛒 Kúpiť</button>
+            </div>
+            <input id="bText" maxlength="120" placeholder="${bType === 'buy' ? 'Čo kúpiť? (napr. citróny)' : 'Čo chýba? (napr. ľad, poháre)'}" value="${esc(ui.bText || '')}" oninput="ui.bText=this.value" onkeydown="if(event.key==='Enter')addBoard()">
+            <div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input id="bQty" maxlength="30" placeholder="Koľko (nepovinné)" value="${esc(ui.bQty || '')}" oninput="ui.bQty=this.value" onkeydown="if(event.key==='Enter')addBoard()" style="margin-bottom:0">
+              <button class="btn" onclick="addBoard()">Pridať</button></div>
+          </div>
+          <h5>🧺 CHÝBA</h5>${m.length ? m.map(row).join('') : '<div class="empty">Nič nechýba.</div>'}
+          <h5>🛒 KÚPIŤ</h5>${y.length ? y.map(row).join('') : '<div class="empty">Zatiaľ nič na kúpenie.</div>'}
+          ${doneList.length ? `<h5>✓ VYBAVENÉ (7 dní)</h5>${doneList.map(doneRow).join('')}` : ''}
+        </div></div>`;
     }
     html += `</div>`;
     if (isMgr) {
@@ -260,7 +296,7 @@
       </div>`;
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-09b</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-09c</footer>`;
     app.innerHTML = html;
   }
 
