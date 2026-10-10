@@ -655,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-09c · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-10 · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <div class="modal" id="shiftModal">
@@ -1461,10 +1461,8 @@
     noticesRef.on('value', snap=>{ notices=snap.val()||{}; renderAll(); }, err=>{ notices={}; });
     noticeAcksRef.on('value', snap=>{ noticeAcks=snap.val()||{}; renderAll(); }, err=>{ noticeAcks={}; });
     flexRef.on('value', snap=>{ flex=snap.val()||{}; renderAll(); }, err=>{ flex={}; });
-    let boardHashDone=false;   // úvodná stránka otvára "smeny.html#kupit" -> rovno nástenka Chýba/Kúpiť
-    boardRef.on('value', snap=>{ board=snap.val()||{}; pruneBoard(); renderAll();
-      if(!boardHashDone){ boardHashDone=true; if(location.hash==='#kupit'){ try{ history.replaceState(null,'',location.pathname); }catch(e){} openBoard(); } }
-    }, err=>{ board={}; });
+    // Chýba/Kúpiť sa zapisuje a odškrtáva už len na úvodnej stránke (index.html) - tu sa len načíta (počty, upratovanie)
+    boardRef.on('value', snap=>{ board=snap.val()||{}; pruneBoard(); renderAll(); }, err=>{ board={}; });
     menuRef.on('value', snap=>{ menu=snap.val()||{}; renderAll(); }, err=>{ menu={}; });
     let todoHashDone=false;   // úvodná stránka: "smeny.html#ulohy" -> rovno okno Úlohy a navyše
     todosRef.on('value', snap=>{ todos=snap.val()||{}; renderAll();
