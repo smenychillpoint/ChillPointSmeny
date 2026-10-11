@@ -131,7 +131,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-10c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-10d</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -977,10 +977,12 @@ function safeRender() {
   if (finishSessionId) { pending = true; return; }
   // ani kým je otvorený výber stola pri "Prepísať na iný stôl" (inak by sa rozbalený výber pri živej zmene zavrel)
   if (moveOrderId) { pending = true; return; }
+  // okienko "presunúť účet" má výber stola - neprekresľovať, kým je otvorené (inak by sa výber zavrel)
+  if (tblModal === 'move') { pending = true; return; }
   render();
 }
 document.addEventListener('focusout', () => setTimeout(() => {
-  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId && !menuDrag && !finishSessionId && !moveOrderId) { pending = false; render(); }
+  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId && !menuDrag && !finishSessionId && !moveOrderId && tblModal !== 'move') { pending = false; render(); }
 }, 50));
 
 // ---------- zvuk ----------
@@ -1018,9 +1020,10 @@ const STAV = { nova: 'Na bare', hotova: 'Hotová – odniesť', vydana: 'Vydaná
 // ho zoberie a appka urobí jeden krok dozadu (platba -> stôl -> zoznam stolov). Na hlavnej obrazovke funguje
 // šípka normálne (napr. späť do Smien).
 let navGuard = false, navIgnorePop = false;
-const inSubView = () => !!(showBoard || moveOrderId || (role === 'casnik' && (tableId || showHist || showQueue || showQuickCash)) || (role === 'atrakcie' && showQueueHist));
+const inSubView = () => !!(showBoard || moveOrderId || tblModal || (role === 'casnik' && (tableId || showHist || showQueue || showQuickCash)) || (role === 'atrakcie' && showQueueHist));
 function navBackStep() {
-  if (moveOrderId) moveOrderId = null;
+  if (tblModal) tblModal = null;   // najprv zavrieť okienko na stole
+  else if (moveOrderId) moveOrderId = null;
   else if (showBoard) showBoard = false;
   else if (role === 'casnik' && tableId && view === 'bill') view = 'order';
   else if (role === 'casnik' && tableId) tableId = null;
@@ -1596,7 +1599,10 @@ function renderHistory() {
 }
 function shiftHist(n) { histDate = new Date(histDate.getFullYear(), histDate.getMonth(), histDate.getDate() + n); render(); }
 
-function openTable(id) { tableId = id; view = 'order'; moveOrderId = null; cart = []; orderNote = ''; cat = null; q = ''; acctOpen = false; addAttrToTableOpen = false; render(); scrollTo(0, 0); }
+let tblModal = null;    // okienko na obrazovke stola: 'attr' | 'res' | 'move' | null
+let addToBar = false;   // režim "pridávam k objednávke, ktorá je ešte na bare"
+function startAddToBar() { addToBar = true; render(); const c = $('#cats') || $('#q'); if (c) { const head = document.querySelector('header'); window.scrollTo({ top: c.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 0) - 8, behavior: 'smooth' }); } }
+function openTable(id) { tableId = id; view = 'order'; moveOrderId = null; tblModal = null; addToBar = false; cart = []; orderNote = ''; cat = null; q = ''; acctOpen = false; addAttrToTableOpen = false; render(); scrollTo(0, 0); }
 
 // Atrakcie priamo z účtu stola - fyzicky pridáš atrakciu (napr. ping-pong) na tento stôl, s voľbou času
 // (teraz, alebo vlastný čas, ak sa zabudlo zapísať pri štarte), a potom ju tu vieš aj ukončiť/zrušiť.
@@ -1661,7 +1667,7 @@ function tableReservationsBlock(id) {
   if (!rs.length) return `<div class="card" style="margin-bottom:14px">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b>📌 Rezervácie stola</b>
-      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';tableId=null;view='order';showQueue=true;render()">+ Rezervácia</button>
+      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';tableId=null;tblModal=null;view='order';showQueue=true;render()">+ Rezervácia</button>
     </div>
     <p class="muted" style="margin:6px 0 0;font-size:13px">Zatiaľ žiadna.</p>
   </div>`;
@@ -1669,7 +1675,7 @@ function tableReservationsBlock(id) {
   return `<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
     <div style="padding:14px 14px 0"><div class="row" style="justify-content:space-between;align-items:center">
       <b>📌 Rezervácie stola</b>
-      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';tableId=null;view='order';showQueue=true;render()">+ Rezervácia</button>
+      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="queuePrefillTable='${id}';tableId=null;tblModal=null;view='order';showQueue=true;render()">+ Rezervácia</button>
     </div></div>
     <div style="padding:10px 14px 14px">${rs.map(q => `
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px;flex-wrap:wrap;gap:6px">
@@ -1770,9 +1776,36 @@ function renderTable() {
     account: prev,
     favs: hasMenu ? '<div id="favs" style="margin-bottom:14px"></div>' : '',
     repeat: hasMenu && lastOrder ? `<button class="btn ghost" style="margin-bottom:12px" onclick="repeatLastOrder()">🔁 Zopakovať poslednú objednávku (#${lastOrder.no})</button>` : '',
-    guest: guestUi, reservations: tableReservationsBlock(tableId), attractions: attractionsOnTableBlock(tableId), move: moveUi
+    guest: guestUi
   };
-  $('#app').innerHTML = readyBanner() + lay.order.filter(k => !lay.hidden.has(k)).map(k => blocks[k] || '').join('');
+  // Atrakcie, rezervácie a presun účtu: na obrazovke len malé tlačidlá, obsah sa otvorí v okienku (prehľadnejšie).
+  // Tlačidlá sú spolu v jednom riadku - na mieste prvého z týchto blokov podľa rozloženia.
+  const nAttr = S.sessions.filter(s => s.tableId === tableId).length, nRes = S.queue.filter(x => x.tableId === tableId).length;
+  const chip = (k, label) => `<button class="btn ghost" style="width:auto;padding:10px 14px" onclick="tblModal='${k}';render()">${label}</button>`;
+  const shown = k => !lay.hidden.has(k);
+  const chipsHtml = [
+    shown('attractions') && S.attractions.length ? chip('attr', `🎮 Atrakcie${nAttr ? ` <b style="color:var(--ok)">(${nAttr} hrá)</b>` : ''}`) : '',
+    shown('reservations') ? chip('res', `📌 Rezervácie${nRes ? ` <b>(${nRes})</b>` : ''}`) : '',
+    shown('move') && moveUi ? chip('move', '↔ Presunúť účet') : ''
+  ].join('');
+  const firstChipKey = lay.order.find(k => ['reservations', 'attractions', 'move'].includes(k) && shown(k));
+  if (firstChipKey && chipsHtml) blocks[firstChipKey] = `<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:14px">${chipsHtml}</div>`;
+  // objednávka, ktorá je ešte na bare -> lišta s možnosťou pridať k nej ďalšie veci (prídu do tej istej objednávky)
+  const bo = barOrderForTable();
+  const barBanner = bo ? `<div class="card" style="margin-bottom:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;border-color:var(--warn);background:var(--warnbg)">
+    <span style="flex:1;font-size:14px">🍸 <b>#${bo.no}</b> je na bare (${bo.items.reduce((s, i) => s + i.qty, 0)} ks)${addToBar ? ' – <b>vyber, čo pridať</b>' : ''}</span>
+    ${addToBar ? `<button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="addToBar=false;render()">Zrušiť</button>`
+      : `<button class="btn" style="width:auto;padding:8px 12px;font-size:13px" onclick="startAddToBar()">➕ Pridať k nej</button>`}</div>` : '';
+  if (!bo) addToBar = false;
+  // okienko (atrakcie / rezervácie / presun účtu)
+  const MODAL_TITLE = { attr: '🎮 Atrakcie na stole', res: '📌 Rezervácie stola', move: '↔ Presunúť celý účet' };
+  const modalBody = tblModal === 'attr' ? attractionsOnTableBlock(tableId) : tblModal === 'res' ? tableReservationsBlock(tableId) : tblModal === 'move' ? (moveUi || '<p class="muted">Nie je čo presúvať.</p>') : '';
+  const modal = tblModal ? `<div class="login" style="z-index:40;place-items:center" onclick="if(event.target===this){tblModal=null;render()}">
+    <div class="card" style="width:100%;max-width:460px;padding:0;max-height:calc(100dvh - 40px);overflow:auto">
+      <div class="row" style="justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);z-index:1">
+        <b>${MODAL_TITLE[tblModal] || ''}</b><button class="btn ghost" style="width:auto;padding:6px 12px" onclick="tblModal=null;render()">✕ Zavrieť</button></div>
+      <div style="padding:12px">${modalBody}</div></div></div>` : '';
+  $('#app').innerHTML = readyBanner() + barBanner + lay.order.filter(k => !lay.hidden.has(k)).map(k => blocks[k] || '').join('') + modal;
   if (S.menu.length) { renderItems(); renderFavs(); }
   renderCart();
 }
@@ -2110,7 +2143,7 @@ function renderCart() {
     <input id="onote" placeholder="Poznámka k objednávke (nepovinné)" value="${esc(orderNote)}" oninput="orderNote=this.value" style="margin-bottom:8px">
     <div style="display:grid;gap:6px">
       ${barOrderForTable() ? `<button class="btn ok" id="addBarBtn" onclick="addToBarOrder()">➕ Pridať k #${barOrderForTable().no} (ešte na bare) · ${eur(total)}</button>` : ''}
-      <button class="btn" id="sendBtn" onclick="sendOrder()">📤 Odoslať na bar${barOrderForTable() ? ' ako novú' : ''} · ${eur(total)}</button>
+      ${addToBar && barOrderForTable() ? '' : `<button class="btn ${barOrderForTable() ? 'ghost' : ''}" id="sendBtn" onclick="sendOrder()">📤 Odoslať na bar${barOrderForTable() ? ' ako novú' : ''} · ${eur(total)}</button>`}
       <button class="btn ghost" id="writeBtn" onclick="writeOrder()">📝 Len zapísať do účtu (bez baru) · ${eur(total)}</button>
     </div></div>`;
 }
@@ -2122,7 +2155,7 @@ async function addToBarOrder() {
   const b = $('#addBarBtn'); if (b) b.disabled = true;
   try {
     await call('POST', `/api/orders/${o.id}/addItems`, { items: cart });
-    cart = []; orderNote = ''; toast(`Pridané k #${o.no} na bare ✓`); render();
+    cart = []; orderNote = ''; addToBar = false; toast(`Pridané k #${o.no} na bare ✓`); render();
   } catch { const b2 = $('#addBarBtn'); if (b2) b2.disabled = false; }
 }
 async function sendOrder() {
@@ -2154,7 +2187,7 @@ async function moveTable() {
   const target = S.tables.find(t => t.id === targetId); if (!target) return;
   if (!confirm(`Presunúť celý účet na "${target.name}"?`)) return;
   await call('POST', `/api/tables/${tableId}/moveTo`, { targetId });
-  tableId = targetId; toast('Účet presunutý ✓'); render();
+  tableId = targetId; tblModal = null; toast('Účet presunutý ✓'); render();
 }
 
 function renderBill() {
@@ -3172,9 +3205,9 @@ function confirmGateLogin() {
 
 // ---------- navigácia ----------
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
-  role = b.dataset.role; store.set('role', role); tableId = null; showHist = false; showQueue = false; moveOrderId = null; render(); scrollTo(0, 0);
+  role = b.dataset.role; store.set('role', role); tableId = null; showHist = false; showQueue = false; moveOrderId = null; tblModal = null; addToBar = false; render(); scrollTo(0, 0);
 });
-$('#backBtn').onclick = () => { tableId = null; showBoard = false; moveOrderId = null; render(); };
+$('#backBtn').onclick = () => { tableId = null; showBoard = false; moveOrderId = null; tblModal = null; addToBar = false; render(); };
 setInterval(() => { if (role !== 'nastavenia') safeRender(); }, 30000); // obnoví "pred X min"
 
 // ---------- upozornenie na blížiacu sa rezerváciu ----------

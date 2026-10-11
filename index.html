@@ -111,6 +111,19 @@
 
   const allowed = key => isMgr || !me || ((access.e || {})[enc(me)] || {})[key] !== false;
 
+  // ---- 📲 pridať appku do mobilu (PWA) - presunuté zo Smien sem, appka sa inštaluje ako celok ----
+  let deferredPrompt = null;
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const canInstall = () => !isStandalone() && (!!deferredPrompt || isIOS());
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; render(); });
+  window.addEventListener('appinstalled', () => { deferredPrompt = null; toast('Aplikácia pridaná na plochu 🎉'); render(); });
+  async function doInstall() {
+    if (deferredPrompt) { deferredPrompt.prompt(); try { await deferredPrompt.userChoice; } catch (e) {} deferredPrompt = null; render(); return; }
+    alert('Na iPhone / iPade: v Safari ťukni na tlačidlo Zdieľať (štvorec so šípkou nahor) a vyber „Pridať na plochu“.');
+  }
+  const installTile = () => canInstall() ? `<button class="tile" style="border-left-color:var(--green);margin-top:10px" onclick="doInstall()"><span class="ic">📲</span><span class="tx"><b>Do mobilu</b><span>Pridať appku na plochu telefónu – otvára sa ako aplikácia</span></span><span class="arr">›</span></button>` : '';
+
   // ---- prihlásenie zamestnanca (rovnaký kód ako v Smenách aj Objednávkach) ----
   let fails = 0;
   const blurNow = () => { try { document.activeElement && document.activeElement.blur(); } catch (e) {} };
@@ -229,7 +242,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div><footer>🏠 Úvod (index.html) · verzia 2026-10-09c</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-11</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -287,7 +300,7 @@
           ${doneList.length ? `<h5>✓ VYBAVENÉ (7 dní)</h5>${doneList.map(doneRow).join('')}` : ''}
         </div></div>`;
     }
-    html += `</div>`;
+    html += `</div>` + installTile();
     if (isMgr) {
       html += `<h2>Nastavenia</h2><div class="card"><button class="tile" style="border-left-color:var(--muted);padding:12px 14px" onclick="ui.accOpen=!ui.accOpen;render()"><span class="ic" style="font-size:22px">⚙</span><span class="tx"><b style="font-size:15px">Prístupy zamestnancov</b><span>Kto čo vidí na úvode a kam sa dostane</span></span><span class="arr">${ui.accOpen ? '▴' : '▾'}</span></button>
         ${ui.accOpen ? `<p class="empty" style="margin:10px 0">Odškrtni, kam zamestnanec nemá mať prístup. Platí pre úvodnú stránku aj pre prihlásenie do Smien a Objednávok. Vedúci vidí vždy všetko.</p>
@@ -296,7 +309,7 @@
       </div>`;
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-09c</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-11</footer>`;
     app.innerHTML = html;
   }
 

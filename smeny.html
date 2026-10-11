@@ -655,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-10 · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-11 · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <div class="modal" id="shiftModal">
@@ -4744,7 +4744,7 @@
       if(feat('todos') || feat('checklists')){ const tc=feat('todos') ? todoOpenCount() : 0; html+=`<button class="outline" id="todoBtn">✅ Úlohy a navyše${tc?` <span class="badge-manager" style="margin-left:4px;">${tc}</span>`:''}</button>`; }
     }
     html+=`<button class="outline" id="helpBtn">❓ Návod</button>`;
-    if(canShowInstall()) html+=`<button class="outline" id="installBtn">📲 Do mobilu</button>`;
+    // "📲 Do mobilu" je na úvodnej stránke (index.html) - appka sa inštaluje ako celok cez úvod
     if(myName) html+=`<div class="who-badge"><span class="avatar">${esc(myName[0]||'?')}</span>${esc(myName)}<button class="link-btn" id="logoutBtn">odhlásiť</button></div>`;
     if(manager) html+=`<span class="badge-manager">⚡ VEDÚCI</span><button class="outline" id="lockBtn">Vypnúť</button>`;
     else html+=`<button class="outline" id="managerBtn">🔒 Vedúci</button>`;
