@@ -131,7 +131,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-11</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-11b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -2132,8 +2132,13 @@ function renderCart() {
   const total = cart.reduce((a, c) => a + linePrice(c) * c.qty, 0);
   const count = cart.reduce((a, c) => a + c.qty, 0);
   if (!cartOpen) {
-    el.innerHTML = `<div class="cart-in"><button class="btn" style="display:flex;justify-content:space-between;align-items:center" onclick="cartOpen=true;renderCart()">
-      <span>🛒 ${count} ${count === 1 ? 'položka' : (count < 5 ? 'položky' : 'položiek')}</span><span>${eur(total)} · zobraziť ▲</span></button></div>`;
+    // zbalený košík: vľavo rozbaliť, vpravo rovno odoslať (jedným ťuknutím, bez rozbaľovania)
+    const bo = barOrderForTable(), toBar = addToBar && bo;
+    el.innerHTML = `<div class="cart-in" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px">
+      <button class="btn ghost" style="display:flex;justify-content:space-between;align-items:center;gap:6px" onclick="cartOpen=true;renderCart()">
+        <span>🛒 ${count} ks</span><span>${eur(total)} ▲</span></button>
+      ${toBar ? `<button class="btn ok" id="addBarBtn" style="width:auto;padding:13px 16px" onclick="addToBarOrder()">➕ k #${bo.no}</button>`
+              : `<button class="btn" id="sendBtn" style="width:auto;padding:13px 16px" onclick="sendOrder()">📤 Na bar</button>`}</div>`;
     return;
   }
   el.innerHTML = `<div class="cart-in">
@@ -2154,6 +2159,13 @@ function renderCart() {
     </div></div>`;
 }
 
+// po odoslaní / zapísaní / pridaní k objednávke na bare -> späť na zoznam stolov (čašník ide hneď k ďalšiemu stolu).
+// Nastavenie je pre každé zariadenie zvlášť (predvolene zapnuté), mení sa v Nastaveniach -> Zariadenie.
+const backAfterSend = () => store.get('backAfterSend', true) !== false;
+function afterSend() {
+  if (backAfterSend()) { tableId = null; tblModal = null; addToBar = false; cartOpen = false; render(); scrollTo(0, 0); }
+  else render();
+}
 // posledná objednávka tohto stola, ktorá je ešte na bare (barman ju nepripravil) - dá sa k nej pridávať
 const barOrderForTable = () => tableId ? S.orders.filter(o => o.tableId === tableId && o.status === 'nova').sort((a, b) => b.createdAt - a.createdAt)[0] || null : null;
 async function addToBarOrder() {
@@ -2161,14 +2173,15 @@ async function addToBarOrder() {
   const b = $('#addBarBtn'); if (b) b.disabled = true;
   try {
     await call('POST', `/api/orders/${o.id}/addItems`, { items: cart });
-    cart = []; orderNote = ''; addToBar = false; toast(`Pridané k #${o.no} na bare ✓`); render();
+    cart = []; orderNote = ''; addToBar = false; toast(`Pridané k #${o.no} na bare ✓`); afterSend();
   } catch { const b2 = $('#addBarBtn'); if (b2) b2.disabled = false; }
 }
 async function sendOrder() {
   $('#sendBtn').disabled = true;
   try {
     await call('POST', '/api/orders', { tableId, items: cart, note: orderNote, waiter: store.get('waiter', '') });
-    cart = []; orderNote = ''; toast('Odoslané na bar ✓'); render();
+    const tn = (S.tables.find(t => t.id === tableId) || {}).name || '';
+    cart = []; orderNote = ''; toast(`${tn ? tn + ': ' : ''}odoslané na bar ✓`); afterSend();
   } catch { $('#sendBtn') && ($('#sendBtn').disabled = false); }
 }
 // Zapíše položky rovno do účtu stola bez toho, aby prešli cez bar (napr. keď sa netreba pripravovať)
@@ -2176,7 +2189,7 @@ async function writeOrder() {
   $('#writeBtn').disabled = true;
   try {
     await call('POST', '/api/orders', { tableId, items: cart, note: orderNote, waiter: store.get('waiter', ''), skipBar: true });
-    cart = []; orderNote = ''; toast('Zapísané do účtu ✓'); render();
+    cart = []; orderNote = ''; toast('Zapísané do účtu ✓'); afterSend();
   } catch { $('#writeBtn') && ($('#writeBtn').disabled = false); }
 }
 async function setStatus(id, status) { await call('POST', `/api/orders/${id}/status`, { status }); }
@@ -2640,6 +2653,9 @@ function renderSettings() {
     : `<p class="muted" style="font-size:13px;margin:0">Nie si prihlásený menom - zadaj si meno a kód pri ďalšom obnovení stránky.</p>`;
   const device = `<h2>Toto zariadenie</h2><div class="card">
       ${waiterBlock}
+      <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px">
+        <input type="checkbox" style="width:auto" ${backAfterSend() ? 'checked' : ''} onchange="store.set('backAfterSend',this.checked);toast(this.checked?'Po odoslaní sa vráti na stoly':'Po odoslaní ostane na stole')">
+        Po odoslaní na bar sa vrátiť na zoznam stolov</label>
       <p class="muted" style="font-size:13px;margin-top:10px">Prihlásený ako: ${esc(auth.currentUser?.email || '')}${isManager ? ' (vedúci)' : ''}</p>
       <button class="btn ghost" style="margin-top:10px" onclick="logout()">Odhlásiť</button></div>`;
   if (!isManager) {

@@ -655,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-11 · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-12· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <div class="modal" id="shiftModal">
@@ -5462,6 +5462,29 @@
   $('pin').addEventListener('keydown',e=>{ if(e.key==='Enter') $('unlock').click(); });
   document.querySelectorAll('[data-close]').forEach(x=>x.onclick=()=>x.closest('.modal').classList.remove('open'));
   document.querySelectorAll('.modal').forEach(x=>x.onclick=e=>{ if(e.target===x) x.classList.remove('open'); });
+
+  // ---- šípka Späť na mobile: zavrie otvorené okno namiesto odchodu na úvod ----
+  // Kým je otvorené nejaké okno, v histórii je jeden strážny záznam; Späť ho zje a zavrie posledné okno.
+  // pozor: `history` je v tejto appke premenná (história zmien) → vždy window.history
+  const WH=window.history;
+  let modalStack=[], navGuard=!!(WH.state&&WH.state.cpModal), navIgnorePop=false;
+  function syncModalNav(){
+    const open=[...document.querySelectorAll('.modal.open')];
+    modalStack=modalStack.filter(m=>open.includes(m)).concat(open.filter(m=>!modalStack.includes(m)));
+    if(open.length && !navGuard){ WH.pushState({cpModal:1},''); navGuard=true; }
+    else if(!open.length && navGuard && !navIgnorePop){ navIgnorePop=true; navGuard=false; WH.back(); }
+  }
+  new MutationObserver(syncModalNav).observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});
+  window.addEventListener('popstate',()=>{
+    if(navIgnorePop){ navIgnorePop=false; syncModalNav(); return; }
+    navGuard=false;
+    const top=modalStack[modalStack.length-1];
+    if(top && top.classList.contains('open')){
+      const x=top.querySelector('.close');
+      if(x) x.click(); else top.classList.remove('open');
+    }
+  });
+  syncModalNav();
 
   // ---- nastavenia limitov ----
   $('limitToggle').onchange=async e=>{
