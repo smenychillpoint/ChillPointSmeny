@@ -655,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-12· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-12c · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <div class="modal" id="shiftModal">
@@ -880,6 +880,15 @@
         <label>DEŇ (odškrtne ktokoľvek, kto je v ten deň na smene)</label><input type="date" id="todoDay">
         <label>KONKRÉTNA OSOBA (NEPOVINNÉ)</label><select id="todoAssignee"></select>
         <label>OPAKOVAŤ (NEPOVINNÉ)</label><select id="todoRecur"></select>
+        <label>AK SA V TEN DEŇ NESPRAVÍ</label><select id="todoRoll">
+          <option value="">Presúvať na ďalšiu smenu, kým sa nespraví</option>
+          <option value="1">Presunúť najviac o 1 deň (napr. na zajtra)</option>
+          <option value="2">Presúvať najviac 2 dni</option>
+          <option value="3">Presúvať najviac 3 dni</option>
+          <option value="5">Presúvať najviac 5 dní</option>
+          <option value="7">Presúvať najviac 7 dní</option>
+          <option value="0">Nepresúvať (ostane na svoj deň)</option>
+        </select>
         <button class="primary small" id="todoAdd" style="margin-top:10px;width:auto;padding:0 16px;">Pridať úlohu</button>
       </div>
       <div class="manage-row" id="todoShuffleRow" style="margin:12px 0;display:none;">
@@ -1214,7 +1223,7 @@
   let showPastMine=false;
   let statsSort={key:'wkndDays',dir:-1};
   let periods=[], periodsRef=null;
-  let featCfg={}, featRef=null;
+  let featCfg={}, featRef=null, featLoaded=false;
   let hubAccess={};   // settings/hubAccess/e/<meno>/<smeny|objednavky|kupit|odovzdavka> = false -> zamestnanec nemá prístup
   const hubAllowed=(name,key)=>{ const k=encodeURIComponent(name).replace(/\./g,'%2E'); return ((hubAccess.e||{})[k]||{})[key]!==false; };
   let checkCfg={open:[],close:[]}, checkRef=null, ckDraft='', ckDirty=false, myTakenDraft='';
@@ -1475,7 +1484,11 @@
     }, err=>{});
     weekWantRef.on('value', snap=>{ weekWant=snap.val()||{}; renderAll(); }, err=>{ weekWant={}; });
     // Vypínanie funkcií
-    featRef.on('value', snap=>{ featCfg=snap.val()||{}; renderAll(); }, err=>{});
+    // featLoaded: kým sa nenačítajú nastavenia funkcií, feat() vracia "zapnuté" → pripomienka potvrdenia účasti
+    // čaká na načítanie (inak vyskočila, aj keď je funkcia vypnutá, a potvrdenie sa potom ticho neuložilo)
+    featRef.on('value', snap=>{ featCfg=snap.val()||{}; featLoaded=true;
+      if(!feat('confirm') && $('cfRemindModal').classList.contains('open')) $('cfRemindModal').classList.remove('open');
+      renderAll(); }, err=>{ featLoaded=true; });
     checkRef.on('value', snap=>{
       const v=snap.val()||{}; const arr=x=>(Array.isArray(x)?x:Object.values(x||{})).filter(t=>typeof t==='string' && t.trim());
       checkCfg={ open:arr(v.open), close:arr(v.close) }; renderAll();
@@ -1552,6 +1565,7 @@
   }
   async function trySignUp(key){
     if(!myName||!dbAvailable) return {ok:false, reason:'Najprv sa prihlás.'};
+    if(!manager && !feat('signup')) return {ok:false, reason:'Na smeny teraz zapisuje vedúci.'};
     if(key<todayKey()) return {ok:false, reason:'Tento deň už uplynul.'};
     if(dayObj(key).off) return {ok:false, reason:'V tento deň nie je prevádzka.'};
     if(dayObj(key).closed) return {ok:false, reason:'Tento deň je už zavretý, prihlásiť sa nedá.'};
@@ -1584,7 +1598,7 @@
     if(d.off) return 'V tento deň nie je prevádzka.';
     if(d.closed) return 'Tento deň je už zavretý.';
     if(myName && (d.employees||[]).includes(myName)) return 'Na tento deň už si prihlásený/á.';
-    if(t.full) return 'Táto smena je už plná.';
+    if(t.full && feat('signup')) return 'Táto smena je už plná.';
     return '';
   }
   function toggleMultiDay(key){
@@ -1593,14 +1607,16 @@
     renderMonths();
   }
   function renderMultiBar(){
-    const canMulti = !!myName && !manager;
+    const canSign = feat('signup');
+    const canMulti = !!myName && !manager && (canSign || feat('avail'));
+    if(!canMulti && multiMode && !flexWant){ multiMode=false; multiSel.clear(); }
     $('multiBtn').style.display = canMulti ? '' : 'none';
-    $('flexAskBtn').style.display = (canMulti && feat('flexwant') && !multiMode) ? '' : 'none';
-    $('multiBtn').textContent = multiMode ? '✕ Ukončiť výber' : '☑ Prihlásiť sa na viac dní';
+    $('flexAskBtn').style.display = (!!myName && !manager && feat('flexwant') && !multiMode) ? '' : 'none';
+    $('multiBtn').textContent = multiMode ? '✕ Ukončiť výber' : (canSign ? '☑ Prihlásiť sa na viac dní' : '☑ Vybrať viac dní');
     $('multiBar').hidden = !multiMode;
     $('toastHost').style.bottom = multiMode ? '84px' : '20px';
     const n=multiSel.size, picking = multiMode && flexWant>0;
-    $('multiGo').style.display = picking ? 'none' : '';
+    $('multiGo').style.display = (picking || !canSign) ? 'none' : '';
     $('multiFlexGo').style.display = picking ? '' : 'none';
     ['multiCant','multiOk','multiWant'].forEach(id=>{ $(id).style.display = (picking || !feat('avail')) ? 'none' : ''; });
     if(picking){
@@ -1609,7 +1625,7 @@
       $('multiFlexGo').textContent = n>=2 ? `🎯 Uložiť (${n})` : '🎯 Uložiť';
       return;
     }
-    $('multiCount').textContent = n ? `Vybraných dní: ${n}` : 'Ťukaj na dni, na ktoré sa chceš prihlásiť';
+    $('multiCount').textContent = n ? `Vybraných dní: ${n}` : (canSign ? 'Ťukaj na dni, na ktoré sa chceš prihlásiť' : 'Ťukaj na dni, potom vyber Môžem / Nemôžem / Chcem');
     $('multiGo').disabled = n===0;
     $('multiGo').textContent = n ? `Prihlásiť sa (${n})` : 'Prihlásiť sa';
     $('multiCant').disabled = n===0;
@@ -1635,6 +1651,7 @@
 
   async function leaveDay(key){
     if(!myName||!dbAvailable) return;
+    if(!manager && !feat('signup')){ showToast('Na smeny teraz zapisuje vedúci – ak nemôžeš, ozvi sa mu.'); return; }
     if(dayObj(key).closed){ showToast('Deň je už zavretý, odhlásiť ťa môže iba vedúci.'); return; }
     const ok=await mutateEmployees(key, arr=>arr.filter(n=>n!==myName));
     if(ok){ showToast('Odhlásený/á'); logEvent(key, `${myName} sa odhlásil/a`, myName); suPush(key, myName, 'out', 'self'); seenTouchDay(key, false); }
@@ -3136,7 +3153,7 @@
     const flexN = feat('flexwant') ? openFlex().length : 0;
     // zmeškané úlohy: deň úlohy (pri opakovanej tento týždňový výskyt) už prešiel a nikto ju neodškrtol
     // úlohy, ktoré sa v svoj deň nespravili a automaticky sa presunuli ďalej (jednorazové s pôvodným dňom v minulosti)
-    const lateTodos = feat('todos') ? todoList().filter(t=>!!todoRolledDay(t)) : [];
+    const lateTodos = feat('todos') ? todoList().filter(t=>!!todoRolledDay(t) || todoExpired(t)) : [];
     return { toClose, shortDays, swapsN, warnN, cfPending, cfAny, defects, taken, subs, flexN, lateTodos, noticesActive:noticesActive.length, noticesUnread };
   }
   const scrollToId=id=>{ const el=$(id); try{ if(el && el.scrollIntoView) el.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){} };
@@ -3339,6 +3356,7 @@
     { id:'flexwant',   label:'„Chcem len jeden z týchto dní“ (viac dní, je mi jedno ktorý)' },
     { id:'ratings',    label:'Hodnotenie farbami' },
     { id:'targets',    label:'Cieľové počty smien' },
+    { id:'signup',     label:'Zamestnanci sa sami prihlasujú / odhlasujú na smeny (vypnuté = zapisuje len vedúci)' },
     { id:'avail',      label:'Môžem / Nemôžem / Chcem (dostupnosť)' },
     { id:'notices',    label:'Nástenka oznamov' },
     { id:'confirm',    label:'Potvrdenie smeny zamestnancom' },
@@ -3600,7 +3618,8 @@
   // zamestnanec potvrdzuje seba, vedúci môže aj niekoho iného (napr. potvrdil telefonicky)
   async function setConfirm(key, val, name){
     name = name || myName;
-    if(!name||!dbAvailable||!feat('confirm')) return false;
+    if(!name||!dbAvailable) return false;
+    if(!feat('confirm')){ showToast('Potvrdzovanie účasti je vypnuté (Nastavenia → funkcie).', 3500); return false; }
     if(!manager && name!==myName) return false;
     const d=dayObj(key);
     if(!d.closed || d.off){ showToast('Účasť sa potvrdzuje až po zavretí dňa.'); return false; }
@@ -3615,7 +3634,7 @@
     }catch(e){ showToast('Nepodarilo sa uložiť (nastav nové pravidlá vo Firebase).', 4000); return false; }
   }
   function myPendingConfirms(){
-    if(!myName || manager || !feat('confirm')) return [];
+    if(!myName || manager || !featLoaded || !feat('confirm')) return [];
     const tk=todayKey();
     return Object.keys(schedule.days||{}).sort().filter(k=>{
       if(k<tk) return false; const d=schedule.days[k]||{};
@@ -3649,7 +3668,7 @@
     $('cfRemindAll').textContent = list.length>1 ? `✓ Potvrdzujem všetky (${list.length})` : '✓ Potvrdzujem';
   }
   function maybeRemindConfirm(){
-    if(cfRemindShown || !scheduleLoaded || !employeesLoaded) return;
+    if(cfRemindShown || !scheduleLoaded || !employeesLoaded || !featLoaded) return;
     const list=myPendingConfirms();
     if(!list.length || cfSnoozed()) return;
     if(document.querySelector('.modal.open')) return;   // nevyskakovať cez iné otvorené okno - skúsi sa pri ďalšom prekreslení
@@ -4120,13 +4139,25 @@
   // Automatický presun: jednorazová úloha, ktorá sa v svoj deň nespravila, sa sama presunie na najbližší deň
   // (dnes alebo neskôr), kedy je niekto na smene - uvidia ju a odškrtnú tí, čo sú vtedy na smene. Počíta sa
   // živo (nič sa neprepisuje v databáze), pôvodný deň ostáva v t.day (zobrazí sa ako "↪ presunuté z …").
+  // Vedúci môže pri úlohe obmedziť presúvanie: t.roll = najviac koľko dní po pôvodnom dni sa smie presúvať
+  // (0 = nepresúvať; bez roll = kým sa nespraví). Po uplynutí limitu úloha "vyprší" (todoExpired).
+  const todoRollLimit=t=>(typeof t.roll==='number' && t.roll>=0) ? t.roll : null;
   function todoRolledDay(t){
     if(!t.day || (t.recur!==undefined && t.recur!==null) || t.done) return '';
     const tk=todayKey(); if(t.day>=tk) return '';
+    const lim=todoRollLimit(t);
+    let last='';
+    if(lim!==null){ if(lim===0) return ''; const L=new Date(t.day+'T12:00'); L.setDate(L.getDate()+lim); last=iso(L); if(last<tk) return ''; }
     const d=new Date();
-    for(let i=0;i<45;i++){ const k=iso(d); const o=dayObj(k); if(!o.off && (o.employees||[]).length) return k; d.setDate(d.getDate()+1); }
-    return tk;   // nikto nie je na smene ani v najbližších dňoch - aspoň dnešok
+    for(let i=0;i<45;i++){ const k=iso(d); if(last && k>last) return ''; const o=dayObj(k); if(!o.off && (o.employees||[]).length) return k; d.setDate(d.getDate()+1); }
+    return last ? '' : tk;   // nikto nie je na smene ani v najbližších dňoch - aspoň dnešok
   }
+  // jednorazová úloha, ktorá sa nespravila a už sa ďalej nepresúva (limit vedúceho) - zamestnancom sa skryje
+  function todoExpired(t){
+    if(!t.day || (t.recur!==undefined && t.recur!==null) || t.done || todoRollLimit(t)===null) return false;
+    return t.day<todayKey() && !todoRolledDay(t);
+  }
+  const todoRollLabel=t=>{ const l=todoRollLimit(t); return l===null ? '' : (l===0 ? 'nepresúva sa' : `presúva sa najviac ${l} ${plural(l,'deň','dni','dní')}`); };
   // komu sa úloha zobrazí a kto ju môže odškrtnúť (to isté): vedúci všetko; zamestnanec len to, čo sa ho týka.
   // Počíta sa živo zo smien - keď vedúci niekoho vyradí zo smeny, úloha mu hneď zmizne.
   //  - s osobou: iba tá osoba (a ak má úloha deň, iba keď je v ten deň na smene)
@@ -4135,6 +4166,7 @@
   function todoCanToggle(t){
     if(manager) return true;
     if(!myName) return false;
+    if(todoExpired(t)) return false;
     const day=todoTargetDay(t), onShift = !day || todoDayPeople(day).includes(myName);
     if(t.assignee) return t.assignee===myName && onShift;
     return onShift;
@@ -4170,6 +4202,8 @@
       if(dayVal) doc.day=dayVal;
       if(assignee) doc.assignee=assignee;
       if(recurVal!=='') doc.recur=Number(recurVal);
+      const rollVal=$('todoRoll') ? $('todoRoll').value : '';
+      if(dayVal && rollVal!=='') doc.roll=Number(rollVal);
       await todosRef.push(doc);
       $('todoText').value='';
       showToast('Úloha pridaná ✓');
@@ -4279,7 +4313,8 @@
       : 'Tvoje úlohy – na dni, kedy si na smene, alebo priradené priamo tebe. Hotové označíš zaškrtnutím.';
     if(manager){
       const dIn=$('todoDay'); if(dIn && !dIn.value && document.activeElement!==dIn) dIn.value=todayKey();   // predvolene dnešok
-      const rSel=$('todoRecur'); if(dIn && rSel){ dIn.disabled = rSel.value!==''; if(!rSel.dataset.dayHook){ rSel.dataset.dayHook='1'; rSel.addEventListener('change',()=>{ dIn.disabled = rSel.value!==''; }); } }
+      const rSel=$('todoRecur'), roll=$('todoRoll');
+      if(dIn && rSel){ const sync=()=>{ dIn.disabled = rSel.value!==''; if(roll) roll.disabled = rSel.value!==''; }; sync(); if(!rSel.dataset.dayHook){ rSel.dataset.dayHook='1'; rSel.addEventListener('change',sync); } }
       const names=(employees.list||[]).map(e=>e.name).sort((a,b)=>a.localeCompare(b,'sk'));
       if(document.activeElement!==$('todoAssignee')) $('todoAssignee').innerHTML = `<option value="">(nepriradené)</option>` + names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
       if(document.activeElement!==$('todoRecur') && $('todoRecur') && !$('todoRecur').dataset.filled){ $('todoRecur').innerHTML = `<option value="">Jednorazovo</option>` + WEEKDAY_NAMES.map((n,i)=>`<option value="${i}">Každý ${n.toLowerCase()}</option>`).join(''); $('todoRecur').dataset.filled='1'; }
@@ -4293,8 +4328,11 @@
       if(todoHasDay(t)){
         const tk=todayKey(), eff=todoTargetDay(t), ppl=todoDayPeople(eff);
         const when = eff===tk ? 'dnes' : fmtDay(eff);
-        const moved = eff!==t.day ? ` <span style="color:#ffb347;">↪ presunuté z ${esc(fmtDay(t.day))}</span>` : '';
-        dayHtml=` <span class="ckby">📅 ${esc(when)}${ppl.length?` · na smene: ${esc(ppl.join(', '))}`:''}</span>${moved}`;
+        const moved = todoExpired(t) ? ` <span style="color:#ff6b6b;">⌛ nespravené, už sa nepresúva</span>`
+          : (eff!==t.day ? ` <span style="color:#ffb347;">↪ presunuté z ${esc(fmtDay(t.day))}</span>` : '');
+        const lim=todoRollLimit(t), opt=(v,l)=>`<option value="${v}"${String(lim===null?'':lim)===v?' selected':''}>${l}</option>`;
+        const rl = manager ? ` <select class="todo-roll" data-troll="${esc(t.id)}" title="Ak sa nespraví" style="width:auto;display:inline-block;padding:2px 6px;font-size:12px;height:auto;margin:2px 0 0;">${opt('','↪ kým sa nespraví')}${opt('1','↪ max 1 deň')}${opt('2','↪ max 2 dni')}${opt('3','↪ max 3 dni')}${opt('5','↪ max 5 dní')}${opt('7','↪ max 7 dní')}${opt('0','↪ nepresúvať')}</select>` : '';
+        dayHtml=` <span class="ckby">📅 ${esc(when)}${ppl.length?` · na smene: ${esc(ppl.join(', '))}`:''}</span>${moved}${rl}`;
       }
       return `<label class="switch-row" style="margin-bottom:6px;">
         <input type="checkbox" data-todo="${esc(t.id)}" ${dEff?'checked':''} ${canToggle?'':'disabled'}>
@@ -4304,6 +4342,11 @@
     $('todoList').innerHTML = open.length ? open.map(row).join('') : `<p class="sub" style="margin:0 0 8px;font-size:12px;">${manager?'Žiadne otvorené úlohy.':'Nemáš žiadne úlohy 👍'}</p>`;
     document.querySelectorAll('#todoList [data-todo]').forEach(x=>x.onchange=()=>setTodoDone(x.dataset.todo, x.checked));
     document.querySelectorAll('#todoList [data-tdel]').forEach(x=>x.onclick=()=>deleteTodo(x.dataset.tdel));
+    document.querySelectorAll('#todoList [data-troll]').forEach(x=>{
+      x.onchange=async()=>{ if(!manager||!dbAvailable) return; const v=x.value;
+        try{ await todosRef.child(x.dataset.troll).update({ roll: v==='' ? null : Number(v) }); showToast('Uložené ✓'); }
+        catch(e){ showToast('Nepodarilo sa uložiť.'); renderTodo(); } };
+    });
   }
   function openTodo(){ renderTodo(); $('todoModal').classList.add('open'); }
 
@@ -5058,7 +5101,7 @@
     document.querySelectorAll('[data-date]').forEach(x=>{
       x.onclick=()=>{ if(longPressFired){ longPressFired=false; return; } if(multiMode) toggleMultiDay(x.dataset.date); else openShift(x.dataset.date); };
       // podržanie prsta/tlačidla na dni = rovno spusti výber viac dní (bez klikania na "☑ Prihlásiť sa na viac dní")
-      if(!!myName && !manager){
+      if(!!myName && !manager && (feat('signup') || feat('avail'))){
         const key=x.dataset.date;
         const cancelLP=()=>clearTimeout(longPressTimer);
         x.onpointerdown=()=>{
@@ -5183,13 +5226,14 @@
       teamHtml = `<p class="sub" style="margin:6px 0 0;">${already?'✓ Si prihlásený/á. ':''}Zoznam ľudí sa zobrazí po potvrdení vedúcim.</p>`;
       if(past) actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">Tento deň už uplynul.</p>`;
       else if(!myName) actionHtml = `<button class="primary small" disabled style="margin-top:10px;">Najprv sa prihlás hore</button>`;
+      else if(!feat('signup')) actionHtml = `<p class="sub" style="margin:10px 0 0;font-size:12px;">📝 Na smeny zapisuje vedúci.${already?' Si zapísaný/á na tento deň – ak nemôžeš, ozvi sa mu.':(feat('avail')?' Daj mu vedieť nižšie, či môžeš.':'')}</p>`;
       else if(already) actionHtml = `<button class="outline" id="leaveDay" style="margin-top:10px;width:100%;">Odhlásiť sa</button>`;
       else if(full) actionHtml = `<button class="primary small" disabled style="margin-top:10px;">Smena je plná</button>`;
       else actionHtml = `<button class="primary small" id="signUpDay" style="margin-top:10px;">Prihlásiť sa na tento deň</button>`;
       if(!past && myName && !already && feat('avail')){
         const cur=avState(date,myName);
         const seg=(id,state,label)=>`<button class="seg${cur===state?' on':''}" id="${id}">${label}</button>`;
-        actionHtml += `<div class="segbox"><div class="seglabel">TVOJ VÝBER PRE TENTO DEŇ</div><div class="segrow">${seg('okDay','can','✓ Môžem')}${seg('cantDay','cant','✗ Nemôžem')}${seg('wantDay','want','★ Chcem tento deň')}</div><p class="sub" style="margin:6px 0 0;font-size:12px;">Ťuknutím na zvolenú možnosť ju zrušíš. Vedúci to uvidí pri plánovaní. Nič ťa to neprihlási, na smenu sa prihlasuješ sám.</p></div>`;
+        actionHtml += `<div class="segbox"><div class="seglabel">TVOJ VÝBER PRE TENTO DEŇ</div><div class="segrow">${seg('okDay','can','✓ Môžem')}${seg('cantDay','cant','✗ Nemôžem')}${seg('wantDay','want','★ Chcem tento deň')}</div><p class="sub" style="margin:6px 0 0;font-size:12px;">Ťuknutím na zvolenú možnosť ju zrušíš. Vedúci to uvidí pri plánovaní. ${feat('signup')?'Nič ťa to neprihlási, na smenu sa prihlasuješ sám.':'Podľa toho ťa vedúci zapíše.'}</p></div>`;
       }
       if(!past && myName && !already && feat('avail')){
         const dw=new Date(date+'T12:00').getDay(), hasCan=canDaysOf(recFor(myName)).includes(dw);
