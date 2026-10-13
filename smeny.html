@@ -505,7 +505,7 @@
     </section>
 
     <details class="more-box" id="moreBox" style="display:none;">
-      <summary>⚙ Nastavenia (limit ľudí na deň)</summary>
+      <summary>⚙ Nastavenia (limity, prihlasovanie, funkcie)</summary>
     <section class="roster" id="settingsSection" style="display:none;">
       <div class="rrow"><label class="switch-row"><input type="checkbox" id="limitToggle"><span><b>Limit ľudí na deň</b><br><small class="sub">Vypnutý = prihlásiť sa môže neobmedzený počet ľudí.</small></span></label></div>
       <div class="addrow" id="limitRow" style="display:none;">
@@ -556,8 +556,8 @@
           </div>
         </div>
       </details>
-      <details class="more-day" id="featBox">
-        <summary>🧩 Funkcie (zapnúť / vypnúť)</summary>
+      <details class="more-day" id="featBox" open>
+        <summary>🧩 Funkcie a prihlasovanie (zapnúť / vypnúť)</summary>
         <div style="padding:0 12px 12px;">
           <p class="sub" style="margin:0 0 10px;font-size:12px;">Vypni funkcie, ktoré nepoužívaš, aby nezaberali miesto. Údaje ostanú uložené a po zapnutí sa vrátia.</p>
           <div id="featList"></div>
@@ -655,8 +655,17 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-12c · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-12e · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
+
+  <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
+  <div class="modal" id="settingsModal">
+    <div class="box" style="max-width:720px;">
+      <button class="close" data-close>×</button>
+      <h2>⚙ Nastavenia</h2>
+      <div id="settingsHost"></div>
+    </div>
+  </div>
 
   <div class="modal" id="shiftModal">
     <div class="box">
@@ -4789,7 +4798,7 @@
     html+=`<button class="outline" id="helpBtn">❓ Návod</button>`;
     // "📲 Do mobilu" je na úvodnej stránke (index.html) - appka sa inštaluje ako celok cez úvod
     if(myName) html+=`<div class="who-badge"><span class="avatar">${esc(myName[0]||'?')}</span>${esc(myName)}<button class="link-btn" id="logoutBtn">odhlásiť</button></div>`;
-    if(manager) html+=`<span class="badge-manager">⚡ VEDÚCI</span><button class="outline" id="lockBtn">Vypnúť</button>`;
+    if(manager) html+=`<button class="outline" id="settingsBtn">⚙ Nastavenia</button><span class="badge-manager">⚡ VEDÚCI</span><button class="outline" id="lockBtn">Vypnúť</button>`;
     else html+=`<button class="outline" id="managerBtn">🔒 Vedúci</button>`;
     $('topright').innerHTML=html;
     const hb=$('helpBtn'); if(hb) hb.onclick=openHelp;
@@ -4797,6 +4806,7 @@
     const lb=$('logoutBtn'); if(lb) lb.onclick=doLogout;
     const mb=$('managerBtn'); if(mb) mb.onclick=()=>{ $('managerModal').classList.add('open'); setTimeout(()=>$('pin').focus(),50); };
     const kb=$('lockBtn'); if(kb) kb.onclick=doManagerLogout;
+    const sb=$('settingsBtn'); if(sb) sb.onclick=()=>$('settingsModal').classList.add('open');
     const bb=$('boardBtn'); if(bb) bb.onclick=openBoard;
     const eb=$('extraBtn'); if(eb) eb.onclick=openExtra;
     const mtb=$('myTakenBtn'); if(mtb) mtb.onclick=openMyTaken;
@@ -5400,7 +5410,7 @@
     $('batchBtn').style.display = manager ? '' : 'none';
     $('callBarBtn').style.display = manager ? '' : 'none';
     $('noticeBtn').style.display = (manager && feat('notices')) ? '' : 'none';
-    $('moreBox').style.display = manager ? 'block' : 'none';
+    $('moreBox').style.display = 'none';   // nastavenia sú v okne ⚙ Nastavenia (tlačidlo hore)
     $('rosterBox').style.display = manager ? 'block' : 'none';
     $('statsBox').style.display = manager ? 'block' : 'none';
     $('historyBox').style.display = manager ? 'block' : 'none';
@@ -5641,12 +5651,15 @@
   $('pnoteSave').onclick=savePNote;
   $('pnoteDel').onclick=deletePNote;
   $('backupGo').onclick=()=>{ $('backupBox').open=true; scrollToId('backupBox'); };
+  // nastavenia vedúceho pokope v okne ⚙ Nastavenia; funkcie/prihlasovanie hore
+  $('settingsHost').appendChild($('settingsSection'));
+  $('settingsSection').insertBefore($('featBox'), $('settingsSection').firstChild);
   buildWeekTables();
   $('weekSave').onclick=saveWeek;
   $('perAdd').onclick=addPeriod;
   $('goWeekRules').onclick=()=>{
     $('shiftModal').classList.remove('open');
-    $('moreBox').open=true; $('weekBox').open=true;
+    $('settingsModal').classList.add('open'); $('weekBox').open=true;
     try{ $('weekBox').scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
   };
   $('backupBtn').onclick=()=>{ downloadBackup(''); showToast('Záloha stiahnutá 💾'); };

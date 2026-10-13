@@ -131,7 +131,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-11b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-12</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1100,7 +1100,11 @@ function render() {
   else renderSettings();
 }
 
+// (2026-10-12) Pás "… je hotová / Odnesené" hore zavadzal → už sa nezobrazuje. Hotové objednávky sú v záložke
+// "🚶 Odniesť" (zelená bodka #serveDot). Funkcia ostáva, keby sa to chcelo vrátiť (READY_BANNER = true).
+const READY_BANNER = false;
 function readyBanner() {
+  if (!READY_BANNER) return '';
   const r = open().filter(o => o.status === 'hotova');
   if (!r.length) return '';
   return `<div class="ready">${r.map(o => `<div><span>${esc(o.tableName)} · #${o.no} je hotová</span>
