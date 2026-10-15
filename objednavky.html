@@ -36,6 +36,8 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .tbl{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 12px;text-align:left;min-height:92px;display:flex;flex-direction:column;gap:4px}
 .tbl b{font-size:18px}.tbl small{color:var(--muted)}
 .tbl.busy{border-color:var(--accent);box-shadow:inset 4px 0 0 var(--accent)}
+.tbl.ttile{min-height:118px;padding:18px 14px;gap:6px}.tbl.ttile b{font-size:24px}.tbl.ttile small{font-size:14px}
+.tgrid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px}
 .pill{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px}
 .p-nova{background:var(--warnbg);color:var(--warn)}.p-hotova{background:var(--okbg);color:var(--ok)}.p-vydana{background:var(--line);color:var(--muted)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px}
@@ -131,7 +133,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-12</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-16</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1136,12 +1138,22 @@ function lastOrderTag(os) {
   const col = min >= 90 ? 'var(--warn)' : (min >= 45 ? 'var(--accent)' : 'var(--muted)');
   return `<small style="color:${col};font-weight:${min >= 45 ? 700 : 400}">⏱ ${txt}</small>`;
 }
+// (2026-10-16) bežiaca hra zapísaná na stôl je vidno priamo na dlaždici stola (predtým len v záložke Atrakcie)
+function tableGamesTag(tId) {
+  const ss = S.sessions.filter(s => s.tableId === tId);
+  if (!ss.length) return '';
+  return ss.map(s => {
+    const st = S.attractions.find(a => a.id === s.stationId);
+    const when = s.startedAt > now() ? `od ${new Date(s.startedAt).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' })}` : fmtDur(now() - s.startedAt);
+    return `<span class="pill" style="background:var(--okbg);color:var(--ok);white-space:normal;text-align:left">🎮 ${esc(st ? st.name : 'Hra')} · ${when}</span>`;
+  }).join('');
+}
 function tableTile(t) {
-  const os = tableOrders(t.id);
+  const os = tableOrders(t.id), games = tableGamesTag(t.id);
   const st = os.some(o => o.status === 'hotova') ? '<span class="pill p-hotova">Hotové</span>'
            : os.some(o => o.status === 'nova') ? '<span class="pill p-nova">Na bare</span>' : '';
-  return `<button class="tbl ${os.length ? 'busy' : ''}" style="${t.color ? `border-left:6px solid ${t.color}` : ''}" onclick="openTable('${t.id}')">
-    <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}${os.length ? `<small>${eur(sumOrders(os))}</small>${lastOrderTag(os)}${st}` : '<small>voľný</small>'}</button>`;
+  return `<button class="tbl ttile ${os.length || games ? 'busy' : ''}" style="${t.color ? `border-left:6px solid ${t.color}` : ''}" onclick="openTable('${t.id}')">
+    <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}${os.length ? `<small>${eur(sumOrders(os))}</small>${lastOrderTag(os)}${st}` : (games ? '' : '<small>voľný</small>')}${games}</button>`;
 }
 function renderTables() {
   const groups = {};
@@ -1152,7 +1164,7 @@ function renderTables() {
   if (groups['']) names.push('');
   const html = names.map(g => `
     ${g ? `<h2 style="margin-top:18px">${esc(g)}${hidden.has(g) ? ' <small class="muted" style="font-size:12px;font-weight:400">🙈 skrytá pre čašníkov</small>' : ''}</h2>` : (names.length > 1 ? '<h2 style="margin-top:18px">Bez skupiny</h2>' : '')}
-    <div class="grid">${groups[g].map(tableTile).join('')}</div>`).join('');
+    <div class="grid tgrid">${groups[g].map(tableTile).join('')}</div>`).join('');
   const freeCount = tables.filter(t => !tableOrders(t.id).length).length;
   const busyCount = tables.length - freeCount;
   const summary = S.tables.length ? `<div class="row" style="gap:14px;margin-bottom:10px;font-size:14px">
@@ -1734,8 +1746,7 @@ function renderTable() {
   const others = visibleTables().filter(t => t.id !== tableId);
   const moveUi = (os.length && others.length) ? `<div class="card" style="margin-bottom:14px">
     <label class="muted" style="font-size:13px">Presadli si sa? Presuň celý účet na iný stôl</label>
-    <div class="row" style="margin-top:6px"><select id="moveSel">${others.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')}</select>
-    <button class="btn ghost" style="width:auto" onclick="moveTable()">Presunúť</button></div></div>` : '';
+    ${tablePickHtml(others, '', 'moveTable')}</div>` : '';
   // Namiesto samostatných kariet pre každú objednávku ukážeme jeden rozkliknuteľný "Účet stola"
   // so všetkými položkami spolu, zoradenými pod sebou.
   const acctAgg = {};
@@ -1791,15 +1802,17 @@ function renderTable() {
   // Atrakcie, rezervácie a presun účtu: na obrazovke len malé tlačidlá, obsah sa otvorí v okienku (prehľadnejšie).
   // Tlačidlá sú spolu v jednom riadku - na mieste prvého z týchto blokov podľa rozloženia.
   const nAttr = S.sessions.filter(s => s.tableId === tableId).length, nRes = S.queue.filter(x => x.tableId === tableId).length;
-  const chip = (k, label) => `<button class="btn ghost" style="width:auto;padding:10px 14px" onclick="tblModal='${k}';render()">${label}</button>`;
+  // (2026-10-15) väčšie tlačidlá – štvorčeky s veľkou ikonou, aby sa dobre trafilo prstom
+  const chip = (k, icon, label, extra, hot) => `<button class="btn ghost" style="width:100%;min-height:76px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:15px;font-weight:700;${hot ? 'border-color:var(--ok);background:var(--okbg);' : ''}" onclick="tblModal='${k}';movePickGroup=null;render()"><span style="font-size:26px;line-height:1">${icon}</span><span>${label}</span>${extra ? `<small style="font-size:12px;font-weight:700;${hot ? 'color:var(--ok)' : ''}">${extra}</small>` : ''}</button>`;
   const shown = k => !lay.hidden.has(k);
-  const chipsHtml = [
-    shown('attractions') && S.attractions.length ? chip('attr', `🎮 Atrakcie${nAttr ? ` <b style="color:var(--ok)">(${nAttr} hrá)</b>` : ''}`) : '',
-    shown('reservations') ? chip('res', `📌 Rezervácie${nRes ? ` <b>(${nRes})</b>` : ''}`) : '',
-    shown('move') && moveUi ? chip('move', '↔ Presunúť účet') : ''
-  ].join('');
+  const chipList = [
+    shown('attractions') && S.attractions.length ? chip('attr', '🎮', 'Atrakcie', nAttr ? `${nAttr} hrá` : '', nAttr > 0) : '',
+    shown('reservations') ? chip('res', '📌', 'Rezervácie', nRes ? `${nRes}` : '') : '',
+    shown('move') && moveUi ? chip('move', '↔', 'Presunúť účet') : ''
+  ].filter(Boolean);
+  const chipsHtml = chipList.join('');
   const firstChipKey = lay.order.find(k => ['reservations', 'attractions', 'move'].includes(k) && shown(k));
-  if (firstChipKey && chipsHtml) blocks[firstChipKey] = `<div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:14px">${chipsHtml}</div>`;
+  if (firstChipKey && chipsHtml) blocks[firstChipKey] = `<div style="display:grid;grid-template-columns:repeat(${chipList.length},minmax(0,1fr));gap:8px;margin-bottom:14px">${chipsHtml}</div>`;
   // objednávka, ktorá je ešte na bare -> lišta s možnosťou pridať k nej ďalšie veci (prídu do tej istej objednávky)
   const bo = barOrderForTable();
   const barBanner = bo ? `<div class="card" style="margin-bottom:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;border-color:var(--warn);background:var(--warnbg)">
@@ -2204,9 +2217,31 @@ async function removeAcctItem(name, price) {
   if (!confirm(`Odstrániť "${name}" z účtu? (nezaplatené)`)) return;
   await call('POST', `/api/tables/${tableId}/removeItem`, { name, price, qty: 1 });
 }
-async function moveTable() {
-  const sel = $('#moveSel'); if (!sel) return;
-  const targetId = sel.value;
+// Výber stola po krokoch (presun účtu aj jednej objednávky): najprv skupina (P, B, L…) ako štvorčeky, potom
+// stôl v nej – bez rolovania dlhým zoznamom. Keď je len jedna skupina, hneď stoly. Stav v movePickGroup.
+let movePickGroup = null;
+function tablePickHtml(others, selId, pickFn) {
+  const groups = {};
+  others.forEach(t => { const g = t.group || ''; (groups[g] = groups[g] || []).push(t); });
+  const names = Object.keys(groups).filter(g => g).sort((a, b) => a.localeCompare(b, 'sk'));
+  if (groups['']) names.push('');
+  if (!names.length) return '<p class="muted">Nie je kam presunúť.</p>';
+  const g = names.length === 1 ? names[0] : movePickGroup;
+  if (g === null || !groups[g]) {
+    return `<div class="muted" style="font-size:13px;margin:8px 0 6px">1. Vyber skupinu stolov:</div>
+      <div class="grid">${names.map(n => { const free = groups[n].filter(t => !tableOrders(t.id).length).length;
+        const col = (groups[n].find(t => t.color) || {}).color;
+        return `<button class="tbl" style="min-height:70px;${col ? `border-left:6px solid ${col}` : ''}" onclick="movePickGroup=decodeURIComponent('${grpArg(n)}');render()">
+          <b>${esc(n || 'Ostatné')}</b><small>${groups[n].length} ${groups[n].length === 1 ? 'stôl' : (groups[n].length < 5 ? 'stoly' : 'stolov')} · ${free} voľných</small></button>`; }).join('')}</div>`;
+  }
+  return `<div class="row" style="justify-content:space-between;margin:8px 0 6px;gap:8px">
+      <span class="muted" style="font-size:13px">${names.length > 1 ? '2. ' : ''}Vyber stôl${g ? ` – <b>${esc(g)}</b>` : ''}:</span>
+      ${names.length > 1 ? `<button class="btn ghost" style="width:auto;padding:6px 12px" onclick="movePickGroup=null;render()">‹ Skupiny</button>` : ''}</div>
+    <div class="grid">${groups[g].map(t => { const os = tableOrders(t.id);
+      return `<button class="tbl ${os.length ? 'busy' : ''}" style="min-height:70px;${t.color ? `border-left:6px solid ${t.color};` : ''}${selId === t.id ? 'outline:3px solid var(--ok);' : ''}" onclick="${pickFn}('${t.id}')">
+        <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}<small>${os.length ? 'obsadený · ' + eur(sumOrders(os)) : 'voľný'}</small></button>`; }).join('')}</div>`;
+}
+async function moveTable(targetId) {
   const target = S.tables.find(t => t.id === targetId); if (!target) return;
   if (!confirm(`Presunúť celý účet na "${target.name}"?`)) return;
   await call('POST', `/api/tables/${tableId}/moveTo`, { targetId });
@@ -2331,18 +2366,19 @@ function renderServe() {
 }
 // "↔ Prepísať na iný stôl" pri jednej objednávke (bar, odniesť, účet stola) - zavretý = tlačidlo, otvorený = výber stola
 function moveOrderBlock(o) {
-  if (moveOrderId !== o.id) return `<button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="moveOrderId='${o.id}';moveOrderTarget='';render()">↔ Na iný stôl</button>`;
+  if (moveOrderId !== o.id) return `<button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="moveOrderId='${o.id}';moveOrderTarget='';movePickGroup=null;render()">↔ Na iný stôl</button>`;
   const others = visibleTables().filter(t => t.id !== o.tableId);
-  return `<div class="row" style="gap:6px;flex-wrap:wrap;width:100%">
-    <select style="flex:1;min-width:130px" onchange="moveOrderTarget=this.value"><option value="">— na ktorý stôl? —</option>
-      ${others.map(t => `<option value="${t.id}" ${moveOrderTarget === t.id ? 'selected' : ''}>${esc(t.name)}${guestOf(t.id) ? ' · ' + esc(guestOf(t.id)) : ''}</option>`).join('')}</select>
-    <button class="btn ok" style="width:auto;padding:8px 12px" onclick="confirmMoveOrder('${o.id}')">Prepísať</button>
-    <button class="btn ghost" style="width:auto;padding:8px 12px" onclick="moveOrderId=null;render()">Zrušiť</button></div>`;
+  return `<div style="width:100%">
+    <div class="row" style="justify-content:space-between;gap:6px"><b style="font-size:14px">↔ #${o.no} prepísať na iný stôl</b>
+      <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="moveOrderId=null;render()">Zrušiť</button></div>
+    ${tablePickHtml(others, moveOrderTarget, 'pickMoveOrderTarget')}</div>`;
 }
+function pickMoveOrderTarget(tid) { moveOrderTarget = tid; if (moveOrderId) confirmMoveOrder(moveOrderId); }
 async function confirmMoveOrder(id) {
   const o = S.orders.find(x => x.id === id), t = S.tables.find(x => x.id === moveOrderTarget);
   if (!o) { moveOrderId = null; render(); return; }
   if (!t) return toast('Vyber stôl');
+  if (!confirm(`Prepísať #${o.no} z ${o.tableName} na ${t.name}?`)) { moveOrderTarget = ''; render(); return; }
   try { await call('POST', `/api/orders/${id}/moveTo`, { targetId: t.id }); toast(`#${o.no} prepísané z ${o.tableName} na ${t.name} ✓`); }
   finally { moveOrderId = null; render(); }
 }
