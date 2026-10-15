@@ -655,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-12e · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-16 · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -1202,6 +1202,14 @@
   let scheduleLoaded=false, employeesLoaded=false;
   let myName = localStorage.getItem('cp_myname') || '';
   let manager = false;
+  // (2026-10-16) "👁 zobrazenie ako zamestnanec" – zapína sa na úvodnej stránke (cp_viewAs). Platí len, keď je
+  // naozaj prihlásený vedúci: appka sa vtedy správa ako ten zamestnanec (manager=false, myName=meno).
+  const viewAsName = (()=>{ try{ return localStorage.getItem('cp_viewAs')||''; }catch(e){ return ''; } })();
+  let viewAsActive = false;
+  function backToManager(){
+    try{ localStorage.removeItem('cp_viewAs'); localStorage.removeItem('cp_myname'); localStorage.setItem('waiter', JSON.stringify('')); }catch(e){}
+    location.reload();
+  }
   let selected='';
   let limitCfg={enabled:false,defaultLimit:0};
   let viewMode=(function(){ try{ const v=localStorage.getItem('cp_view'); if(v) return v; }catch(e){} return (window.innerWidth&&window.innerWidth<=560)?'list':'grid'; })();
@@ -1437,7 +1445,11 @@
         auth = firebase.auth();
         try{ await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION); }catch(e){}
         auth.onAuthStateChanged(u=>{
-          manager = !!u && (u.email||'').toLowerCase()===MANAGER_EMAIL.toLowerCase();
+          const isMgrAuth = !!u && (u.email||'').toLowerCase()===MANAGER_EMAIL.toLowerCase();
+          viewAsActive = isMgrAuth && !!viewAsName;
+          manager = isMgrAuth && !viewAsActive;
+          if(viewAsActive) myName = viewAsName;
+          else if(viewAsName){ try{ localStorage.removeItem('cp_viewAs'); }catch(e){} }
           resetIdle();
           if(manager){ attachRatings(); attachHistory(); attachTargets(); attachPNotes(); if(latestRaw) migrateWrite(latestRaw,true); } else { detachRatings(); detachHistory(); detachTargets(); detachPNotes(); }
           renderAll();
@@ -2516,13 +2528,29 @@
       // cieľ smien (približne): komu ešte chýbajú smeny do cieľa, má prednosť (+4 za každú), kto cieľ prekročil, ide dozadu (−4); najviac ±20
       const tgt=getTarget(name);
       const tgtTerm = tgt===null ? 0 : Math.max(-20, Math.min(20, (tgt - st.days)*4));
-      // kto už je prihlásený a ten deň výslovne chcel (+10) alebo mohol (+4), má pri výbere drobnú prednosť
-      const mark=avMark(key,name), markBonus = signed.includes(name) ? (mark==='want'?10:(mark==='can'?4:0)) : 0;
-      return { name, rating, load:same, other, wkndDays:st.wkndDays, weekDays:st.weekDays, days:st.days, target:tgt, cant, mark, pnote:getPNote(name), score: pts[rating]*10 - same*6 - other*3 + tgtTerm + markBonus - (cant?100:0) };
+      // kto už je prihlásený a ten deň výslovne chcel (+20) alebo mohol (+8), má pri výbere prednosť
+      const mark=avMark(key,name), markBonus = signed.includes(name) ? (mark==='want'?20:(mark==='can'?8:0)) : 0;
+      const base = pts[rating]*10 - same*6 - other*3 + tgtTerm - (cant?100:0);
+      return { name, rating, load:same, other, wkndDays:st.wkndDays, weekDays:st.weekDays, days:st.days, target:tgt, cant, mark, pnote:getPNote(name), base, score: base + markBonus };
     };
     const byScore=(a,b)=>(b.score-a.score) || a.name.localeCompare(b.name,'sk');
     const canSet=canInfo(key), wantSet=wantInfo(key), sbSet=sbInfo(key).map(x=>x.name), flexSet=flexInfo(key).map(x=>x.name);   // „môžem“, „chcem tento deň“, náhradníci a flexibilní záujemcovia (ešte neprihlásení)
     const withCan=x=>({...x, canRec:canSet.includes(x.name), wantRec:wantSet.includes(x.name), sbRec:sbSet.includes(x.name), flexRec:flexSet.includes(x.name), canExplicit:avMark(key,x.name)==='can'});
+    // (2026-10-16) Keď sa zamestnanci sami neprihlasujú (funkcia „signup“ vypnutá), vyberá sa z CELÉHO tímu:
+    // ★ chce (+30) > ✓ môže (+18) > náhradník / chce jeden z dní (+15) > nič nezaklikol (−8); „nemôžem“ sa nevyberá.
+    // K tomu ako vždy hodnotenie farbou, koľko smien už v mesiaci má (víkend/týždeň) a cieľ smien.
+    // Kto už je zapísaný vedúcim, má +12 (nech návrh zbytočne neprehadzuje).
+    if(!feat('signup')){
+      const av=x=>(x.wantRec||x.mark==='want') ? 30 : (x.canRec ? 18 : ((x.sbRec||x.flexRec) ? 15 : -8));
+      const pool=employees.list.map(e=>e.name).filter(nm=>signed.includes(nm) || !na.includes(nm))
+        .map(nm=>{ const q=withCan(info(nm)); return { ...q, score: q.base + av(q) + (signed.includes(nm)?12:0) }; })
+        .sort(byScore);
+      const top=pool.slice(0,n);
+      const keep=top.filter(q=>signed.includes(q.name)), add=top.filter(q=>!signed.includes(q.name));
+      const drop=pool.slice(n).filter(q=>signed.includes(q.name));
+      const cantNames=employees.list.map(e=>e.name).filter(nm=>na.includes(nm) && !signed.includes(nm));
+      return { key, n, wk, keep, drop, add, cantNames, pool:true };
+    }
     const cand=signed.map(info).sort(byScore);
     const keep=cand.slice(0,n), drop=cand.slice(n);
     let add=[];
@@ -2546,7 +2574,7 @@
     let html=`<div class="sug"><div class="sug-head"><b>✨ Návrh zostavy</b></div><div class="manage-row"><span>Koľko ľudí:</span><input id="sugN" type="number" min="1" max="100" value="${n}"><button class="outline" id="sugBtn">Navrhnúť</button></div>`;
     if(r){
       html+=`<h5>NAVRHOVANÁ ZOSTAVA (${r.keep.length+r.add.length} z ${r.n})</h5>`+r.keep.map(line).join('');
-      if(r.add.length) html+=`<h5>DOPLNIŤ – NEMALI PRIHLÁSENÉ, ALE MÔŽU</h5>`+r.add.map(line).join('');
+      if(r.add.length) html+=`<h5>${r.pool?'ZAPÍSAŤ – PODĽA MÔŽEM / CHCEM':'DOPLNIŤ – NEMALI PRIHLÁSENÉ, ALE MÔŽU'}</h5>`+r.add.map(line).join('');
       if(r.drop.length) html+=`<h5>MIMO ZOSTAVY</h5>`+r.drop.map(line).join('');
       if(r.keep.length+r.add.length<r.n) html+=`<p class="sug-note">⚠ Ani po doplnení sa nedá dosiahnuť ${r.n} ľudí.</p>`;
       if(r.cantNames.length) html+=`<p class="sug-note">Nemôžu: ${r.cantNames.map(esc).join(', ')}</p>`;
@@ -2555,6 +2583,7 @@
         ? `<div class="manage-row" style="margin-top:10px;"><button class="primary small" id="sugApply" style="width:auto;padding:0 14px;">Použiť návrh</button><button class="outline" id="sugApplyClose">Použiť a zavrieť deň</button></div>`
         : `<p class="sug-note">Zostava na dni už zodpovedá návrhu.</p>`;
     }
+    if(!feat('signup')) html+=`<p class="sug-note"><b>Prihlasovanie je vypnuté</b> – návrh vyberá z celého tímu: najprv ★ chce, potom ✓ môže, potom náhradníci, nakoniec tí, čo nič nezaklikli; „nemôže“ sa nevyberá. Pritom sa ráta farba hodnotenia a koľko smien už človek v mesiaci má (kto má menej, má prednosť).</p>`;
     html+=`<p class="sug-note">Poradie: zelená, svetlozelená, žltá, bez hodnotenia, oranžová, červená. Potom spravodlivosť podľa dní: koľko zavretých dní už človek v mesiaci má cez víkend a cez týždeň (každý deň = 1; dni rovnakého typu ako navrhovaný deň sa rátajú viac). Ak máš pri človeku nastavený cieľ smien, komu ešte chýbajú smeny, má približne prednosť a kto cieľ prekročil, ide dozadu. Kto ten deň chce (★) alebo môže (✓), má pri dopĺňaní prednosť. Kto nahlásil „nemôžem“, je až na konci. Je to iba návrh, rozhoduješ ty.</p></div>`;
     box.innerHTML=html;
     const on=(id,fn)=>{ const el=$(id); if(el) el.onclick=fn; };
@@ -3370,7 +3399,7 @@
     { id:'notices',    label:'Nástenka oznamov' },
     { id:'confirm',    label:'Potvrdenie smeny zamestnancom' },
     { id:'checklists', label:'Checklisty a záznam zo smeny' },
-    { id:'board',      label:'Nástenka „Chýba / Kúpiť“' },
+    { id:'board',      label:'Nástenka „Kúpiť“' },
     { id:'todos',      label:'To-do zoznam úloh' }
   ];
   const feat=id=>featCfg[id]!==false;
@@ -4799,6 +4828,7 @@
     // "📲 Do mobilu" je na úvodnej stránke (index.html) - appka sa inštaluje ako celok cez úvod
     if(myName) html+=`<div class="who-badge"><span class="avatar">${esc(myName[0]||'?')}</span>${esc(myName)}<button class="link-btn" id="logoutBtn">odhlásiť</button></div>`;
     if(manager) html+=`<button class="outline" id="settingsBtn">⚙ Nastavenia</button><span class="badge-manager">⚡ VEDÚCI</span><button class="outline" id="lockBtn">Vypnúť</button>`;
+    else if(viewAsActive) html+=`<span class="badge-manager" style="background:#1f6f43">👁 ako ${esc(myName)}</span><button class="outline" id="backMgrBtn">⚡ Späť ako vedúci</button>`;
     else html+=`<button class="outline" id="managerBtn">🔒 Vedúci</button>`;
     $('topright').innerHTML=html;
     const hb=$('helpBtn'); if(hb) hb.onclick=openHelp;
@@ -4807,6 +4837,7 @@
     const mb=$('managerBtn'); if(mb) mb.onclick=()=>{ $('managerModal').classList.add('open'); setTimeout(()=>$('pin').focus(),50); };
     const kb=$('lockBtn'); if(kb) kb.onclick=doManagerLogout;
     const sb=$('settingsBtn'); if(sb) sb.onclick=()=>$('settingsModal').classList.add('open');
+    const bmb=$('backMgrBtn'); if(bmb) bmb.onclick=backToManager;
     const bb=$('boardBtn'); if(bb) bb.onclick=openBoard;
     const eb=$('extraBtn'); if(eb) eb.onclick=openExtra;
     const mtb=$('myTakenBtn'); if(mtb) mtb.onclick=openMyTaken;

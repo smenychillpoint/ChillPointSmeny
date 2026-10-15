@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="sk">
 <head>
   <meta charset="utf-8">
@@ -106,6 +106,23 @@
 
   let me = ls.get('cp_myname') || '';
   let user = null, isMgr = false, authReady = false;
+  // (2026-10-16) Vedúci si môže prepnúť "👁 zobrazenie ako zamestnanec" (bez kódu – je overený heslom vedúceho).
+  // isMgrAuth = naozaj prihlásený vedúci (Firebase Auth); isMgr = správa sa ako vedúci (false počas zobrazenia ako X).
+  // cp_viewAs v localStorage čítajú aj Smeny a Objednávky (tam sa vedúci tiež správa ako ten zamestnanec).
+  let isMgrAuth = false, viewAs = ls.get('cp_viewAs') || '';
+  function applyView() {
+    if (isMgrAuth && viewAs) { isMgr = false; me = viewAs; }
+    else { isMgr = isMgrAuth; if (!isMgrAuth && viewAs && authReady) { viewAs = ''; ls.del('cp_viewAs'); } }
+  }
+  function viewAsEmp(name) {
+    if (!isMgrAuth || !name) return;
+    viewAs = name; ls.set('cp_viewAs', name); ls.set('cp_myname', name); ls.set('waiter', JSON.stringify(name));
+    applyView(); toast(`👁 Zobrazuješ ako ${name}`); render();
+  }
+  function backToMgr() {
+    viewAs = ''; me = ''; ls.del('cp_viewAs'); ls.del('cp_myname'); ls.set('waiter', JSON.stringify(''));
+    applyView(); toast('⚡ Späť ako vedúci'); render();
+  }
   let emps = [], day = {}, todos = {}, board = {}, notices = {}, queue = {}, handover = {}, access = {};
   let ui = { mgrForm: false, err: '', shopOpen: false, accOpen: false, handDraft: '' };
 
@@ -154,8 +171,8 @@
     } catch (e) { ui.err = 'Nesprávne heslo.'; render(); }
   }
   async function logout() {
-    if (isMgr) { try { await firebase.auth().signOut(); } catch (e) {} }   // zariadenie sa potom prihlási znova samo
-    me = ''; ls.del('cp_myname'); ls.set('waiter', JSON.stringify(''));
+    if (isMgrAuth) { try { await firebase.auth().signOut(); } catch (e) {} }   // zariadenie sa potom prihlási znova samo
+    me = ''; viewAs = ''; ls.del('cp_viewAs'); ls.del('cp_myname'); ls.set('waiter', JSON.stringify(''));
     ui = { mgrForm: false, err: '', shopOpen: false, accOpen: false, handDraft: '' };
     render();
   }
@@ -203,9 +220,10 @@
   const whoAmI = () => isMgr && !me ? 'Vedúci' : (me || 'Vedúci');
   async function addBoard() {
     const text = ($('bText').value || '').trim().slice(0, 120), qty = ($('bQty').value || '').trim().slice(0, 30); blurNow();
-    if (!text) { toast('Napíš, čo chýba alebo čo kúpiť.'); return; }
-    const doc = { text, type: ui.bType === 'buy' ? 'buy' : 'missing', author: whoAmI().slice(0, 60), createdAt: Date.now(), ...(qty ? { qty } : {}) };
-    try { await firebase.database().ref('board').push(doc); ui.bText = ''; ui.bQty = ''; toast(doc.type === 'buy' ? 'Pridané na nákup 🛒' : 'Pridané – chýba 🧺'); render(); }
+    if (!text) { toast('Napíš, čo treba kúpiť.'); return; }
+    // (2026-10-16) "Chýba" a "Kúpiť" je to isté → všetko sa zapisuje ako Kúpiť (staré "missing" sa zobrazia rovnako)
+    const doc = { text, type: 'buy', author: whoAmI().slice(0, 60), createdAt: Date.now(), ...(qty ? { qty } : {}) };
+    try { await firebase.database().ref('board').push(doc); ui.bText = ''; ui.bQty = ''; toast('Pridané na nákup 🛒'); render(); }
     catch (e) { toast('Nepodarilo sa uložiť.'); }
   }
   async function setBoardDone(id, val) {
@@ -242,7 +260,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-11</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-16</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -251,12 +269,24 @@
     const hands = Object.entries(handover || {}).map(([id, h]) => ({ id, ...h })).filter(h => h && h.text && h.t > Date.now() - 3 * 864e5).sort((a, b) => b.t - a.t).slice(0, 5);
     const cntStr = `${miss.length}`;
     let html = head;
+    // vedúci: prepínač "pozrieť ako zamestnanec" (bez kódu) / späť na vedúceho
+    if (isMgrAuth) {
+      const opts = emps.map(e => `<option value="${esc(e.name)}" ${viewAs === e.name ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
+      html += viewAs
+        ? `<div class="card" style="border-color:var(--green);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="flex:1;min-width:150px">👁 Zobrazuješ ako <b>${esc(viewAs)}</b><br><small style="color:var(--muted)">Platí aj v Smenách a Objednávkach. Čo tu urobíš, je naozaj (zapíše sa).</small></span>
+            <select style="flex:1;min-width:140px;margin:0" onchange="viewAsEmp(this.value)">${opts}</select>
+            <button class="btn" onclick="backToMgr()">⚡ Späť ako vedúci</button></div>`
+        : `<div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span style="flex:1;min-width:150px">👁 Pozrieť appku <b>ako zamestnanec</b></span>
+            <select style="flex:1;min-width:140px;margin:0" onchange="viewAsEmp(this.value)"><option value="">— vyber zamestnanca —</option>${opts}</select></div>`;
+    }
     html += `<div class="card today"><h3><span>📅 Dnes · ${DAY_NAMES[bd.getDay()]} ${bd.getDate()}. ${bd.getMonth() + 1}.</span>${day && day.off ? '<span style="color:var(--muted);font-size:12px">bez prevádzky</span>' : ''}</h3>
       <div class="people">👥 ${ppl.length ? ppl.map(esc).join(', ') : '<span style="color:var(--muted)">nikto nie je prihlásený</span>'}</div>
       <div class="stats">
         <a class="stat" href="smeny.html#ulohy"><small>Úlohy</small><b>${td.done} / ${td.total}</b></a>
         <a class="stat" href="objednavky.html#rezervacie"><small>Rezervácie</small><b>${resN}</b></a>
-        <button class="stat" onclick="ui.shopOpen=!ui.shopOpen;render();document.getElementById('shopTile').scrollIntoView({behavior:'smooth'})"><small>Chýba / kúpiť</small><b>${miss.length}</b></button>
+        <button class="stat" onclick="ui.shopOpen=!ui.shopOpen;render();document.getElementById('shopTile').scrollIntoView({behavior:'smooth'})"><small>Kúpiť</small><b>${miss.length}</b></button>
       </div>
       ${day && day.note ? `<div class="note">📝 ${esc(day.note)}</div>` : ''}
       ${notice ? `<div class="note">📣 ${esc(notice.text.length > 160 ? notice.text.slice(0, 160) + '…' : notice.text)}</div>` : ''}
@@ -277,26 +307,20 @@
     if (allowed('objednavky')) html += `<a class="tile" href="objednavky.html"><span class="ic">🍹</span><span class="tx"><b>Objednávky</b><span>Stoly, bar, atrakcie, platby a uzávierka</span></span><span class="arr">›</span></a>`;
     if (allowed('kupit')) {
       // otvorené položky s tlačidlom "✓ doplnené/kúpené", vybavené (7 dní) s "↺ vrátiť", vedúci môže mazať
-      const row = b => `<div class="it" style="display:flex;align-items:center;gap:8px"><span style="flex:1;min-width:0">${b.type === 'buy' ? '🛒' : '🧺'} <b>${esc(b.text)}</b>${b.qty ? ' · ' + esc(b.qty) : ''} <small>${esc(b.author || '')}</small></span>
-        <button class="btn sm" onclick="setBoardDone('${b.id}',true)">${b.type === 'buy' ? '✓ kúpené' : '✓ doplnené'}</button>${isMgr ? `<button class="btn sm ghost" onclick="delBoard('${b.id}')">🗑</button>` : ''}</div>`;
-      const doneRow = b => `<div class="it" style="display:flex;align-items:center;gap:8px;opacity:.55"><span style="flex:1;min-width:0"><s>${b.type === 'buy' ? '🛒' : '🧺'} ${esc(b.text)}${b.qty ? ' · ' + esc(b.qty) : ''}</s></span>
+      // jeden zoznam "Kúpiť" (staré položky typu "chýba" sú v ňom tiež)
+      const row = b => `<div class="it" style="display:flex;align-items:center;gap:8px"><span style="flex:1;min-width:0">🛒 <b>${esc(b.text)}</b>${b.qty ? ' · ' + esc(b.qty) : ''} <small>${esc(b.author || '')}</small></span>
+        <button class="btn sm" onclick="setBoardDone('${b.id}',true)">✓ kúpené</button>${isMgr ? `<button class="btn sm ghost" onclick="delBoard('${b.id}')">🗑</button>` : ''}</div>`;
+      const doneRow = b => `<div class="it" style="display:flex;align-items:center;gap:8px;opacity:.55"><span style="flex:1;min-width:0"><s>🛒 ${esc(b.text)}${b.qty ? ' · ' + esc(b.qty) : ''}</s></span>
         <button class="btn sm ghost" onclick="setBoardDone('${b.id}',false)">↺ vrátiť</button>${isMgr ? `<button class="btn sm ghost" onclick="delBoard('${b.id}')">🗑</button>` : ''}</div>`;
-      const m = miss.filter(b => b.type !== 'buy'), y = miss.filter(b => b.type === 'buy');
       const doneList = Object.entries(board || {}).map(([id, b]) => ({ id, ...b })).filter(b => b && typeof b.text === 'string' && b.done && (b.doneAt || 0) > Date.now() - 7 * 864e5).sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
-      const bType = ui.bType === 'buy' ? 'buy' : 'missing';
-      html += `<div><button class="tile" id="shopTile" onclick="ui.shopOpen=!ui.shopOpen;render()"><span class="ic">📦</span><span class="tx"><b>Čo treba kúpiť${miss.length ? `<span class="badge">${cntStr}</span>` : ''}</b><span>${miss.length ? `Chýba: ${m.length} · Kúpiť: ${y.length}` : 'Nič nechýba 👍'}</span></span><span class="arr">${ui.shopOpen ? '▴' : '▾'}</span></button>
+      html += `<div><button class="tile" id="shopTile" onclick="ui.shopOpen=!ui.shopOpen;render()"><span class="ic">🛒</span><span class="tx"><b>Čo treba kúpiť${miss.length ? `<span class="badge">${cntStr}</span>` : ''}</b><span>${miss.length ? `Kúpiť: ${miss.length}` : 'Netreba nič kúpiť 👍'}</span></span><span class="arr">${ui.shopOpen ? '▴' : '▾'}</span></button>
         <div class="shop ${ui.shopOpen ? 'open' : ''}">
           <div style="padding-top:12px">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px">
-              <button class="btn sm ${bType === 'missing' ? '' : 'ghost'}" onclick="ui.bType='missing';render()">🧺 Chýba</button>
-              <button class="btn sm ${bType === 'buy' ? '' : 'ghost'}" onclick="ui.bType='buy';render()">🛒 Kúpiť</button>
-            </div>
-            <input id="bText" maxlength="120" placeholder="${bType === 'buy' ? 'Čo kúpiť? (napr. citróny)' : 'Čo chýba? (napr. ľad, poháre)'}" value="${esc(ui.bText || '')}" oninput="ui.bText=this.value" onkeydown="if(event.key==='Enter')addBoard()">
+            <input id="bText" maxlength="120" placeholder="Čo treba kúpiť? (napr. ľad, citróny)" value="${esc(ui.bText || '')}" oninput="ui.bText=this.value" onkeydown="if(event.key==='Enter')addBoard()">
             <div style="display:grid;grid-template-columns:1fr auto;gap:6px"><input id="bQty" maxlength="30" placeholder="Koľko (nepovinné)" value="${esc(ui.bQty || '')}" oninput="ui.bQty=this.value" onkeydown="if(event.key==='Enter')addBoard()" style="margin-bottom:0">
               <button class="btn" onclick="addBoard()">Pridať</button></div>
           </div>
-          <h5>🧺 CHÝBA</h5>${m.length ? m.map(row).join('') : '<div class="empty">Nič nechýba.</div>'}
-          <h5>🛒 KÚPIŤ</h5>${y.length ? y.map(row).join('') : '<div class="empty">Zatiaľ nič na kúpenie.</div>'}
+          <h5>🛒 KÚPIŤ</h5>${miss.length ? miss.map(row).join('') : '<div class="empty">Zatiaľ nič na kúpenie.</div>'}
           ${doneList.length ? `<h5>✓ VYBAVENÉ (7 dní)</h5>${doneList.map(doneRow).join('')}` : ''}
         </div></div>`;
     }
@@ -309,7 +333,7 @@
       </div>`;
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-11</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-16</footer>`;
     app.innerHTML = html;
   }
 
@@ -339,7 +363,7 @@
     // rezervácie a odovzdávky potrebujú prihlásenie - ak nikto nie je prihlásený, prihlási sa zariadenie (ako v Objednávkach)
     let authOn = false;
     firebase.auth().onAuthStateChanged(async u => {
-      user = u; isMgr = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL;
+      user = u; isMgrAuth = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL; authReady = true; applyView();
       if (!u) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); } catch (e) {} return; }
       if (!authOn) { authOn = true; on('queue', v => { queue = v || {}; }); on('meta/handover', v => { handover = v || {}; }); }
       render();

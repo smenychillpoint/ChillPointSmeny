@@ -119,6 +119,7 @@ body:has(.login:not(.hide)){overflow:hidden}
     <h1 id="title">Objednávky</h1>
     <!-- Smeny aj Chýba/Kúpiť sú na úvodnej stránke - tu len domček späť na úvod -->
     <a href="./" class="back" style="text-decoration:none" title="Späť na úvodnú stránku">🏠 Úvod</a>
+    <button id="viewAsBack" class="back hide" style="background:#1f6f43;color:#fff" title="Zobrazuješ ako zamestnanec – ťukni pre návrat ako vedúci" onclick="try{localStorage.removeItem('cp_viewAs');localStorage.removeItem('cp_myname');localStorage.setItem('waiter',JSON.stringify(''))}catch(e){};location.reload()">👁</button>
     <button id="logoutTop" class="back" onclick="logout()" title="Odhlásiť toto zariadenie">⎋</button>
     <span id="conn" class="conn">●</span>
   </div>
@@ -133,7 +134,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-16f</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-16g</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -936,7 +937,13 @@ function connect() {
     $('#conn').className = s.val() ? 'conn' : 'conn off'; $('#conn').textContent = s.val() ? '● online' : '● offline';
   });
   auth.onAuthStateChanged(async user => {
-    isManager = !!user && (user.email || '').toLowerCase() === MANAGER_EMAIL.toLowerCase();
+    const isMgrAuth = !!user && (user.email || '').toLowerCase() === MANAGER_EMAIL.toLowerCase();
+    // (2026-10-16) "👁 zobrazenie ako zamestnanec" z úvodnej stránky (cp_viewAs): vedúci sa správa ako čašník
+    let va = ''; try { va = localStorage.getItem('cp_viewAs') || ''; } catch (e) {}
+    if (!isMgrAuth && va) { try { localStorage.removeItem('cp_viewAs'); } catch (e) {} va = ''; }
+    isManager = isMgrAuth && !va;
+    const vb = document.getElementById('viewAsBack');
+    if (vb) { vb.classList.toggle('hide', !(isMgrAuth && va)); vb.textContent = '👁 ' + va.split(' ')[0] + ' · ⚡'; }
     uzavierkaUnlocked = false;
     if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (role === 'uzavierka' && !isManager) { role = 'casnik'; store.set('role', role); }
