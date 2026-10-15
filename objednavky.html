@@ -133,7 +133,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-16c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-16f</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -325,6 +325,7 @@ function buildOrderItems(list) {
 // Meno k účtu stola (napr. "P1 · Kvasničák") - meta/guests/{tableId} = { n: meno, t: kedy }. Dá sa kedykoľvek
 // zmeniť, pri presune účtu sa presunie na nový stôl a po vyplatení celého účtu samo zmizne.
 let tableGuests = {};
+let tempGone = {};   // meta/tempGone/{tableId} = čas – dočasný stôl zmazaný omylom (čašník nesmie mazať stoly, tak sa len skryje)
 const guestOf = id => { const g = tableGuests[id]; return g && g.n ? String(g.n) : ''; };
 const clearGuest = id => db.ref('meta/guests/' + id).remove().catch(() => {});
 async function editGuest(id) {
@@ -515,11 +516,21 @@ async function callInner(m, [col, id, action], body) {
       const u = {};
       os.forEach(o => { u[o.id + '/tableId'] = target.id; u[o.id + '/tableName'] = target.name; });
       await db.ref('orders').update(u);
-      // meno k účtu ide s účtom; ak už cieľový stôl meno má (spájajú sa dva účty), mená sa spoja
-      const gFrom = guestOf(id), gTo = guestOf(target.id);
+      // bežiace hry zapísané na tento stôl idú s účtom
+      const us = {};
+      S.sessions.filter(s => s.tableId === id).forEach(s => { us[s.id + '/tableId'] = target.id; });
+      if (Object.keys(us).length) { try { await db.ref('sessions').update(us); } catch (e) {} }
+      // meno k účtu ide s účtom; ak už cieľový stôl meno má (spájajú sa dva účty), mená sa spoja.
+      // Z dočasného stola sa prenesie aj jeho názov (napr. "Kvasničák"), ak to nie je automatický "D1", "D2"…
+      const src = S.tables.find(x => x.id === id) || {};
+      const gFrom = guestOf(id) || (src.temp && !/^D\d+$/i.test(src.name || '') ? src.name : ''), gTo = guestOf(target.id);
       if (gFrom) {
         const n = gTo && gTo !== gFrom ? str(gTo + ' + ' + gFrom, 40) : gFrom;
         try { await db.ref('meta/guests/' + target.id).set({ n, t: now() }); await clearGuest(id); } catch (e) {}
+      }
+      // dočasný stôl po presune účtu zanikne (čašník ho nesmie zmazať → skryje sa, vedúci ho zmaže v prune)
+      if (src.temp) {
+        try { if (isManager) await db.ref('tables/' + id).remove(); else await db.ref('meta/tempGone/' + id).set(now()); } catch (e) {}
       }
       return;
     }
@@ -555,7 +566,7 @@ async function callInner(m, [col, id, action], body) {
       }
       // poradie kategórií menu (názvy v poradí) - pri objednávaní aj v Nastaveniach
       if (body.catOrder !== undefined) u.catOrder = [...new Set((Array.isArray(body.catOrder) ? body.catOrder : []).map(x => str(x, 40)).filter(Boolean))].slice(0, 200);
-      ['tableGroups', 'hiddenGroups'].forEach(k => {
+      ['tableGroups', 'hiddenGroups', 'groupOrder'].forEach(k => {
         if (body[k] !== undefined) u[k] = [...new Set((Array.isArray(body[k]) ? body[k] : []).map(x => str(x, 20)).filter(Boolean))].slice(0, 100);
       });
       return db.ref('access').update(u);
@@ -886,6 +897,9 @@ function prune() {
     const ut = {};
     S.tables.forEach(t => { if (t.temp && !tempTableAlive(t) && t.id !== tableId) ut[t.id] = null; });
     if (Object.keys(ut).length) db.ref('tables').update(ut).catch(() => {});
+    const ugone = {};
+    Object.keys(tempGone || {}).forEach(id => { if (!S.tables.some(t => t.id === id) || ut[id] === null) ugone[id] = null; });
+    if (Object.keys(ugone).length) db.ref('meta/tempGone').update(ugone).catch(() => {});
   }
   // vybavené položky z nástenky staršie ako 7 dní sa potichu zmažú (mazanie smie len vedúci, preto len tu)
   if (isManager) {
@@ -952,6 +966,7 @@ function connect() {
     db.ref('board').on('value', s => { live.board = s.val() || {}; tryRender(); }, () => { live.board = {}; tryRender(); errH(); });
     // mená k účtom stolov (nepovinné - keď sa nenačítajú, appka funguje ďalej bez nich)
     db.ref('meta/guests').on('value', s => { tableGuests = s.val() || {}; tryRender(); }, () => { tableGuests = {}; });
+    db.ref('meta/tempGone').on('value', s => { tempGone = s.val() || {}; tryRender(); }, () => { tempGone = {}; });
     db.ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; tryRender(); }, () => { hubAccess = {}; });
     // výplaty (hodiny + trinkgeľ) zdieľané medzi zariadeniami; pri prvom načítaní sa prenesú staré lokálne údaje
     let payFirst = true;
@@ -1128,7 +1143,20 @@ function readyBanner() {
 function allTableGroups() {
   const set = new Set(S.tables.map(t => t.group).filter(Boolean));
   ((S.access && S.access.tableGroups) || []).forEach(g => g && set.add(g));
-  return [...set].sort((a, b) => a.localeCompare(b, 'sk'));
+  return sortGroups([...set]);
+}
+// poradie skupín stolov (P, B, L…) nastavené vedúcim v Nastaveniach ▲▼ (access.groupOrder); neuvedené abecedne na koniec,
+// "Dočasné" vždy úplne na konci
+function sortGroups(arr) {
+  const ord = (S.access && S.access.groupOrder) || [];
+  const ix = g => g === TEMP_GROUP ? 2e9 : (ord.indexOf(g) < 0 ? 1e9 : ord.indexOf(g));
+  return [...arr].sort((a, b) => ix(a) - ix(b) || a.localeCompare(b, 'sk'));
+}
+async function moveTblGroup(enc, dir) {
+  const g = decodeURIComponent(enc), list = allTableGroups().filter(x => x !== TEMP_GROUP), i = list.indexOf(g), j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return toast(dir < 0 ? 'Už je prvá' : 'Už je posledná');
+  [list[i], list[j]] = [list[j], list[i]];
+  try { await call('PUT', '/api/access', { groupOrder: list }); } finally { render(); }
 }
 const hiddenGroupSet = () => new Set((S.access && S.access.hiddenGroups) || []);
 // stoly, ktoré vidí toto zariadenie: vedúci všetky; čašník nie stoly zo skrytých skupín - ALE stôl s
@@ -1148,6 +1176,7 @@ const TEMP_GROUP = 'Dočasné';
 function tempTableAlive(t) {
   if (!t.temp) return true;
   if (tableOrders(t.id).length || S.sessions.some(s => s.tableId === t.id)) return true;
+  if (tempGone[t.id]) return false;   // zmazaný omylom pridaný (prázdny) dočasný stôl
   const used = S.orders.some(o => o.tableId === t.id);
   return !used && now() - (t.createdAt || 0) < 3 * 3600e3;
 }
@@ -1166,6 +1195,18 @@ async function addTempTable() {
     if (r && r.id) openTable(r.id);
   } catch (e) { if (!e.code) toast('Nepodarilo sa pridať stôl'); }
   finally { addingTemp = false; }
+}
+// zmazanie omylom pridaného dočasného stola – len keď je prázdny (žiadny otvorený účet ani hra, nech sa nestratia peniaze)
+async function delTempTable(id) {
+  const t = S.tables.find(x => x.id === id); if (!t || !t.temp) return;
+  if (tableOrders(id).length || S.sessions.some(s => s.tableId === id)) return toast('Stôl má otvorený účet alebo hru – najprv zaplať / presuň účet');
+  if (!confirm(`Zmazať dočasný stôl ${t.name}?`)) return;
+  try {
+    if (isManager) await db.ref('tables/' + id).remove();
+    else await db.ref('meta/tempGone/' + id).set(now());   // čašník stoly mazať nesmie → stôl sa len skryje
+    if (tableId === id) { tableId = null; tblModal = null; cart = []; }
+    toast(`Dočasný stôl ${t.name} zmazaný`); render();
+  } catch (e) { toast('Nepodarilo sa zmazať'); }
 }
 // ako dávno bola na stole posledná objednávka - nech čašník vidí, ku ktorému stolu sa dlho nikto nevrátil
 // (nad 45 min oranžovo, nad 90 min červeno)
@@ -1198,7 +1239,7 @@ function renderTables() {
   const tables = visibleTables();   // čašník nevidí stoly zo skrytých skupín
   const hidden = hiddenGroupSet();
   tables.forEach(t => { const g = t.group || ''; (groups[g] = groups[g] || []).push(t); });
-  const names = Object.keys(groups).filter(g => g).sort((a, b) => a.localeCompare(b, 'sk'));
+  const names = sortGroups(Object.keys(groups).filter(g => g));
   if (groups['']) names.push('');
   const html = names.map(g => `
     ${g ? `<h2 style="margin-top:18px">${esc(g)}${hidden.has(g) ? ' <small class="muted" style="font-size:12px;font-weight:400">🙈 skrytá pre čašníkov</small>' : ''}</h2>` : (names.length > 1 ? '<h2 style="margin-top:18px">Bez skupiny</h2>' : '')}
@@ -1867,7 +1908,12 @@ function renderTable() {
       <div class="row" style="justify-content:space-between;padding:12px 14px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--card);z-index:1">
         <b>${MODAL_TITLE[tblModal] || ''}</b><button class="btn ghost" style="width:auto;padding:6px 12px" onclick="tblModal=null;render()">✕ Zavrieť</button></div>
       <div style="padding:12px">${modalBody}</div></div></div>` : '';
-  $('#app').innerHTML = readyBanner() + barBanner + lay.order.filter(k => !lay.hidden.has(k)).map(k => blocks[k] || '').join('') + modal;
+  // dočasný stôl: lišta s možnosťou zmazať (len kým je prázdny – omylom pridaný)
+  const curT = S.tables.find(x => x.id === tableId);
+  const tempBanner = curT && curT.temp ? `<div class="card" style="margin-bottom:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="flex:1;font-size:14px">🕐 <b>Dočasný stôl</b> – po zaplatení zmizne</span>
+    ${!os.length && !S.sessions.some(s => s.tableId === tableId) ? `<button class="del" style="width:auto;padding:8px 12px" onclick="delTempTable('${tableId}')">🗑 Zmazať stôl</button>` : ''}</div>` : '';
+  $('#app').innerHTML = readyBanner() + tempBanner + barBanner + lay.order.filter(k => !lay.hidden.has(k)).map(k => blocks[k] || '').join('') + modal;
   if (S.menu.length) { renderItems(); renderFavs(); }
   renderCart();
 }
@@ -2262,7 +2308,7 @@ let movePickGroup = null;
 function tablePickHtml(others, selId, pickFn) {
   const groups = {};
   others.forEach(t => { const g = t.group || ''; (groups[g] = groups[g] || []).push(t); });
-  const names = Object.keys(groups).filter(g => g).sort((a, b) => a.localeCompare(b, 'sk'));
+  const names = sortGroups(Object.keys(groups).filter(g => g));
   if (groups['']) names.push('');
   if (!names.length) return '<p class="muted">Nie je kam presunúť.</p>';
   const g = names.length === 1 ? names[0] : movePickGroup;
@@ -2770,7 +2816,7 @@ function renderSettings() {
     // farba skupiny = farba, ktorú majú všetky jej stoly (ak majú rôzne, nie je vybraná žiadna)
     const gColor = list.length && list.every(x => (x.color || '') === (list[0].color || '')) ? (list[0].color || '') : null;
     return `<details ${openTblGroups.has(g) ? 'open' : ''} ontoggle="toggleTblGroupOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;${gColor ? `border-left:6px solid ${gColor};` : ''}${isHidden ? 'opacity:.8;border-style:dashed' : ''}">
-      <summary data-group-drop="${enc}" style="cursor:pointer;font-weight:700;border-radius:8px;padding:2px 4px">${g ? esc(g) : 'Bez skupiny'} <span class="muted" style="font-weight:400">(${list.length} ${list.length === 1 ? 'stôl' : (list.length >= 2 && list.length <= 4 ? 'stoly' : 'stolov')})</span>${isHidden ? ' <span class="muted" style="font-weight:400">· 🙈 skrytá pre čašníkov</span>' : ''}</summary>
+      <summary data-group-drop="${enc}" style="cursor:pointer;font-weight:700;border-radius:8px;padding:2px 4px">${g ? esc(g) : 'Bez skupiny'} <span class="muted" style="font-weight:400">(${list.length} ${list.length === 1 ? 'stôl' : (list.length >= 2 && list.length <= 4 ? 'stoly' : 'stolov')})</span>${isHidden ? ' <span class="muted" style="font-weight:400">· 🙈 skrytá pre čašníkov</span>' : ''}${g && g !== TEMP_GROUP ? `<span style="float:right;display:inline-flex;gap:4px">${['▲', '▼'].map((l, k) => `<button class="btn ghost" title="${k ? 'Skupinu nižšie' : 'Skupinu vyššie'}" style="width:36px;height:32px;padding:0" onclick="event.preventDefault();event.stopPropagation();moveTblGroup('${enc}',${k ? 1 : -1})">${l}</button>`).join('')}</span>` : ''}</summary>
       ${g ? `<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0">
         <input value="${esc(g)}" maxlength="20" title="Premenovať skupinu (Enter = uložiť)" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')this.blur()" onchange="renameTblGroup('${enc}',this.value)">
         <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="setTblGroupHidden('${enc}',${!isHidden})">${isHidden ? '👁 Zobraziť čašníkom' : '🙈 Skryť pred čašníkmi'}</button>
