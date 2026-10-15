@@ -133,7 +133,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-16</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-16c</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -370,12 +370,16 @@ async function call(method, url, body = {}) {
 }
 async function callInner(m, [col, id, action], body) {
   if (col === 'tables') {
-    if (m === 'POST' && !id) { if (!isManager) fail('Stoly smie pridávať len vedúci');
+    if (m === 'POST' && !id) { if (!isManager && !body.temp) fail('Stoly smie pridávať len vedúci');
       const name = str(body.name, 40); if (!name) fail('Chýba názov stola');
       const rec = { name, order: now() };
       if (body.group !== undefined) rec.group = str(body.group, 20);
       if (body.color !== undefined) rec.color = str(body.color, 20);
-      return db.ref('tables').push(rec); }
+      // dočasný stôl (pridá aj čašník): po zaplatení zmizne zo zoznamu, vedúci ho neskôr zmaže v prune()
+      if (body.temp) { rec.temp = true; rec.createdAt = now(); rec.group = TEMP_GROUP; }
+      const ref = db.ref('tables').push();
+      await ref.set(rec);
+      return { id: ref.key }; }
     // Preusporiadanie ťahaním (Nastavenia) - príde celý nový poradie zoznam id-čiek, prepíše sa "order"
     // podľa pozície v ňom. Volá sa ako /api/tables/_/reorder - konkrétne id v ceste sa ignoruje.
     if (m === 'POST' && action === 'reorder') {
@@ -877,6 +881,12 @@ function prune() {
     if (!S.tables.some(t => t.id === id) || (!tableOrders(id).length && (g.t || 0) < glimit)) ug[id] = null;
   });
   if (Object.keys(ug).length) db.ref('meta/guests').update(ug).catch(() => {});
+  // dočasné stoly, ktoré už nie sú potrebné (zaplatené / nepoužité 3 h), zmaže vedúci (mazať stoly smie len on)
+  if (isManager) {
+    const ut = {};
+    S.tables.forEach(t => { if (t.temp && !tempTableAlive(t) && t.id !== tableId) ut[t.id] = null; });
+    if (Object.keys(ut).length) db.ref('tables').update(ut).catch(() => {});
+  }
   // vybavené položky z nástenky staršie ako 7 dní sa potichu zmažú (mazanie smie len vedúci, preto len tu)
   if (isManager) {
     const ub = {}, blimit = now() - 7 * 864e5;
@@ -1124,10 +1134,38 @@ const hiddenGroupSet = () => new Set((S.access && S.access.hiddenGroups) || []);
 // stoly, ktoré vidí toto zariadenie: vedúci všetky; čašník nie stoly zo skrytých skupín - ALE stôl s
 // otvoreným účtom ostane viditeľný vždy (nech sa nestratia peniaze), plus voliteľne konkrétny stôl (keepId)
 function visibleTables(keepId) {
-  if (isManager) return S.tables;
+  const alive = S.tables.filter(t => tempTableAlive(t) || t.id === keepId);
+  if (isManager) return alive;
   const h = hiddenGroupSet();
-  if (!h.size) return S.tables;
-  return S.tables.filter(t => !h.has(t.group || '') || t.id === keepId || tableOrders(t.id).length);
+  if (!h.size) return alive;
+  return alive.filter(t => !h.has(t.group || '') || t.id === keepId || tableOrders(t.id).length);
+}
+// ---------- dočasné stoly (2026-10-16) ----------
+// Čašník pridá "➕ Dočasný stôl" (napr. stolička navyše, partia na terase). Ukazuje sa, kým má otvorený účet
+// alebo hru; po zaplatení zmizne. Nový, ešte nepoužitý dočasný stôl sa ukazuje 3 hodiny (aby sa naň dalo
+// objednať). Mazať stoly smie len vedúci (pravidlá) → reálne ho zmaže prune() na zariadení vedúceho.
+const TEMP_GROUP = 'Dočasné';
+function tempTableAlive(t) {
+  if (!t.temp) return true;
+  if (tableOrders(t.id).length || S.sessions.some(s => s.tableId === t.id)) return true;
+  const used = S.orders.some(o => o.tableId === t.id);
+  return !used && now() - (t.createdAt || 0) < 3 * 3600e3;
+}
+let addingTemp = false;
+async function addTempTable() {
+  if (addingTemp) return;
+  const taken = new Set(S.tables.filter(tempTableAlive).map(t => t.name));
+  let n = 1; while (taken.has('D' + n)) n++;
+  const name = prompt('Názov dočasného stola (po zaplatení zmizne):', 'D' + n);
+  if (name === null) return;
+  if (!name.trim()) return toast('Zadaj názov');
+  addingTemp = true;
+  try {
+    const r = await call('POST', '/api/tables', { name: name.trim(), temp: true });
+    toast(`Dočasný stôl ${name.trim()} pridaný ✓`);
+    if (r && r.id) openTable(r.id);
+  } catch (e) { if (!e.code) toast('Nepodarilo sa pridať stôl'); }
+  finally { addingTemp = false; }
 }
 // ako dávno bola na stole posledná objednávka - nech čašník vidí, ku ktorému stolu sa dlho nikto nevrátil
 // (nad 45 min oranžovo, nad 90 min červeno)
@@ -1172,6 +1210,7 @@ function renderTables() {
   const topRow = `<div class="row" style="justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
     ${summary || '<span></span>'}
     <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button class="btn ghost" style="width:auto" onclick="addTempTable()">➕ Dočasný stôl</button>
       <button class="btn ghost" style="width:auto" onclick="showQuickCash=!showQuickCash;render()">💶 Rýchla platba</button>
       <button class="btn ghost" style="width:auto" onclick="showQueue=true;render()">📌 Rezervácie${S.queue.length ? ' (' + S.queue.length + ')' : ''}</button>
       <button class="btn ghost" style="width:auto" onclick="showHist=true;render()">📅 História</button>
@@ -2713,14 +2752,18 @@ function renderSettings() {
   const colorBtn = (c, selected, onclick, g) => { const others = usedBy(c, g);
     return `<button title="${c ? (others.length ? 'Obsadená: ' + esc(others.join(', ')) : 'Voľná farba') : 'Bez farby'}" onclick="${onclick}"
       style="position:relative;width:26px;height:26px;border-radius:50%;flex:none;padding:0;background:${c || 'var(--bg)'};border:2px solid ${selected ? 'var(--ink)' : 'var(--line)'}">${others.length && !selected ? '<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;color:#fff;text-shadow:0 0 3px #000">✕</span>' : ''}</button>`; };
-  const tRow = x => `<div class="set-row t table-row" style="grid-template-columns:28px 1fr 110px auto auto" data-table-id="${x.id}">
+  // (2026-10-16) riadok stola: hore ⠿ ▲ ▼ + názov, pod tým "Presunúť do skupiny", farby, Zmazať (na mobile sa zalomí)
+  const arrowBtn = (id, dir, lbl) => `<button class="btn ghost" title="${dir < 0 ? 'Posunúť vyššie' : 'Posunúť nižšie'}" style="width:40px;height:40px;padding:0;flex:none;font-size:16px" onclick="moveTableStep('${id}',${dir})">${lbl}</button>`;
+  const tRow = x => `<div class="set-row t table-row" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 0 10px;border-bottom:1px solid var(--line)" data-table-id="${x.id}">
     <span class="dragHandle" title="Podrž a presuň – zmení poradie" onpointerdown="startTableDrag(event,'${x.id}')">⠿</span>
-    <input value="${esc(x.name)}" onkeydown="if(event.key==='Enter')this.blur()" onchange="call('PUT','/api/tables/${x.id}',{name:this.value})">
-    <select title="Presunúť do inej skupiny" onchange="call('PUT','/api/tables/${x.id}',{group:this.value})">
-      <option value="">— bez skupiny —</option>${groupNames.map(g => `<option value="${esc(g)}" ${(x.group || '') === g ? 'selected' : ''}>${esc(g)}</option>`).join('')}
-    </select>
-    <div style="display:flex;gap:4px">${TABLE_COLORS.map(c => colorBtn(c, (x.color || '') === c, `call('PUT','/api/tables/${x.id}',{color:'${c}'})`, x.group)).join('')}</div>
-    <button class="del" onclick="delTable('${x.id}')">Zmazať</button></div>`;
+    ${arrowBtn(x.id, -1, '▲')}${arrowBtn(x.id, 1, '▼')}
+    <input value="${esc(x.name)}" style="flex:1;min-width:90px" onkeydown="if(event.key==='Enter')this.blur()" onchange="call('PUT','/api/tables/${x.id}',{name:this.value})">
+    <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;width:100%">
+      <select title="Presunúť do inej skupiny" style="flex:1;min-width:150px" onchange="moveTableToGroup('${x.id}',this.value)">
+        <option value="">↔ Bez skupiny</option>${groupNames.map(g => `<option value="${esc(g)}" ${(x.group || '') === g ? 'selected' : ''}>↔ Skupina ${esc(g)}</option>`).join('')}
+      </select>
+      <div style="display:flex;gap:4px;flex-wrap:wrap">${TABLE_COLORS.map(c => colorBtn(c, (x.color || '') === c, `call('PUT','/api/tables/${x.id}',{color:'${c}'})`, x.group)).join('')}</div>
+      <button class="del" onclick="delTable('${x.id}')">Zmazať</button></div></div>`;
   // skupina = rozbaľovací blok (stav otvorenia si pamätá openTblGroups, nech sa po prekreslení nezatvorí)
   const groupBlock = (g, i) => {
     const list = S.tables.filter(x => (x.group || '') === g), isHidden = !!g && hiddenG.has(g), enc = grpArg(g);
@@ -3171,6 +3214,32 @@ async function setTblGroupColor(enc, c) {
   try { await db.ref('tables').update(u); } catch (e) { toast('Nepodarilo sa uložiť farbu'); }
 }
 async function delTable(id) { if (confirm('Zmazať stôl?')) await call('DELETE', '/api/tables/' + id); }
+// ▲▼ – posunie stôl o jedno miesto v rámci jeho skupiny (záloha k ťahaniu, na mobile spoľahlivejšie)
+let tableStepping = false;
+async function moveTableStep(id, dir) {
+  if (tableStepping) return;
+  const list = [...S.tables], t = list.find(x => x.id === id); if (!t) return;
+  const g = t.group || '', same = list.filter(x => (x.group || '') === g);
+  const i = same.findIndex(x => x.id === id), j = i + dir;
+  if (j < 0 || j >= same.length) return toast(dir < 0 ? 'Už je prvý v skupine' : 'Už je posledný v skupine');
+  const a = list.indexOf(same[i]), b = list.indexOf(same[j]);
+  [list[a], list[b]] = [list[b], list[a]];
+  tableStepping = true;
+  try { await call('POST', '/api/tables/_/reorder', { order: list.map(x => x.id) }); }
+  finally { tableStepping = false; render(); }
+}
+// presun stola do inej skupiny cez výber – prevezme farbu skupiny, zaradí sa na jej koniec a skupina sa rozbalí
+async function moveTableToGroup(id, g) {
+  const t = S.tables.find(x => x.id === id); if (!t || (t.group || '') === g) return;
+  const ex = S.tables.find(x => (x.group || '') === g && x.color && x.id !== id);
+  const list = S.tables.filter(x => x.id !== id), last = list.map(x => x.group || '').lastIndexOf(g);
+  list.splice(last + 1, 0, t);
+  try {
+    await call('PUT', '/api/tables/' + id, { group: g, ...(ex ? { color: ex.color } : {}) });
+    await call('POST', '/api/tables/_/reorder', { order: list.map(x => x.id) });
+    openTblGroups.add(g); toast(`${t.name} → ${g || 'Bez skupiny'}`);
+  } finally { render(); }
+}
 
 // ---------- preusporiadanie stolov ťahaním (podrž ⠿ a presuň) v Nastaveniach ----------
 // Rovnaký princíp ako pri atrakciách (Pointer Events - funguje na myš aj dotyk).
