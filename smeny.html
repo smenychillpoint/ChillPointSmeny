@@ -655,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-16 · <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-16c· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -1443,7 +1443,8 @@
     try{
       if(firebase.auth){
         auth = firebase.auth();
-        try{ await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION); }catch(e){}
+        // LOCAL = vedúci ostane prihlásený aj po zavretí appky (predtým SESSION → odhlasovalo) – 2026-10-16
+        try{ await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
         auth.onAuthStateChanged(u=>{
           const isMgrAuth = !!u && (u.email||'').toLowerCase()===MANAGER_EMAIL.toLowerCase();
           viewAsActive = isMgrAuth && !!viewAsName;
@@ -1639,7 +1640,7 @@
     const n=multiSel.size, picking = multiMode && flexWant>0;
     $('multiGo').style.display = (picking || !canSign) ? 'none' : '';
     $('multiFlexGo').style.display = picking ? '' : 'none';
-    ['multiCant','multiOk','multiWant'].forEach(id=>{ $(id).style.display = (picking || !feat('avail')) ? 'none' : ''; });
+    ['multiCant','multiOk','multiWant'].forEach(id=>{ $(id).style.display = (picking || !feat('avail') || (id==='multiWant' && !wantOn())) ? 'none' : ''; });
     if(picking){
       $('multiCount').textContent = n ? `Chceš ${flexWant} z vybraných dní. Vybraných: ${n}` : `Vyber aspoň 2 dni, chceš z nich ${flexWant}`;
       $('multiFlexGo').disabled = n<2;
@@ -1807,11 +1808,9 @@
 
   // ---------- odhlásenie vedúceho + automatické odhlásenie pri nečinnosti ----------
   let idleTimer=null; const IDLE_MS=30*60*1000;
-  function resetIdle(){
-    clearTimeout(idleTimer);
-    if(!manager) return;
-    idleTimer=setTimeout(()=>{ doManagerLogout(); showToast('Režim vedúceho vypnutý (neaktivita).'); }, IDLE_MS);
-  }
+  // (2026-10-16) automatické odhlásenie vedúceho po 30 min nečinnosti je VYPNUTÉ – odhlasovalo aj úvod a Objednávky
+  // (spoločné prihlásenie) a majiteľa to otravovalo. Vedúci sa odhlási tlačidlom "Vypnúť". IDLE_MS ostáva nepoužité.
+  function resetIdle(){ clearTimeout(idleTimer); }
   ['click','keydown','touchstart'].forEach(ev=>document.addEventListener(ev,resetIdle,{passive:true}));
   function doManagerLogout(){
     manager=false; clearTimeout(idleTimer);
@@ -3396,6 +3395,7 @@
     { id:'targets',    label:'Cieľové počty smien' },
     { id:'signup',     label:'Zamestnanci sa sami prihlasujú / odhlasujú na smeny (vypnuté = zapisuje len vedúci)' },
     { id:'avail',      label:'Môžem / Nemôžem / Chcem (dostupnosť)' },
+    { id:'want',       label:'★ „Chcem tento deň“' },
     { id:'notices',    label:'Nástenka oznamov' },
     { id:'confirm',    label:'Potvrdenie smeny zamestnancom' },
     { id:'checklists', label:'Checklisty a záznam zo smeny' },
@@ -3403,6 +3403,8 @@
     { id:'todos',      label:'To-do zoznam úloh' }
   ];
   const feat=id=>featCfg[id]!==false;
+  // (2026-10-16) "★ Chcem" sa dá vypnúť v Nastaveniach (predvolene zapnuté – majiteľ ho chce nechať)
+  function wantOn(){ return featCfg.avail!==false && featCfg.want!==false; }
   async function setFeature(id, on){
     if(!manager||!dbAvailable) return;
     const f=FEATURES.find(x=>x.id===id); if(!f) return;
@@ -3416,7 +3418,7 @@
     $('featList').innerHTML=FEATURES.map(f=>`<label class="switch-row" style="margin-bottom:10px;"><input type="checkbox" id="feat_${f.id}" data-feat="${f.id}" checked><span><b>${esc(f.label)}</b></span></label>`).join('');
     document.querySelectorAll('#featList [data-feat]').forEach(x=>x.addEventListener('change',()=>setFeature(x.dataset.feat, x.checked)));
   }
-  function renderFeatureList(){ FEATURES.forEach(f=>{ const el=$('feat_'+f.id); if(el && document.activeElement!==el) el.checked=feat(f.id); }); }
+  function renderFeatureList(){ FEATURES.forEach(f=>{ const el=$('feat_'+f.id); if(el && document.activeElement!==el) el.checked = feat(f.id); }); }
 
   // ---------- menu na lište ----------
   const MENUS=['Plan','Msg','Data'];
@@ -5274,7 +5276,7 @@
       if(!past && myName && !already && feat('avail')){
         const cur=avState(date,myName);
         const seg=(id,state,label)=>`<button class="seg${cur===state?' on':''}" id="${id}">${label}</button>`;
-        actionHtml += `<div class="segbox"><div class="seglabel">TVOJ VÝBER PRE TENTO DEŇ</div><div class="segrow">${seg('okDay','can','✓ Môžem')}${seg('cantDay','cant','✗ Nemôžem')}${seg('wantDay','want','★ Chcem tento deň')}</div><p class="sub" style="margin:6px 0 0;font-size:12px;">Ťuknutím na zvolenú možnosť ju zrušíš. Vedúci to uvidí pri plánovaní. ${feat('signup')?'Nič ťa to neprihlási, na smenu sa prihlasuješ sám.':'Podľa toho ťa vedúci zapíše.'}</p></div>`;
+        actionHtml += `<div class="segbox"><div class="seglabel">TVOJ VÝBER PRE TENTO DEŇ</div><div class="segrow">${seg('okDay','can','✓ Môžem')}${seg('cantDay','cant','✗ Nemôžem')}${wantOn()?seg('wantDay','want','★ Chcem tento deň'):''}</div><p class="sub" style="margin:6px 0 0;font-size:12px;">Ťuknutím na zvolenú možnosť ju zrušíš. Vedúci to uvidí pri plánovaní. ${feat('signup')?'Nič ťa to neprihlási, na smenu sa prihlasuješ sám.':'Podľa toho ťa vedúci zapíše.'}</p></div>`;
       }
       if(!past && myName && !already && feat('avail')){
         const dw=new Date(date+'T12:00').getDay(), hasCan=canDaysOf(recFor(myName)).includes(dw);

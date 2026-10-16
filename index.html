@@ -165,7 +165,8 @@
     const pw = $('mPass').value; blurNow();
     if (!pw) { ui.err = 'Zadaj heslo.'; return render(); }
     try {
-      await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.SESSION);
+      // LOCAL = prihlásenie vedúceho ostane aj po zavretí appky (SESSION odhlasovalo pri každom zavretí) – 2026-10-16
+      await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
       await firebase.auth().signInWithEmailAndPassword(MANAGER_EMAIL, pw);
       ui.err = ''; ui.mgrForm = false; toast('Prihlásený ako vedúci ⚡');
     } catch (e) { ui.err = 'Nesprávne heslo.'; render(); }
@@ -260,7 +261,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-16</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-16b</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -333,7 +334,7 @@
       </div>`;
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-16</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-16b</footer>`;
     app.innerHTML = html;
   }
 
