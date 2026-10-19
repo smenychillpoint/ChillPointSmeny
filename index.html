@@ -125,7 +125,13 @@
     viewAs = ''; me = ''; ls.del('cp_viewAs'); ls.del('cp_myname'); ls.set('waiter', JSON.stringify(''));
     applyView(); toast('⚡ Späť ako vedúci'); render();
   }
-  let emps = [], day = {}, todos = {}, board = {}, notices = {}, queue = {}, handover = {}, access = {};
+  let emps = [], day = {}, todos = {}, board = {}, notices = {}, queue = {}, handover = {}, access = {}, upcoming = {};
+  // najbližšie smeny prihláseného zamestnanca (max 5) – zavretý deň = potvrdená smena, otvorený = zatiaľ prihlásený
+  function myUpcoming() {
+    if (!me) return [];
+    const today = iso(new Date());
+    return Object.keys(upcoming || {}).filter(k => k >= today).sort().filter(k => { const d = upcoming[k] || {}; return !d.off && (Array.isArray(d.employees) ? d.employees : Object.values(d.employees || {})).includes(me); }).slice(0, 5);
+  }
   let ui = { mgrForm: false, err: '', shopOpen: false, accOpen: false, handDraft: '' };
 
   const allowed = key => isMgr || !me || ((access.e || {})[enc(me)] || {})[key] !== false;
@@ -263,7 +269,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-19b</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-19c</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -279,6 +285,20 @@
             <span style="flex:1;min-width:150px">👁 Zobrazuješ ako <b>${esc(viewAs)}</b><br><small style="color:var(--muted)">Platí aj v Smenách a Objednávkach. Čo tu urobíš, je naozaj (zapíše sa).</small></span>
             <select style="flex:1;min-width:140px;margin:0" onchange="viewAsEmp(this.value)">${opts}</select>
             <button class="btn" onclick="backToMgr()">⚡ Späť ako vedúci</button></div>`;
+    }
+    // 📅 Moje najbližšie smeny (zamestnanec, aj vedúci v režime 👁)
+    if (me && !isMgr && allowed('smeny')) {
+      const mine = myUpcoming(), today = iso(new Date());
+      const tm = new Date(); tm.setDate(tm.getDate() + 1); const tomorrow = iso(tm);
+      html += `<a class="card" href="smeny.html" style="display:block;text-decoration:none;color:inherit;border-left:6px solid var(--yellow)">
+        <h3 style="margin:0 0 8px">📅 Moje najbližšie smeny</h3>
+        ${mine.length ? mine.map(k => { const dt = new Date(k + 'T12:00:00'), d = upcoming[k] || {};
+          const when = k === today ? '<b style="color:var(--yellow)">DNES</b>' : (k === tomorrow ? '<b style="color:var(--yellow)">ZAJTRA</b>' : '');
+          return `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid #26292d;font-size:15px">
+            <span>${DAY_NAMES[dt.getDay()]} ${dt.getDate()}. ${dt.getMonth() + 1}. ${when}</span>
+            <span style="color:${d.closed ? 'var(--green)' : 'var(--muted)'};font-size:13px">${d.closed ? '✓ potvrdená' : '⏳ prihlásený/á'}</span></div>`; }).join('')
+          : '<div class="empty" style="margin:0">Zatiaľ nemáš žiadnu smenu. Pozri kalendár v Smenách.</div>'}
+      </a>`;
     }
     html += `<div class="card today"><h3><span>📅 Dnes · ${DAY_NAMES[bd.getDay()]} ${bd.getDate()}. ${bd.getMonth() + 1}.</span>${day && day.off ? '<span style="color:var(--muted);font-size:12px">bez prevádzky</span>' : ''}</h3>
       <div class="people">👥 ${ppl.length ? ppl.map(esc).join(', ') : '<span style="color:var(--muted)">nikto nie je prihlásený</span>'}</div>
@@ -342,7 +362,7 @@
         + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-19b</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-19c</footer>`;
     app.innerHTML = html;
   }
 
@@ -369,6 +389,9 @@
     let dayKey = '';
     const watchDay = () => { const k = iso(bizDate()); if (k === dayKey) return; if (dayKey) db.ref('schedule/days/' + dayKey).off(); dayKey = k; on('schedule/days/' + k, v => { day = v || {}; }); };
     watchDay(); setInterval(() => { watchDay(); render(); }, 60000);
+    // (2026-10-19) 📅 Moje najbližšie smeny – nadchádzajúce dni (od dnes, 60 dní) pre kartu zamestnanca
+    db.ref('schedule/days').orderByKey().startAt(iso(new Date())).limitToFirst(60)
+      .on('value', s => { upcoming = s.val() || {}; render(); }, () => { upcoming = {}; });
     // rezervácie a odovzdávky potrebujú prihlásenie - ak nikto nie je prihlásený, prihlási sa zariadenie (ako v Objednávkach)
     let authOn = false;
     firebase.auth().onAuthStateChanged(async u => {
