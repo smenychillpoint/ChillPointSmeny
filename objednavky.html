@@ -134,7 +134,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-17</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-18</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -331,6 +331,67 @@ function buildOrderItems(list) {
 let tableGuests = {};
 let tempGone = {};   // meta/tempGone/{tableId} = čas – dočasný stôl zmazaný omylom (čašník nesmie mazať stoly, tak sa len skryje)
 const guestOf = id => { const g = tableGuests[id]; return g && g.n ? String(g.n) : ''; };
+// ---------- 👤 Zamestnanecký účet (2026-10-18) ----------
+// Stôl sa dá označiť ako účet zamestnanca: meta/staffTables/{tableId} = {n: meno, t}. Ceny na ňom dostanú zľavu podľa
+// kategórie (Nastavenia → Zamestnanci → access.staffDisc = [{n: kategória, p: %}], napr. alkohol 50, nealko 30, hry 100)
+// a zaplatené objednávky majú staff:true → NErátajú sa do tržby ani do % pre personál, v Uzávierke sú zvlášť.
+// Zľava sa zapisuje priamo do položiek (price = origPrice × (1 − p), staffPct, origPrice), takže súčty a platby
+// fungujú bez zmeny; zrušenie zamestnaneckého účtu vráti pôvodné ceny.
+let staffTables = {};
+const isStaffTable = id => !!(id && staffTables[id]);
+const staffNameOf = id => (staffTables[id] && staffTables[id].n) ? String(staffTables[id].n) : '';
+function staffPctFor(it) {
+  const mi = it.menuId ? S.menu.find(x => x.id === it.menuId) : null;
+  const cat = (mi && mi.category) || it.cat || '';
+  const r = ((S.access && S.access.staffDisc) || []).find(x => x && x.n === cat);
+  const p = r ? Number(r.p) : 0;
+  return p > 0 && p <= 100 ? p : 0;
+}
+// položky → so zamestnaneckou zľavou (z pôvodnej ceny; ručná zľava sa nahradí zamestnaneckou)
+function staffItems(items) {
+  return items.map(it => {
+    const base = it.origPrice != null ? it.origPrice : it.price, p = staffPctFor(it);
+    if (!p && !it.staffPct) return it;   // kategória bez zamestnaneckej zľavy – nechať tak (aj s ručnou zľavou)
+    const out = { ...it }; delete out.discountPct; delete out.discountAmt;
+    if (p > 0) { out.price = Math.round(base * (1 - p / 100) * 100) / 100; out.origPrice = base; out.staffPct = p; }
+    else if (it.staffPct) { out.price = base; delete out.origPrice; delete out.staffPct; }
+    return out;
+  });
+}
+// späť na bežné ceny (pri zrušení zamestnaneckého účtu)
+function unstaffItems(items) {
+  return items.map(it => { if (!it.staffPct) return it; const out = { ...it, price: it.origPrice != null ? it.origPrice : it.price }; delete out.origPrice; delete out.staffPct; return out; });
+}
+let staffBusy = false;
+async function setStaffTable(id, on) {
+  const t = S.tables.find(x => x.id === id); if (!t || staffBusy) return;
+  let n = '';
+  if (on) {
+    const v = prompt(`Zamestnanecký účet na ${t.name} – kto to je? (meno zamestnanca)\nCeny dostanú zamestnaneckú zľavu a účet sa nebude rátať do tržby.`, store.get('waiter', '') || '');
+    if (v === null) return;
+    n = str(v, 40);
+  } else if (!confirm(`Zrušiť zamestnanecký účet na ${t.name}? Ceny sa vrátia na bežné a bude sa rátať do tržby.`)) return;
+  staffBusy = true;
+  try {
+    const u = {};
+    tableOrders(id).forEach(o => { u[o.id + '/items'] = on ? staffItems(o.items) : unstaffItems(o.items); u[o.id + '/staff'] = on ? true : null; });
+    if (Object.keys(u).length) await db.ref('orders').update(u);
+    if (on) await db.ref('meta/staffTables/' + id).set({ n, t: now() }); else await db.ref('meta/staffTables/' + id).remove();
+    toast(on ? `👤 ${t.name}: zamestnanecký účet${n ? ' – ' + n : ''}` : `${t.name}: bežný účet`);
+  } catch (e) { toast('Nepodarilo sa uložiť'); }
+  finally { staffBusy = false; render(); }
+}
+async function setStaffDisc(enc, val) {
+  if (!isManager) return;
+  const c = decodeURIComponent(enc), p = Math.max(0, Math.min(100, Math.round(num(val)) || 0));
+  const list = ((S.access && S.access.staffDisc) || []).filter(x => x && x.n !== c);
+  if (p > 0) list.push({ n: c, p });
+  try { await call('PUT', '/api/access', { staffDisc: list }); toast(p ? `${c}: zamestnanci −${p} %` : `${c}: bez zľavy`); } finally { render(); }
+}
+function staffDiscText() {
+  const l = ((S.access && S.access.staffDisc) || []).filter(x => x && Number(x.p) > 0);
+  return l.length ? l.map(x => `${esc(x.n)} ${Number(x.p) >= 100 ? 'zadarmo' : '−' + Number(x.p) + ' %'}`).join(' · ') : 'zľavy zatiaľ nie sú nastavené (Nastavenia → Zamestnanci)';
+}
 const clearGuest = id => db.ref('meta/guests/' + id).remove().catch(() => {});
 async function editGuest(id) {
   const t = S.tables.find(x => x.id === id); if (!t) return;
@@ -420,7 +481,8 @@ async function callInner(m, [col, id, action], body) {
             // vynechá, takže sa pri čítaní späť správa ako undefined) - nikdy sem nedávaj "menuId: it.menuId"
             // natvrdo, lebo zápis objektu s explicitnou hodnotou undefined do Firebase rovno zlyhá (a keďže
             // to nie je fail() s hláškou, používateľ nevidí vôbec nič - účet sa potichu nedá vyplatiť).
-            paidItems.push({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: take, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}) });
+            paidItems.push({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: take, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}),
+              ...(it.staffPct ? { staffPct: it.staffPct, origPrice: it.origPrice } : {}) });
             return { ...it, qty: it.qty - take }; }
           return it;
         }).filter(it => it.qty > 0);
@@ -436,9 +498,11 @@ async function callInner(m, [col, id, action], body) {
       const newKey = db.ref('orders').push().key;
       const guest = guestOf(id);
       u[newKey] = { no: r.snapshot.val(), tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30), ...(guest ? { guest } : {}),
-        note: '', items: paidItems, status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}) };
+        note: '', items: paidItems, status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}),
+        ...(isStaffTable(id) ? { staff: true, staffName: str(staffNameOf(id), 40) } : {}) };
       await db.ref('orders').update(u);
       if (!leftOnTable && guest) clearGuest(id);   // celý účet vyplatený -> meno zmizne
+      if (!leftOnTable && isStaffTable(id)) db.ref('meta/staffTables/' + id).remove().catch(() => {});   // aj označenie zamestnanca
       return;
     }
     // Rozdelenie CELÉHO účtu rovným dielom medzi N ľudí (napr. 4 kamoši, každý platí svoju 1/4,
@@ -470,10 +534,12 @@ async function callInner(m, [col, id, action], body) {
         const key = db.ref('orders').push().key;
         u[key] = { no: ((n0 - 1 + i) % 999) + 1, tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30), note: '', ...(guest ? { guest } : {}),
           items: [{ name: `Podiel účtu (${i + 1}/${parts})`, price: Math.round(amountCents) / 100, qty: 1 }],
-          status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}) };
+          status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}),
+          ...(isStaffTable(id) ? { staff: true, staffName: str(staffNameOf(id), 40) } : {}) };
       }
       await db.ref('orders').update(u);
       if (guest) clearGuest(id);   // celý účet vyplatený -> meno zmizne
+      if (isStaffTable(id)) db.ref('meta/staffTables/' + id).remove().catch(() => {});
       return;
     }
     // Odstránenie (stornovanie) položky z účtu stola bez platby - napr. omylom objednané, alebo hosť
@@ -518,8 +584,11 @@ async function callInner(m, [col, id, action], body) {
       const os = tableOrders(id);
       if (!os.length) fail('Stôl nemá žiadne otvorené objednávky');
       const u = {};
+      const targetHad = tableOrders(target.id).length, srcStaff = staffTables[id];
       os.forEach(o => { u[o.id + '/tableId'] = target.id; u[o.id + '/tableName'] = target.name; });
       await db.ref('orders').update(u);
+      // zamestnanecký účet ide so svojím účtom (na prázdny stôl); na stôl s iným účtom sa označenie neprenáša
+      if (srcStaff) { try { if (!targetHad) await db.ref('meta/staffTables/' + target.id).set(srcStaff); await db.ref('meta/staffTables/' + id).remove(); } catch (e) {} }
       // bežiace hry zapísané na tento stôl idú s účtom
       const us = {};
       S.sessions.filter(s => s.tableId === id).forEach(s => { us[s.id + '/tableId'] = target.id; });
@@ -570,6 +639,9 @@ async function callInner(m, [col, id, action], body) {
       }
       // poradie kategórií menu (názvy v poradí) - pri objednávaní aj v Nastaveniach
       if (body.catOrder !== undefined) u.catOrder = [...new Set((Array.isArray(body.catOrder) ? body.catOrder : []).map(x => str(x, 40)).filter(Boolean))].slice(0, 200);
+      // zamestnanecké zľavy podľa kategórie menu: [{n: kategória, p: % (100 = zadarmo)}]
+      if (body.staffDisc !== undefined) u.staffDisc = (Array.isArray(body.staffDisc) ? body.staffDisc : [])
+        .map(x => ({ n: str(x && x.n, 40), p: Math.max(0, Math.min(100, Math.round(num(x && x.p)))) })).filter(x => x.n && x.p > 0).slice(0, 100);
       ['tableGroups', 'hiddenGroups', 'groupOrder', 'uiOff'].forEach(k => {
         if (body[k] !== undefined) u[k] = [...new Set((Array.isArray(body[k]) ? body[k] : []).map(x => str(x, 20)).filter(Boolean))].slice(0, 100);
       });
@@ -629,13 +701,15 @@ async function callInner(m, [col, id, action], body) {
   if (col === 'orders') {
     if (m === 'POST' && !id) {
       const table = S.tables.find(t => t.id === body.tableId); if (!table) fail('Vyberte stôl');
-      const items = buildOrderItems(body.items);
+      const staff = isStaffTable(table.id);
+      const items = staff ? staffItems(buildOrderItems(body.items)) : buildOrderItems(body.items);
       if (!items.length) fail('Objednávka je prázdna');
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
       // skipBar: rovno zapísané na účet stola bez posielania na bar (napr. položky, ktoré netreba pripraviť)
       const rec = { no: r.snapshot.val(), tableId: table.id, tableName: table.name,
         waiter: str(body.waiter, 30), note: str(body.note, 120), items, status: body.skipBar ? 'vydana' : 'nova', createdAt: now() };
       if (body.skipBar) rec.vydanaAt = now();
+      if (staff) rec.staff = true;
       return db.ref('orders').push(rec);
     }
     const o = S.orders.find(x => x.id === id); if (!o) fail('Objednávka neexistuje');
@@ -645,7 +719,7 @@ async function callInner(m, [col, id, action], body) {
     // sa označia "plus", aby ich barman videl ako novo pridané.
     if (m === 'POST' && action === 'addItems') {
       if (o.status !== 'nova') fail('Objednávka už nie je na bare – pošli novú');
-      const add = buildOrderItems(body.items);
+      const add = isStaffTable(o.tableId) ? staffItems(buildOrderItems(body.items)) : buildOrderItems(body.items);
       if (!add.length) fail('Nič na pridanie');
       const items = o.items.map(x => ({ ...x }));
       add.forEach(n => {
@@ -823,6 +897,7 @@ async function callInner(m, [col, id, action], body) {
         status: tbl ? 'vydana' : 'zaplatena', createdAt: s.startedAt
       };
       if (!tbl) { rec.paidAt = now(); if (bizDay) rec.businessDay = bizDay; }
+      if (tbl && isStaffTable(tbl.id)) { rec.items = staffItems(rec.items); rec.staff = true; }   // hra na zamestnaneckom účte
       await db.ref('orders/' + newKey).set(rec);
       return db.ref('sessions/' + id).remove();
     }
@@ -978,6 +1053,7 @@ function connect() {
     // mená k účtom stolov (nepovinné - keď sa nenačítajú, appka funguje ďalej bez nich)
     db.ref('meta/guests').on('value', s => { tableGuests = s.val() || {}; tryRender(); }, () => { tableGuests = {}; });
     db.ref('meta/tempGone').on('value', s => { tempGone = s.val() || {}; tryRender(); }, () => { tempGone = {}; });
+    db.ref('meta/staffTables').on('value', s => { staffTables = s.val() || {}; tryRender(); }, () => { staffTables = {}; });
     db.ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; tryRender(); }, () => { hubAccess = {}; });
     // výplaty (hodiny + trinkgeľ) zdieľané medzi zariadeniami; pri prvom načítaní sa prenesú staré lokálne údaje
     let payFirst = true;
@@ -1275,7 +1351,7 @@ function tableTile(t) {
            : os.some(o => o.status === 'nova') ? '<span class="pill p-nova">Na bare</span>' : '';
   const busy = os.length || games;
   return `<button class="tbl ttile ${busy ? 'busy' : ''}" style="${t.color ? `border-left:6px solid ${t.color};` : ''}${!busy && res.soon ? 'border-color:var(--warn);' : ''}" onclick="openTable('${t.id}')">
-    <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}${os.length ? `<small>${eur(sumOrders(os))}</small>${lastOrderTag(os)}${st}` : (games || res.html ? '' : '<small>voľný</small>')}${games}${res.html}</button>`;
+    <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}${isStaffTable(t.id) ? `<small style="font-weight:800;color:var(--accent)">👤 zamestnanec${staffNameOf(t.id) ? ' ' + esc(staffNameOf(t.id)) : ''}</small>` : ''}${os.length ? `<small>${eur(sumOrders(os))}</small>${lastOrderTag(os)}${st}` : (games || res.html ? '' : '<small>voľný</small>')}${games}${res.html}</button>`;
 }
 // (2026-10-16) prepínač "Len obsadené" na Stoloch – pamätá sa na zariadení
 let onlyBusy = store.get('onlyBusy', false) === true;
@@ -1768,7 +1844,7 @@ function renderHistory() {
   const selPos = wasFocused ? document.activeElement.selectionStart : null;
   const isToday = dateKey(histDate) === bizTodayISO();
   let paid = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(histDate))).sort((a, b) => b.paidAt - a.paidAt);
-  const total = sumOrders(paid);
+  const total = sumOrders(paid.filter(o => !o.staff));   // zamestnanecké účty nie sú tržba
   const q = fold(histFilter || '');
   if (q) paid = paid.filter(o => fold(o.tableName || '').includes(q) || String(o.no).includes(q) || o.items.some(i => fold(i.name || '').includes(q)));
   const fmtTime = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -1783,7 +1859,7 @@ function renderHistory() {
       <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p></div>
     <input id="histFilterInput" value="${esc(histFilter)}" placeholder="🔍 Hľadať (stôl, položka, č. objednávky)…" style="margin-top:10px" oninput="histFilter=this.value;renderHistory()">
     ${paid.length ? `<div class="card" style="padding:0;margin-top:12px">${paid.map(o => `<div class="line">
-        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}
+        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}${o.staff ? ` <span class="pill" style="background:var(--line)">👤 zamestnanec${o.staffName ? ' ' + esc(o.staffName) : ''} · mimo tržby</span>` : ''}
           <small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small></div>
         <span>${eur(sumOrders([o]))}</span>
       </div>`).join('')}</div>` : `<div class="empty">${q ? 'Nič nenájdené.' : 'Za tento deň zatiaľ nič nebolo zaplatené.'}</div>`}
@@ -1956,7 +2032,9 @@ function renderTable() {
   const guest = guestOf(tableId);
   const guestUi = `<div class="card" style="margin-bottom:14px;display:flex;align-items:center;gap:10px;justify-content:space-between;padding:10px 14px">
     <span>${guest ? `👤 <b>${esc(guest)}</b>` : '<span class="muted">👤 Účet zatiaľ bez mena</span>'}</span>
-    <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="editGuest('${tableId}')">${guest ? '✎ Zmeniť meno' : '+ Pridať meno'}</button></div>`;
+    <div class="row" style="gap:6px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="editGuest('${tableId}')">${guest ? '✎ Zmeniť meno' : '+ Pridať meno'}</button>
+      ${isStaffTable(tableId) ? '' : `<button class="btn ghost" style="width:auto;padding:6px 12px" onclick="setStaffTable('${tableId}',true)">👤 Zamestnanecký účet</button>`}</div></div>`;
   // bloky obrazovky stola - poradie a skrytie podľa Nastavení -> Obrazovka stola (tableLayout)
   const lay = tableLayout(), hasMenu = S.menu.length > 0;
   const blocks = {
@@ -2005,7 +2083,11 @@ function renderTable() {
   const tempBanner = curT && curT.temp ? `<div class="card" style="margin-bottom:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span style="flex:1;font-size:14px">🕐 <b>Dočasný stôl</b> – po zaplatení zmizne</span>
     ${!os.length && !S.sessions.some(s => s.tableId === tableId) ? `<button class="del" style="width:auto;padding:8px 12px" onclick="delTempTable('${tableId}')">🗑 Zmazať stôl</button>` : ''}</div>` : '';
-  $('#app').innerHTML = readyBanner() + tempBanner + barBanner + lay.order.filter(k => !lay.hidden.has(k)).map(k => blocks[k] || '').join('') + modal;
+  // 👤 zamestnanecký účet – výrazná lišta hore (zľavy sa už prepočítali v položkách, účet sa nepočíta do tržby)
+  const staffBanner = isStaffTable(tableId) ? `<div class="card" style="margin-bottom:12px;padding:10px 14px;border:2px solid var(--accent);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="flex:1;min-width:180px;font-size:14px">👤 <b>Zamestnanecký účet${staffNameOf(tableId) ? ' – ' + esc(staffNameOf(tableId)) : ''}</b><br><small class="muted">${staffDiscText()} · nepočíta sa do tržby</small></span>
+    <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="setStaffTable('${tableId}',false)">Zrušiť</button></div>` : '';
+  $('#app').innerHTML = readyBanner() + staffBanner + tempBanner + barBanner + lay.order.filter(k => !lay.hidden.has(k)).map(k => blocks[k] || '').join('') + modal;
   if (S.menu.length) { renderItems(); renderFavs(); }
   renderCart();
 }
@@ -2634,7 +2716,9 @@ function renderUzavierka() {
   if (!isManager) uzavDate = bizDay ? parseISODate(bizDay) : bizTodayDate();
   const isToday = dateKey(uzavDate) === bizTodayISO();
   // prázdne "zaplatené" objednávky (staré zvyšky po rozdelení platby, 0,00 €) sa nezobrazujú ani nerátajú
-  const paid = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(uzavDate)));
+  const paidAll = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(uzavDate)));
+  // 👤 zamestnanecké účty sa do tržby (ani do % pre personál) NErátajú – sú zvlášť nižšie
+  const staffPaid = paidAll.filter(o => o.staff), paid = paidAll.filter(o => !o.staff);
   const total = sumOrders(paid);
   const agg = {};
   paid.forEach(o => o.items.forEach(i => {
@@ -2682,6 +2766,20 @@ function renderUzavierka() {
     ${isManager && !isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="uzavDate=bizTodayDate();render()">Dnes</button></div>` : ''}
     <div class="card"><div class="total"><span>Tržba za deň</span><span>${eur(total)}</span></div>
       <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p></div>
+    ${staffPaid.length ? (() => {
+      // zamestnanci: zaplatené (so zľavou) aj pôvodná hodnota, zoskupené podľa mena
+      const full = o => o.items.reduce((s, i) => s + (i.origPrice != null ? i.origPrice : i.price) * i.qty, 0);
+      const byName = {};
+      staffPaid.forEach(o => { const n = o.staffName || o.guest || 'zamestnanec'; const r = byName[n] = byName[n] || { paid: 0, full: 0, items: [] };
+        r.paid += sumOrders([o]); r.full += full(o); o.items.forEach(i => r.items.push(`${i.qty}× ${i.name}`)); });
+      const sPaid = sumOrders(staffPaid), sFull = staffPaid.reduce((s, o) => s + full(o), 0);
+      return `<div class="card" style="margin-top:10px;border-color:var(--accent)">
+        <div class="total" style="font-size:16px"><span>👤 Zamestnanci (mimo tržby)</span><span>${eur(sPaid)}</span></div>
+        <p class="muted" style="margin:4px 0 8px;font-size:12px">Nerátajú sa do tržby ani do % pre personál. Bez zľavy by to bolo ${eur(sFull)} (zľava ${eur(sFull - sPaid)}).</p>
+        ${Object.entries(byName).map(([n, r]) => `<div style="padding:6px 0;border-top:1px solid var(--line);font-size:14px">
+          <div class="row" style="justify-content:space-between"><b>${esc(n)}</b><span>${eur(r.paid)} <small class="muted">(z ${eur(r.full)})</small></span></div>
+          <small class="muted">${esc(r.items.join(', '))}</small></div>`).join('')}</div>`;
+    })() : ''}
 
     <h2 style="margin-top:18px">Výplatná kalkulačka – ${fmtDay(uzavDate)}</h2>
     <div class="card">
@@ -2711,7 +2809,7 @@ function renderUzavierka() {
       : '<div class="empty" style="padding:16px 0">Za tento deň zatiaľ nič nebolo zaplatené.</div>')}
     ${txns.length ? uzDetails('pays', `💶 Jednotlivé platby <span class="muted" style="font-weight:400">(${txns.length})</span>`,
       txns.map(o => `<div class="line" style="align-items:center">
-        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}
+        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}${o.staff ? ` <span class="pill" style="background:var(--line)">👤 zamestnanec${o.staffName ? ' ' + esc(o.staffName) : ''} · mimo tržby</span>` : ''}
           <small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small></div>
         <span>${eur(sumOrders([o]))}</span>
         ${isManager ? `<button class="btn ghost" style="width:auto;padding:6px 10px;margin-left:8px" onclick="delPaidOrder('${o.id}')">✕</button>` : ''}
@@ -2764,7 +2862,8 @@ function migrateLocalPayroll() {
   if (Object.keys(u).length) db.ref('meta/payroll').update(u).then(done).catch(() => {}); else done();
 }
 function dayPaidOrders(date) {
-  return splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(date)));
+  // bez zamestnaneckých účtov (staff) – tie nie sú tržba
+  return splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && !o.staff && o.items.length && orderDayKey(o) === dateKey(date)));
 }
 // Tržba rozpočítaná po jednotlivých položkách (podľa názvu) - na výpočet, koľko z toho je vylúčené z percent
 // (konkrétna položka, napr. len "Pixel", nie celá kategória "Hry"), aj pre CSV export.
@@ -3127,7 +3226,14 @@ function renderSettings() {
         <input type="checkbox" style="width:auto" ${noPctSet.has(m.name) ? 'checked' : ''} onchange="toggleNoPctItem('${m.name.replace(/'/g, "\\'")}',this.checked)">${esc(m.name)}</label>`).join('')}</div>
     </details>`;
   }).join('');
-  const zamestnanciTab = `<h2>Percentá z tržby pre personál</h2><div class="card">
+  const sdMap = {}; ((S.access && S.access.staffDisc) || []).forEach(x => { if (x) sdMap[x.n] = x.p; });
+  const staffDiscCard = `<h2>👤 Zamestnanecké zľavy</h2><div class="card">
+      <p class="muted" style="font-size:13px;margin:0 0 8px">Na stole ťukni „👤 Zamestnanecký účet“ – ceny dostanú tieto zľavy a účet sa NEbude rátať do tržby (v Uzávierke je zvlášť). 100 % = zadarmo (napr. hry), 0 / prázdne = bez zľavy.</p>
+      ${allCategories().map(c => `<div class="row" style="gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line)">
+        <span style="flex:1">${esc(c)}</span>
+        <input type="number" min="0" max="100" step="5" inputmode="numeric" placeholder="0" style="width:80px" value="${sdMap[c] != null ? sdMap[c] : ''}"
+          onkeydown="if(event.key==='Enter')this.blur()" onchange="setStaffDisc('${grpArg(c)}',this.value)"><span class="muted">%</span></div>`).join('') || '<p class="muted">Najprv pridaj kategórie v Menu.</p>'}</div>`;
+  const zamestnanciTab = staffDiscCard + `<h2>Percentá z tržby pre personál</h2><div class="card">
       <div class="row" style="gap:8px;align-items:center">
         <label class="muted" style="flex:1;font-size:13px">Koľko % z dennej tržby sa rozdelí medzi personál</label>
         <input type="number" min="0" max="100" step="0.5" inputmode="decimal" style="width:80px" value="${esc(String(payPct()))}"

@@ -655,7 +655,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-16c· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-19· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -670,7 +670,11 @@
   <div class="modal" id="shiftModal">
     <div class="box">
       <button class="close" data-close>×</button>
-      <h2 id="shiftTitle"></h2>
+      <div style="display:flex;align-items:center;gap:8px;padding-right:40px">
+        <button class="outline" id="dayPrev" title="Predošlý deň" style="flex:none;padding:0 12px;height:38px">‹</button>
+        <h2 id="shiftTitle" style="flex:1;text-align:center;margin:0"></h2>
+        <button class="outline" id="dayNext" title="Ďalší deň" style="flex:none;padding:0 12px;height:38px">›</button>
+      </div>
       <div class="sub" id="shiftNote">Smena v ChillPoint Laser Aréna</div>
 
       <div class="section-title" id="noteTitle">Poznámka na tento deň</div>
@@ -2091,7 +2095,20 @@
   // kedy si to označil/a (aby vedúci videl, kto sa hlásil skôr)
   function avTime(key, name){ const v=(dayObj(key).avt||{})[ratingKey(name)]; return typeof v==='number' ? v : 0; }
   const byAvTime=(key,names)=>names.slice().sort((a,b)=>(avTime(key,a)||Infinity)-(avTime(key,b)||Infinity) || a.localeCompare(b,'sk'));
-  const withTime=(key,name)=>{ const t=avTime(key,name); return t ? `${esc(name)} <span class="sub">(${esc(fmtClock(t))})</span>` : esc(name); }
+  // (2026-10-19) kedy to zaklikol – aj s dátumom (napr. "13. 10. 14:32"), nielen čas
+  const fmtAvWhen=t=>{ const d=new Date(t); return `${d.getDate()}. ${d.getMonth()+1}. ${d.toLocaleTimeString('sk-SK',{hour:'2-digit',minute:'2-digit'})}`; };
+  const withTime=(key,name)=>{ const t=avTime(key,name); return t ? `${esc(name)} <span class="sub">(${esc(fmtAvWhen(t))})</span>` : esc(name); }
+  // pri prihlásenom človeku (okno dňa, vedúci): čo zaklikol na tento deň – ✓ môže / ★ chce / ✗ nemôže (+ kedy)
+  function memberAvTag(key, name){
+    if(!feat('avail')) return '';
+    const st=avState(key,name), t=avTime(key,name), when=t?` <span class="sub">${esc(fmtAvWhen(t))}</span>`:'';
+    if(st==='want') return ` <span style="color:#ffd11a;font-size:12px;font-weight:700">★ chce${when}</span>`;
+    if(st==='can') return ` <span style="color:#7fdc9b;font-size:12px;font-weight:700">✓ môže${when}</span>`;
+    if(st==='cant') return ` <span style="color:#ff7b7b;font-size:12px;font-weight:700">✗ nemôže</span>`;
+    if(canMatches(recFor(name),key)) return ` <span style="color:#7fdc9b;font-size:12px">✓ stále môže</span>`;
+    if(recMatches(recFor(name),key)) return ` <span style="color:#ff7b7b;font-size:12px">✗ pravidelne nemôže</span>`;
+    return ` <span class="sub" style="font-size:12px">– nezaklikol/a</span>`;
+  }
   function avState(key, name){ return (dayObj(key).na||[]).includes(name) ? 'cant' : avMark(key,name); }    // '' | 'can' | 'cant' | 'want'
   // kto ten deň nemôže: jednorazovo („nemôžem“ na deň) alebo pravidelne (ak si ten deň výslovne nezvolil „môžem“ alebo „chcem“)
   function cantInfo(key){
@@ -5230,7 +5247,7 @@
     const standbyHtml=(sbMine||sbCan) ? `<div class="segbox"><div class="seglabel">NÁHRADNÍK</div><button class="seg${sbMine?' on':''}" id="standbyBtn" style="width:100%">${sbMine?'🪑 Si náhradník – odhlásiť':'🪑 Prihlásiť sa ako náhradník'}</button><p class="sub" style="margin:6px 0 0;font-size:12px;">${sbMine?'Vedúci vidí, že môžeš zaskočiť, keby sa niekto odhlásil.':`Deň je ${closed?'zavretý':'plný'}. Ako náhradník sa nezapočítaš do smeny, ale vedúci uvidí, že môžeš zaskočiť, keby sa niekto odhlásil.`}</p></div>` : '';
     const myReqs=(myName && !manager) ? Object.keys(swaps||{}).map(id=>({ id, ...swaps[id] })).filter(x=>x && x.from===myName && x.day===date && ['open','pending_peer','pending_manager'].includes(x.status)) : [];
     const subReq=myReqs.find(x=>x.status==='open')||null, subBusy=myReqs.length>0;
-    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${manager?`<span class="pname" data-person="${esc(n)}">${esc(n)}</span>${isPersonDone(n)?' <span class="done-mark" title="Označené ako hotovo">✅</span>':''}`:esc(n)}${(manager && avMark(date,n)==='want')?' <span title="Tento deň výslovne chcel/a" style="color:#ffd11a">★</span>':''}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
+    const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${manager?`<span class="pname" data-person="${esc(n)}">${esc(n)}</span>${isPersonDone(n)?' <span class="done-mark" title="Označené ako hotovo">✅</span>':''}`:esc(n)}${manager?memberAvTag(date,n):''}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
     let statusHtml, teamHtml, actionHtml='';
     if(isOff){
       statusHtml = '<div class="sfree" style="color:#8f9297;">🚫 Bez prevádzky</div>';
@@ -5301,6 +5318,9 @@
     if(keepSel && $('addEmpSelect') && Array.from($('addEmpSelect').options).some(o=>o.value===keepSel)) $('addEmpSelect').value=keepSel;
     const again=()=>openShift(selected);
     const on=(id,fn)=>{ const el=$(id); if(el) el.onclick=fn; };
+    // (2026-10-19) preklikávanie dní priamo v okne dňa
+    const stepDay=n=>{ const d=new Date(selected+'T12:00'); d.setDate(d.getDate()+n); const k=iso(d); openShift(k); try{ $('shiftModal').querySelector('.box').scrollTop=0; }catch(e){} };
+    on('dayPrev',()=>stepDay(-1)); on('dayNext',()=>stepDay(1));
     on('signUpDay',()=>signUpDay(selected).then(again));
     on('leaveDay',()=>leaveDay(selected).then(again));
     on('copyList',()=>copyDayList(selected));
