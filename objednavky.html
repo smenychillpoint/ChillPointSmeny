@@ -134,7 +134,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-18</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-19b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -180,6 +180,8 @@ body:has(.login:not(.hide)){overflow:hidden}
     <p style="text-align:center;margin-top:10px"><a href="#" onclick="closeBizDayModal();return false" style="font-size:13px">Zavrieť</a></p>
   </div>
 </div>
+<link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app">
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
@@ -710,6 +712,8 @@ async function callInner(m, [col, id, action], body) {
         waiter: str(body.waiter, 30), note: str(body.note, 120), items, status: body.skipBar ? 'vydana' : 'nova', createdAt: now() };
       if (body.skipBar) rec.vydanaAt = now();
       if (staff) rec.staff = true;
+      // ⏰ na neskôr: čas do 24 h dopredu (na bare sa ukáže až 10 min pred ním)
+      if (!body.skipBar && body.dueAt) { const d = Number(body.dueAt); if (d > now() && d < now() + 24 * 3600e3) rec.dueAt = d; }
       return db.ref('orders').push(rec);
     }
     const o = S.orders.find(x => x.id === id); if (!o) fail('Objednávka neexistuje');
@@ -907,6 +911,48 @@ async function callInner(m, [col, id, action], body) {
 }
 
 const list = obj => Object.entries(obj || {}).map(([id, v]) => ({ ...v, id }));
+// ---------- ⏰ Objednávka na neskôr (2026-10-19) ----------
+// Objednávka s dueAt (napr. pizza k oslave o 20:00) je na Bare v sekcii "⏰ Naplánované" a do "Pripraviť" sa
+// presunie LATER_LEAD pred časom (vtedy Bar pípne). Na účte stola je normálne od začiatku.
+const LATER_LEAD = 10 * 60e3;
+const orderDueNow = o => !o.dueAt || o.dueAt - LATER_LEAD <= now();
+const hhmmOf = t => new Date(t).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' });
+let laterAnnounced = new Set();
+setInterval(() => {   // pípnutie na bare, keď naplánovaná objednávka "príde na rad"
+  const due = S.orders.filter(o => o.status === 'nova' && o.dueAt && orderDueNow(o) && !laterAnnounced.has(o.id));
+  if (!due.length) return;
+  due.forEach(o => laterAnnounced.add(o.id));
+  if (role === 'bar') { beep([880, 1320, 880]); toast(`⏰ Treba pripraviť: ${due.map(o => o.tableName + ' #' + o.no).join(', ')}`); safeRender(); }
+}, 20000);
+async function laterNow(id) { try { await db.ref('orders/' + id + '/dueAt').remove(); } catch (e) { toast('Nepodarilo sa uložiť'); } }
+async function sendOrderLater() {
+  if (!cart.length) return;
+  const d = new Date(now() + 30 * 60e3); d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
+  const v = prompt('Na koľkú hodinu pripraviť? (napr. 20:00)\nNa bare sa ukáže 10 minút pred týmto časom.', hhmmOf(d));
+  if (v === null) return;
+  const mt = String(v).trim().match(/^(\d{1,2})[:.,\s]?(\d{2})?$/);
+  if (!mt || +mt[1] > 23 || +(mt[2] || 0) > 59) return toast('Zadaj čas, napr. 20:00');
+  const t = new Date(); t.setHours(+mt[1], +(mt[2] || 0), 0, 0);
+  if (t.getTime() < now() - 60e3) t.setDate(t.getDate() + 1);   // čas, ktorý dnes už bol = zajtra (napr. po polnoci)
+  try {
+    await call('POST', '/api/orders', { tableId, items: cart, note: orderNote, waiter: store.get('waiter', ''), dueAt: t.getTime() });
+    const tn = (S.tables.find(x => x.id === tableId) || {}).name || '';
+    cart = []; orderNote = ''; toast(`${tn ? tn + ': ' : ''}na bar o ${hhmmOf(t)} ⏰`); afterSend();
+  } catch (e) {}
+}
+// ---------- 🚫 Vypredané (2026-10-19) ----------
+// meta/soldOut/{menuId} = {day, by, t} – platí len v ten pracovný deň (ráno je položka znova dostupná).
+let soldOut = {};
+const isSoldOut = id => uiOn('soldOut') && !!(soldOut[id] && soldOut[id].day === bizTodayISO());
+async function setSoldOut(id, on) {
+  const mi = S.menu.find(x => x.id === id); if (!mi) return;
+  try {
+    if (on) await db.ref('meta/soldOut/' + id).set({ day: bizTodayISO(), by: str(isManager ? 'Vedúci' : (store.get('waiter', '') || ''), 40), t: now() });
+    else await db.ref('meta/soldOut/' + id).remove();
+    toast(on ? `🚫 ${mi.name}: dnes vypredané` : `✓ ${mi.name}: znova k dispozícii`);
+  } catch (e) { toast('Nepodarilo sa uložiť'); }
+  closeQuickModal(); render();
+}
 let prevStatus = null;   // na zistenie novej / hotovej objednávky (zvuk)
 let prevAdded = {};      // kedy sa naposledy niečo pridalo k objednávke na bare (zvuk pri pridaní)
 function onData(v) {
@@ -928,7 +974,8 @@ function onData(v) {
   const added = Object.fromEntries(S.orders.map(o => [o.id, o.addedAt || 0]));
   if (prevStatus) {
     // pípne aj vtedy, keď čašník k objednávke na bare niečo pridal
-    if (role === 'bar' && S.orders.some(o => o.status === 'nova' && (!prevStatus[o.id] || (o.addedAt && o.addedAt !== prevAdded[o.id])))) beep([880, 1320]);
+    // (objednávka "na neskôr" nepípne pri zapísaní – pípne až keď príde jej čas, viď laterTick)
+    if (role === 'bar' && S.orders.some(o => o.status === 'nova' && orderDueNow(o) && (!prevStatus[o.id] || (o.addedAt && o.addedAt !== prevAdded[o.id])))) beep([880, 1320]);
     if ((role === 'casnik' || role === 'odniest') && S.orders.some(o => o.status === 'hotova' && prevStatus[o.id] && prevStatus[o.id] !== 'hotova')) beep([660, 990, 1320]);
   }
   prevStatus = st; prevAdded = added;
@@ -1054,6 +1101,7 @@ function connect() {
     db.ref('meta/guests').on('value', s => { tableGuests = s.val() || {}; tryRender(); }, () => { tableGuests = {}; });
     db.ref('meta/tempGone').on('value', s => { tempGone = s.val() || {}; tryRender(); }, () => { tempGone = {}; });
     db.ref('meta/staffTables').on('value', s => { staffTables = s.val() || {}; tryRender(); }, () => { staffTables = {}; });
+    db.ref('meta/soldOut').on('value', s => { soldOut = s.val() || {}; tryRender(); }, () => { soldOut = {}; });
     db.ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; tryRender(); }, () => { hubAccess = {}; });
     // výplaty (hodiny + trinkgeľ) zdieľané medzi zariadeniami; pri prvom načítaní sa prenesú staré lokálne údaje
     let payFirst = true;
@@ -1190,7 +1238,7 @@ function render() {
   if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
   if (role === 'uzavierka' && !canUzavierka) { role = 'casnik'; store.set('role', role); }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
-  $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova'));
+  $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova' && orderDueNow(o)));
   $('#serveDot').classList.toggle('hide', !open().some(o => o.status === 'hotova'));
   const inTable = role === 'casnik' && tableId && S.tables.some(t => t.id === tableId);
   if (role === 'casnik' && tableId && !inTable) tableId = null;
@@ -1269,7 +1317,9 @@ const UI_FEATURES = [
   ['tempTable', '➕ Dočasný stôl'],
   ['arrived', '✓ „Prišli“ pri rezerváciách (otvorí stôl / spustí hru)'],
   ['nextAttr', '⏭ „Ďalší na rade“ na obsadenej atrakcii'],
-  ['barSummary', '🧾 Súhrn „Spolu pripraviť“ na Bare']
+  ['barSummary', '🧾 Súhrn „Spolu pripraviť“ na Bare'],
+  ['soldOut', '🚫 Vypredané položky (podržať položku → „Dnes vypredané“)'],
+  ['later', '⏰ Objednávka na neskôr (na bar o určitej hodine)']
 ];
 const uiOn = k => !(((S.access && S.access.uiOff) || []).includes(k));
 async function setUiFeature(k, on) {
@@ -2451,7 +2501,7 @@ function afterSend() {
   else render();
 }
 // posledná objednávka tohto stola, ktorá je ešte na bare (barman ju nepripravil) - dá sa k nej pridávať
-const barOrderForTable = () => tableId ? S.orders.filter(o => o.tableId === tableId && o.status === 'nova').sort((a, b) => b.createdAt - a.createdAt)[0] || null : null;
+const barOrderForTable = () => tableId ? S.orders.filter(o => o.tableId === tableId && o.status === 'nova' && orderDueNow(o)).sort((a, b) => b.createdAt - a.createdAt)[0] || null : null;
 async function addToBarOrder() {
   const o = barOrderForTable(); if (!o || !cart.length) return;
   const b = $('#addBarBtn'); if (b) b.disabled = true;
@@ -2623,22 +2673,32 @@ function barSummaryHtml(nove) {
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${rows.map(([n, q]) => `<span class="pill" style="font-size:15px;padding:4px 10px;background:var(--card);color:var(--ink)"><b>${q}×</b> ${esc(n)}</span>`).join('')}</div></div>`;
 }
 function renderBar() {
-  const nove = open().filter(o => o.status === 'nova').sort((a, b) => a.createdAt - b.createdAt);
+  const nove = open().filter(o => o.status === 'nova' && orderDueNow(o)).sort((a, b) => (a.dueAt || a.createdAt) - (b.dueAt || b.createdAt));
+  const planned = open().filter(o => o.status === 'nova' && !orderDueNow(o)).sort((a, b) => a.dueAt - b.dueAt);
+  const soldList = S.menu.filter(m => isSoldOut(m.id));
   const hotN = open().filter(o => o.status === 'hotova').length;
   $('#app').innerHTML = `
     <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
       ${hotN ? `<button class="btn ghost" style="width:auto;padding:8px 12px" onclick="role='odniest';store.set('role',role);render()">🚶 Na odnesenie čaká: <b>${hotN}</b> →</button>` : '<span></span>'}
       <button class="btn ghost" style="width:auto;padding:8px 12px" onclick="toggleSound()">${sound ? '🔔 Zvuk zapnutý' : '🔕 Zvuk vypnutý'}</button></div>
+    ${soldList.length ? `<div class="card" style="margin:10px 0 0;padding:10px 14px"><b style="font-size:14px">🚫 Dnes vypredané:</b>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${soldList.map(m => `<button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="setSoldOut('${m.id}',false)">${esc(m.name)} · ✓ už je</button>`).join('')}</div></div>` : ''}
     <h2>Pripraviť (${nove.length})</h2>
     ${uiOn('barSummary') ? barSummaryHtml(nove) : ''}
     ${nove.length ? `<div class="bar-grid">${nove.map(o => `<div class="order nova">
       <h3>${tableDot(o.tableId)}${esc(o.tableName)}${guestTag(o)} <span class="muted">#${o.no}</span><small>${ago(o.createdAt)}${o.waiter ? ' · ' + esc(o.waiter) : ''}</small></h3>
+      ${o.dueAt ? `<div class="pill" style="background:var(--warnbg);color:var(--warn);font-size:14px;margin-bottom:6px">⏰ na ${hhmmOf(o.dueAt)}</div>` : ''}
       ${barItemsHtml(o, true)}
       ${o.note ? `<div class="note">${esc(o.note)}</div>` : ''}
       ${moveOrderBlock(o)}
       <button class="btn ok" onclick="setStatus('${o.id}','hotova')">Hotové – na odnesenie</button>
       <button class="btn ghost" style="margin-top:6px;color:var(--warn)" onclick="cancelWholeOrder('${o.id}')">🗑 Zrušiť celú objednávku</button></div>`).join('')}</div>`
-      : '<div class="empty">Žiadne nové objednávky ☕</div>'}`;
+      : '<div class="empty">Žiadne nové objednávky ☕</div>'}
+    ${planned.length ? `<h2 style="margin-top:18px">⏰ Naplánované na neskôr (${planned.length})</h2>
+      <div class="card" style="padding:0">${planned.map(o => `<div class="line" style="align-items:center">
+        <div class="n"><b>⏰ ${hhmmOf(o.dueAt)}</b> · ${esc(o.tableName)}${guestTag(o)} #${o.no}<small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}${o.note ? ' · ' + esc(o.note) : ''}</small></div>
+        <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="laterNow('${o.id}')">Pripraviť už teraz</button></div>`).join('')}</div>
+      <p class="muted" style="font-size:12px;margin:6px 0 0">Do „Pripraviť“ sa presunú samé 10 minút pred časom (Bar pípne).</p>` : ''}`;
 }
 // Odniesť = hotové objednávky, ktoré treba zaniesť ku stolu (samostatná záložka, nemiešajú sa s prípravou)
 function renderServe() {
@@ -3654,7 +3714,11 @@ setInterval(checkReservationReminders, 20000);
 
 // z úvodnej stránky "objednavky.html#rezervacie" -> rovno zoznam rezervácií
 if (location.hash === '#rezervacie') { role = 'casnik'; showQueue = true; try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+// z úvodnej stránky "objednavky.html#nastavenia" -> rovno Nastavenia (zobrazia sa, keď je prihlásený vedúci) – 2026-10-19
+if (location.hash === '#nastavenia') { role = 'nastavenia'; store.set('role', role); try { history.replaceState(null, '', location.pathname); } catch (e) {} }
 connect();
+// (2026-10-19) offline/rýchle načítanie – rovnaký service worker ako úvod a Smeny (uložené knižnice a stránky)
+if ('serviceWorker' in navigator) window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
 </script>
 </body>
 </html>

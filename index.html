@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="sk">
 <head>
   <meta charset="utf-8">
@@ -13,6 +13,8 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ChillPoint">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app">
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
@@ -261,7 +263,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-16b</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-19b</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -270,17 +272,13 @@
     const hands = Object.entries(handover || {}).map(([id, h]) => ({ id, ...h })).filter(h => h && h.text && h.t > Date.now() - 3 * 864e5).sort((a, b) => b.t - a.t).slice(0, 5);
     const cntStr = `${miss.length}`;
     let html = head;
-    // vedúci: prepínač "pozrieť ako zamestnanec" (bez kódu) / späť na vedúceho
-    if (isMgrAuth) {
+    // vedúci, ktorý sa práve pozerá ako zamestnanec: lišta hore (prepnúť na iného / späť). Výber je v Nastaveniach dole.
+    if (isMgrAuth && viewAs) {
       const opts = emps.map(e => `<option value="${esc(e.name)}" ${viewAs === e.name ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
-      html += viewAs
-        ? `<div class="card" style="border-color:var(--green);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      html += `<div class="card" style="border-color:var(--green);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span style="flex:1;min-width:150px">👁 Zobrazuješ ako <b>${esc(viewAs)}</b><br><small style="color:var(--muted)">Platí aj v Smenách a Objednávkach. Čo tu urobíš, je naozaj (zapíše sa).</small></span>
             <select style="flex:1;min-width:140px;margin:0" onchange="viewAsEmp(this.value)">${opts}</select>
-            <button class="btn" onclick="backToMgr()">⚡ Späť ako vedúci</button></div>`
-        : `<div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-            <span style="flex:1;min-width:150px">👁 Pozrieť appku <b>ako zamestnanec</b></span>
-            <select style="flex:1;min-width:140px;margin:0" onchange="viewAsEmp(this.value)"><option value="">— vyber zamestnanca —</option>${opts}</select></div>`;
+            <button class="btn" onclick="backToMgr()">⚡ Späť ako vedúci</button></div>`;
     }
     html += `<div class="card today"><h3><span>📅 Dnes · ${DAY_NAMES[bd.getDay()]} ${bd.getDate()}. ${bd.getMonth() + 1}.</span>${day && day.off ? '<span style="color:var(--muted);font-size:12px">bez prevádzky</span>' : ''}</h3>
       <div class="people">👥 ${ppl.length ? ppl.map(esc).join(', ') : '<span style="color:var(--muted)">nikto nie je prihlásený</span>'}</div>
@@ -327,14 +325,24 @@
     }
     html += `</div>` + installTile();
     if (isMgr) {
-      html += `<h2>Nastavenia</h2><div class="card"><button class="tile" style="border-left-color:var(--muted);padding:12px 14px" onclick="ui.accOpen=!ui.accOpen;render()"><span class="ic" style="font-size:22px">⚙</span><span class="tx"><b style="font-size:15px">Prístupy zamestnancov</b><span>Kto čo vidí na úvode a kam sa dostane</span></span><span class="arr">${ui.accOpen ? '▴' : '▾'}</span></button>
-        ${ui.accOpen ? `<p class="empty" style="margin:10px 0">Odškrtni, kam zamestnanec nemá mať prístup. Platí pre úvodnú stránku aj pre prihlásenie do Smien a Objednávok. Vedúci vidí vždy všetko.</p>
+      // (2026-10-19) ⚙ Nastavenia len pre vedúceho – zbalené riadky, ktoré sa rozkliknú (ako v appke na zbrane)
+      const row = (key, ic, title, sub, body) => `<div class="card" style="padding:0;margin-bottom:8px">
+        <button class="tile" style="border-left-color:var(--muted);padding:12px 14px;margin:0" onclick="ui.setOpen=ui.setOpen==='${key}'?'':'${key}';render()"><span class="ic" style="font-size:22px">${ic}</span><span class="tx"><b style="font-size:15px">${title}</b><span>${sub}</span></span><span class="arr">${ui.setOpen === key ? '▴' : '▾'}</span></button>
+        ${ui.setOpen === key ? `<div style="padding:0 14px 14px">${body}</div>` : ''}</div>`;
+      const link = (href, ic, title, sub) => `<a class="tile" href="${href}" style="border-left-color:var(--muted);padding:12px 14px;margin-bottom:8px"><span class="ic" style="font-size:22px">${ic}</span><span class="tx"><b style="font-size:15px">${title}</b><span>${sub}</span></span><span class="arr">›</span></a>`;
+      html += `<h2>⚙ Nastavenia <small style="font-size:12px;color:var(--muted);font-weight:400">(vidí len vedúci)</small></h2>`
+        + row('view', '👁', 'Pozrieť appku ako zamestnanec', 'Uvidíš úvod, Smeny aj Objednávky presne ako on',
+          `<p class="empty" style="margin:0 0 8px">Vyber zamestnanca – bez jeho kódu. Späť sa dostaneš tlačidlom „⚡ Späť ako vedúci“. Čo v tomto režime urobíš, sa naozaj zapíše.</p>
+           <select style="margin:0" onchange="viewAsEmp(this.value)"><option value="">— vyber zamestnanca —</option>${emps.map(e => `<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('')}</select>`)
+        + row('access', '🔐', 'Prístupy zamestnancov', 'Kto čo vidí na úvode a kam sa dostane',
+          `<p class="empty" style="margin:0 0 10px">Odškrtni, kam zamestnanec nemá mať prístup. Platí pre úvodnú stránku aj pre prihlásenie do Smien a Objednávok. Vedúci vidí vždy všetko.</p>
           <table class="acc"><tr><th>Zamestnanec</th>${AREAS.map(a => `<th>${a[1]}</th>`).join('')}</tr>
-          ${emps.map(e => { const a = (access.e || {})[enc(e.name)] || {}; return `<tr><td>${esc(e.name)}</td>${AREAS.map(([k]) => `<td><input type="checkbox" ${a[k] === false ? '' : 'checked'} onchange="setAccess('${esc(e.name).replace(/'/g, "\\'")}','${k}',this.checked)"></td>`).join('')}</tr>`; }).join('')}</table>` : ''}
-      </div>`;
+          ${emps.map(e => { const a = (access.e || {})[enc(e.name)] || {}; return `<tr><td>${esc(e.name)}</td>${AREAS.map(([k]) => `<td><input type="checkbox" ${a[k] === false ? '' : 'checked'} onchange="setAccess('${esc(e.name).replace(/'/g, "\\'")}','${k}',this.checked)"></td>`).join('')}</tr>`; }).join('')}</table>`)
+        + link('smeny.html#nastavenia', '📅', 'Nastavenia Smien', 'Prihlasovanie, Môžem/Nemôžem, limity, checklisty, funkcie')
+        + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-16b</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-19b</footer>`;
     app.innerHTML = html;
   }
 

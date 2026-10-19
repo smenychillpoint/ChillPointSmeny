@@ -13,10 +13,13 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Smeny">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <!-- rýchlejšie načítanie: spojenie s Firebase sa otvorí hneď na začiatku -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app">
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Excel knižnica (xlsx, ~900 kB) sa už NEnačítava pri štarte – stiahne sa až pri exporte (loadXlsx) – 2026-10-19 -->
   <style>
     :root{--yellow:#f5bb16;--black:#0a0c0f;--panel:#17191d;--line:#34373c;--muted:#a7a9ad;--white:#fff;--red:#ff6c6c;--green:#5fd67a}
     *{box-sizing:border-box}
@@ -92,6 +95,8 @@
     .week,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}
     .week span{text-align:center;color:#777;font-size:11px;font-weight:800;padding:5px}
     .day{min-height:92px;background:#0d0f12;color:#eee;border:1px solid #2d3035;padding:8px;text-align:left;position:relative}
+    /* podržanie prsta na dni nesmie na mobile označovať text ani otvárať menu (inak sa výber viac dní nespustí) */
+    [data-date]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
     .day:hover{border-color:var(--yellow)}
     .day.active{background:#232529;border-color:#55585d}
     .day.active:after{content:"";position:absolute;right:8px;top:8px;width:7px;height:7px;border-radius:50%;background:var(--yellow)}
@@ -507,6 +512,17 @@
     <details class="more-box" id="moreBox" style="display:none;">
       <summary>⚙ Nastavenia (limity, prihlasovanie, funkcie)</summary>
     <section class="roster" id="settingsSection" style="display:none;">
+      <!-- (2026-10-19) nastavenia ako zbalené riadky, ktoré sa rozkliknú (ako v appke na zbrane) -->
+      <details class="more-day" id="viewAsBox">
+        <summary>👁 Pozrieť appku ako zamestnanec</summary>
+        <div style="padding:0 12px 12px;">
+          <p class="sub" style="margin:0 0 10px;font-size:12px;">Vyber zamestnanca – Smeny (aj úvod a Objednávky) uvidíš presne tak ako on, bez jeho kódu. Späť ťukni hore „⚡ Späť ako vedúci“. Čo v tomto režime urobíš, sa naozaj zapíše.</p>
+          <select id="viewAsSel" style="width:100%;height:44px;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:0 10px;font:inherit;"></select>
+        </div>
+      </details>
+      <details class="more-day" id="limitBox">
+        <summary>👥 Limit a minimum ľudí na deň</summary>
+        <div style="padding:0 12px 12px;">
       <div class="rrow"><label class="switch-row"><input type="checkbox" id="limitToggle"><span><b>Limit ľudí na deň</b><br><small class="sub">Vypnutý = prihlásiť sa môže neobmedzený počet ľudí.</small></span></label></div>
       <div class="addrow" id="limitRow" style="display:none;">
         <input type="number" id="limitDefault" min="1" max="100" placeholder="Štandardný limit (napr. 4)">
@@ -517,6 +533,8 @@
         <input type="number" id="minDefault" min="1" max="100" placeholder="Štandardné minimum (napr. 3)">
         <button class="outline" id="minSave">Uložiť minimum</button>
       </div>
+        </div>
+      </details>
       <details class="more-day" id="weekBox" style="display:none;">
         <summary>📅 Minimum a limit podľa dňa v týždni (pondelok, utorok…)</summary>
         <div style="padding:0 12px 12px;">
@@ -556,7 +574,7 @@
           </div>
         </div>
       </details>
-      <details class="more-day" id="featBox" open>
+      <details class="more-day" id="featBox">
         <summary>🧩 Funkcie a prihlasovanie (zapnúť / vypnúť)</summary>
         <div style="padding:0 12px 12px;">
           <p class="sub" style="margin:0 0 10px;font-size:12px;">Vypni funkcie, ktoré nepoužívaš, aby nezaberali miesto. Údaje ostanú uložené a po zapnutí sa vrátia.</p>
@@ -655,7 +673,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-19· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-19c· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -1210,6 +1228,15 @@
   // naozaj prihlásený vedúci: appka sa vtedy správa ako ten zamestnanec (manager=false, myName=meno).
   const viewAsName = (()=>{ try{ return localStorage.getItem('cp_viewAs')||''; }catch(e){ return ''; } })();
   let viewAsActive = false;
+  // (2026-10-19) "👁 Pozrieť ako zamestnanec" aj priamo v Nastaveniach Smien (rovnaké ako na úvode – cp_viewAs)
+  function fillViewAsSel(){
+    const s=$('viewAsSel'); if(!s) return;
+    const names=(employees.list||[]).map(e=>e.name).filter(Boolean).sort((a,b)=>a.localeCompare(b,'sk'));
+    s.innerHTML=`<option value="">— vyber zamestnanca —</option>`+names.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    s.onchange=()=>{ const n=s.value; if(!n||!manager) return;
+      try{ localStorage.setItem('cp_viewAs',n); localStorage.setItem('cp_myname',n); localStorage.setItem('waiter',JSON.stringify(n)); }catch(e){}
+      location.reload(); };
+  }
   function backToManager(){
     try{ localStorage.removeItem('cp_viewAs'); localStorage.removeItem('cp_myname'); localStorage.setItem('waiter', JSON.stringify('')); }catch(e){}
     location.reload();
@@ -1455,6 +1482,8 @@
           manager = isMgrAuth && !viewAsActive;
           if(viewAsActive) myName = viewAsName;
           else if(viewAsName){ try{ localStorage.removeItem('cp_viewAs'); }catch(e){} }
+          // z úvodnej stránky "smeny.html#nastavenia" -> rovno okno ⚙ Nastavenia (len vedúci) – 2026-10-19
+          if(manager && location.hash==='#nastavenia'){ try{ window.history.replaceState(null,'',location.pathname); }catch(e){} setTimeout(()=>{ fillViewAsSel(); $('settingsModal').classList.add('open'); }, 300); }
           resetIdle();
           if(manager){ attachRatings(); attachHistory(); attachTargets(); attachPNotes(); if(latestRaw) migrateWrite(latestRaw,true); } else { detachRatings(); detachHistory(); detachTargets(); detachPNotes(); }
           renderAll();
@@ -1501,7 +1530,7 @@
     menuRef.on('value', snap=>{ menu=snap.val()||{}; renderAll(); }, err=>{ menu={}; });
     let todoHashDone=false;   // úvodná stránka: "smeny.html#ulohy" -> rovno okno Úlohy a navyše
     todosRef.on('value', snap=>{ todos=snap.val()||{}; renderAll();
-      if(!todoHashDone){ todoHashDone=true; if(location.hash==='#ulohy'){ try{ history.replaceState(null,'',location.pathname); }catch(e){} openTodo(); } }
+      if(!todoHashDone){ todoHashDone=true; if(location.hash==='#ulohy'){ try{ window.history.replaceState(null,'',location.pathname); }catch(e){} openTodo(); } }
     }, err=>{ todos={}; });
     // prístupy nastavené vedúcim na úvodnej stránke (settings/hubAccess): kto má Smeny vypnuté, odhlási sa
     rtdb.ref('settings/hubAccess').on('value', snap=>{ hubAccess=snap.val()||{};
@@ -4855,7 +4884,7 @@
     const lb=$('logoutBtn'); if(lb) lb.onclick=doLogout;
     const mb=$('managerBtn'); if(mb) mb.onclick=()=>{ $('managerModal').classList.add('open'); setTimeout(()=>$('pin').focus(),50); };
     const kb=$('lockBtn'); if(kb) kb.onclick=doManagerLogout;
-    const sb=$('settingsBtn'); if(sb) sb.onclick=()=>$('settingsModal').classList.add('open');
+    const sb=$('settingsBtn'); if(sb) sb.onclick=()=>{ fillViewAsSel(); $('settingsModal').classList.add('open'); };
     const bmb=$('backMgrBtn'); if(bmb) bmb.onclick=backToManager;
     const bb=$('boardBtn'); if(bb) bb.onclick=openBoard;
     const eb=$('extraBtn'); if(eb) eb.onclick=openExtra;
@@ -5164,8 +5193,12 @@
       if(!!myName && !manager && (feat('signup') || feat('avail'))){
         const key=x.dataset.date;
         const cancelLP=()=>clearTimeout(longPressTimer);
-        x.onpointerdown=()=>{
+        // (2026-10-19) na mobile podržanie zrušil už malý pohyb prsta → ruší sa až pri posune o viac ako 12 px
+        let sx=0, sy=0;
+        x.onpointermove=e=>{ if(Math.abs(e.clientX-sx)>12 || Math.abs(e.clientY-sy)>12) cancelLP(); };
+        x.onpointerdown=e=>{
           if(multiMode) return;
+          sx=e.clientX; sy=e.clientY;
           longPressFired=false; cancelLP();
           longPressTimer=setTimeout(()=>{
             longPressFired=true; multiMode=true;
@@ -5174,7 +5207,7 @@
             renderMonths();
           }, 420);
         };
-        x.onpointerup=cancelLP; x.onpointerleave=cancelLP; x.onpointercancel=cancelLP;
+        x.onpointerup=cancelLP; x.onpointercancel=cancelLP;
         x.oncontextmenu=()=>false;
       }
     });
@@ -5367,10 +5400,18 @@
     $('exportMonth').value=visKey;
     $('exportModal').classList.add('open');
   }
-  function exportExcel(month){
+  // Excel knižnica sa stiahne až keď treba (predtým sa sťahovala pri každom otvorení Smien a spomaľovala štart)
+  function loadXlsx(){
+    if(typeof XLSX!=='undefined') return Promise.resolve();
+    return new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+  }
+  async function exportExcel(month){
     month=month||'all';
     if(!manager) return;
-    if(typeof XLSX==='undefined'){ showToast('Excel knižnica sa nenačítala, obnov stránku a skús znova.'); return; }
+    if(typeof XLSX==='undefined'){
+      showToast('Pripravujem Excel…');
+      try{ await loadXlsx(); }catch(e){ showToast('Excel knižnica sa nenačítala, skontroluj internet a skús znova.'); return; }
+    }
     const fmt=k=>{ const [y,m,d]=k.split('-'); return `${d}.${m}.${y}`; };
     const dayName=k=>new Date(k+'T12:00').toLocaleDateString('sk-SK',{weekday:'long'});
     const keys=Object.keys(schedule.days||{}).sort().filter(k=>{ if(month!=='all' && !k.startsWith(month)) return false; const t=dayTotals(k); return t.signed>0||t.closed||t.off||t.note||t.hasRes||t.na>0; });
