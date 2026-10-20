@@ -126,6 +126,49 @@
     applyView(); toast('⚡ Späť ako vedúci'); render();
   }
   let emps = [], day = {}, todos = {}, board = {}, notices = {}, queue = {}, handover = {}, access = {}, upcoming = {};
+  let swaps = {}, minCfg = {}, weekCfg = {}, featCfg = {};
+  // ---- 📋 Na vybavenie (len vedúci, 2026-10-19) ----
+  // minimum ľudí na deň: číslo zadané pri dni > tabuľka podľa dňa v týždni (leto/zima) > všeobecné minimum
+  // (obdobia ako Vianoce sa tu nerátajú – presne to ukáže kalendár v Smenách)
+  function hubDayMin(key, d) {
+    if (d.min !== undefined && d.min !== null && d.min !== '') return Math.max(0, Number(d.min) || 0);
+    if (minCfg.enabled !== true) return 0;
+    const m = +key.slice(5, 7), a = weekCfg.summerFrom || 5, b = weekCfg.summerTo || 9;
+    const season = (a <= b ? (m >= a && m <= b) : (m >= a || m <= b)) ? 'summer' : 'winter';
+    const t = ((weekCfg[season] || {})[new Date(key + 'T12:00:00').getDay()] || {});
+    return Math.max(0, t.min !== undefined && t.min !== null ? Number(t.min) || 0 : Number(minCfg.people) || 0);
+  }
+  function todoItems() {
+    const out = [], today = iso(new Date());
+    const empsOf = d => (Array.isArray(d.employees) ? d.employees : Object.values(d.employees || {})).filter(Boolean);
+    // výmeny čakajúce na schválenie
+    const sw = Object.values(swaps || {}).filter(x => x && x.status === 'pending_manager').length;
+    if (sw) out.push(['🔁', `Výmeny smien na schválenie: <b>${sw}</b>`, 'smeny.html']);
+    // chýbajúci ľudia najbližších 7 dní
+    const short = [];
+    for (let i = 0; i < 7; i++) { const dt = new Date(); dt.setDate(dt.getDate() + i); const k = iso(dt), d = upcoming[k] || {};
+      if (d.off) continue; const need = hubDayMin(k, d), have = empsOf(d).length;
+      if (need > have) short.push(`${DAY_NAMES[dt.getDay()].slice(0, 2)} ${dt.getDate()}. ${dt.getMonth() + 1}. (chýba ${need - have})`); }
+    if (short.length) out.push(['⚠', `Chýbajú ľudia: ${short.join(', ')}`, 'smeny.html']);
+    // nezavreté dni najbližšie 3 dni, kde už niekto je
+    const open3 = [];
+    for (let i = 0; i < 3; i++) { const dt = new Date(); dt.setDate(dt.getDate() + i); const k = iso(dt), d = upcoming[k] || {};
+      if (!d.off && !d.closed && empsOf(d).length) open3.push(`${DAY_NAMES[dt.getDay()].slice(0, 2)} ${dt.getDate()}. ${dt.getMonth() + 1}.`); }
+    if (open3.length) out.push(['⏳', `Nezavreté dni: ${open3.join(', ')}`, 'smeny.html']);
+    // nepotvrdená účasť (ak je funkcia zapnutá) – zavreté dni od dnes 7 dní
+    if (featCfg.confirm !== false) {
+      let n = 0;
+      for (let i = 0; i < 7; i++) { const dt = new Date(); dt.setDate(dt.getDate() + i); const d = upcoming[iso(dt)] || {};
+        if (d.closed && !d.off) n += empsOf(d).filter(nm => !(d.cf || {})[enc(nm)]).length; }
+      if (n) out.push(['✋', `Nepotvrdená účasť (7 dní): <b>${n}</b>`, 'smeny.html']);
+    }
+    // nevysporiadané "vzal/a som si" (60 dní)
+    let tk = 0;
+    Object.keys(upcoming || {}).forEach(k => { if (k > today) return; const dl = (upcoming[k] || {}).dl || {};
+      Object.values(dl).forEach(x => { if (x && x.k === 'taken' && !x.r) tk++; }); });
+    if (tk) out.push(['🧾', `Nevysporiadané „vzal/a som si“: <b>${tk}</b>`, 'smeny.html']);
+    return out;
+  }
   // najbližšie smeny prihláseného zamestnanca (max 5) – zavretý deň = potvrdená smena, otvorený = zatiaľ prihlásený
   function myUpcoming() {
     if (!me) return [];
@@ -259,7 +302,9 @@
     const app = $('app');
     const logged = !!me || isMgr;
     const head = `<div class="top"><div class="logo">CP</div><div class="brand"><b>CHILL POINT</b><small>Laser aréna Trnava</small></div>
-      ${logged ? `<div class="who"><b>${isMgr ? '⚡ Vedúci' : '👤 ' + esc(me)}</b><button onclick="logout()">odhlásiť</button></div>` : ''}</div>`;
+      ${logged ? `<div class="who"><b>${isMgr ? '⚡ Vedúci' : '👤 ' + esc(me)}</b>${isMgrAuth && viewAs
+        ? '<button onclick="backToMgr()">⚡ späť ako vedúci</button>'   // (2026-10-20) v režime 👁 len jedno tlačidlo – späť, nie odhlásenie
+        : '<button onclick="logout()">odhlásiť</button>'}</div>` : ''}</div>`;
     if (!logged) {
       app.innerHTML = head + `<h1>Prihlás sa</h1><div class="card">
         ${ui.mgrForm ? `<input type="password" id="mPass" placeholder="Heslo vedúceho" autocomplete="current-password" onkeydown="if(event.key==='Enter')mgrLogin()">
@@ -269,7 +314,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-19c</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-20</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -283,8 +328,15 @@
       const opts = emps.map(e => `<option value="${esc(e.name)}" ${viewAs === e.name ? 'selected' : ''}>${esc(e.name)}</option>`).join('');
       html += `<div class="card" style="border-color:var(--green);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span style="flex:1;min-width:150px">👁 Zobrazuješ ako <b>${esc(viewAs)}</b><br><small style="color:var(--muted)">Platí aj v Smenách a Objednávkach. Čo tu urobíš, je naozaj (zapíše sa).</small></span>
-            <select style="flex:1;min-width:140px;margin:0" onchange="viewAsEmp(this.value)">${opts}</select>
-            <button class="btn" onclick="backToMgr()">⚡ Späť ako vedúci</button></div>`;
+            <select style="flex:1;min-width:140px;margin:0" onchange="viewAsEmp(this.value)">${opts}</select></div>`;
+    }
+    // 📋 Na vybavenie – všetko, čo čaká na vedúceho, na jednom mieste
+    if (isMgr) {
+      const items = todoItems();
+      html += `<div class="card" style="border-left:6px solid ${items.length ? 'var(--yellow)' : 'var(--green)'}">
+        <h3 style="margin:0 0 6px">📋 Na vybavenie</h3>
+        ${items.length ? items.map(([ic, txt, href]) => `<a href="${href}" style="display:flex;gap:10px;align-items:center;padding:8px 0;border-top:1px solid #26292d;color:inherit;text-decoration:none;font-size:15px"><span style="font-size:20px">${ic}</span><span style="flex:1">${txt}</span><span style="color:var(--yellow)">›</span></a>`).join('')
+          : '<div class="empty" style="margin:0">✓ Všetko vybavené 👍</div>'}</div>`;
     }
     // 📅 Moje najbližšie smeny (zamestnanec, aj vedúci v režime 👁)
     if (me && !isMgr && allowed('smeny')) {
@@ -362,7 +414,7 @@
         + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-19c</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-20</footer>`;
     app.innerHTML = html;
   }
 
@@ -389,9 +441,14 @@
     let dayKey = '';
     const watchDay = () => { const k = iso(bizDate()); if (k === dayKey) return; if (dayKey) db.ref('schedule/days/' + dayKey).off(); dayKey = k; on('schedule/days/' + k, v => { day = v || {}; }); };
     watchDay(); setInterval(() => { watchDay(); render(); }, 60000);
-    // (2026-10-19) 📅 Moje najbližšie smeny – nadchádzajúce dni (od dnes, 60 dní) pre kartu zamestnanca
-    db.ref('schedule/days').orderByKey().startAt(iso(new Date())).limitToFirst(60)
+    // (2026-10-19) 📅 Moje najbližšie smeny + 📋 Na vybavenie – dni od 60 dní dozadu (kvôli „vzal/a som si“) dopredu
+    const from = new Date(); from.setDate(from.getDate() - 60);
+    db.ref('schedule/days').orderByKey().startAt(iso(from)).limitToFirst(150)
       .on('value', s => { upcoming = s.val() || {}; render(); }, () => { upcoming = {}; });
+    on('swaps', v => { swaps = v || {}; });
+    on('settings/min', v => { minCfg = v || {}; });
+    on('settings/weekdays', v => { weekCfg = v || {}; });
+    on('settings/features', v => { featCfg = v || {}; });
     // rezervácie a odovzdávky potrebujú prihlásenie - ak nikto nie je prihlásený, prihlási sa zariadenie (ako v Objednávkach)
     let authOn = false;
     firebase.auth().onAuthStateChanged(async u => {
