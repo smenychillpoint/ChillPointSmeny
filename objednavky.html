@@ -134,7 +134,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 </header>
 <main id="app"></main>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-21d</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-22b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -711,6 +711,7 @@ async function callInner(m, [col, id, action], body) {
       // poradie kategórií menu (názvy v poradí) - pri objednávaní aj v Nastaveniach
       if (body.catOrder !== undefined) u.catOrder = [...new Set((Array.isArray(body.catOrder) ? body.catOrder : []).map(x => str(x, 40)).filter(Boolean))].slice(0, 200);
       if (body.tempPos !== undefined) u.tempPos = body.tempPos === 'top' ? 'top' : 'bottom';   // kde sú dočasné stoly
+      if (body.schoolPct !== undefined) { const p = num(body.schoolPct); u.schoolPct = (body.schoolPct === null || !(p >= 0 && p <= 100)) ? null : p; }   // 🏫 % zo školy
       // iné % z tržby pre kategóriu: [{n: kategória, p: 0–100}]
       if (body.catPct !== undefined) u.catPct = (Array.isArray(body.catPct) ? body.catPct : [])
         .map(x => ({ n: str(x && x.n, 40), p: num(x && x.p) })).filter(x => x.n && x.p >= 0 && x.p <= 100).slice(0, 100);
@@ -2082,7 +2083,8 @@ function attractionsOnTableBlock(id) {
   const types = [...new Set(S.attractions.map(typeOf))].sort((a, b) => a.localeCompare(b, 'sk'));
   const busy = a => S.sessions.some(s => s.stationId === a.id);
   let addForm = '';
-  if (addAttrToTableOpen) {
+  // (2026-10-22) výber sa ukáže HNEĎ po ťuknutí na 🎮 Atrakcie (bez medzikroku "+ Pridať atrakciu")
+  {
     const P = attrPick, st = P.station && S.attractions.find(a => a.id === P.station);
     let body;
     if (st && !busy(st)) {
@@ -2101,22 +2103,17 @@ function attractionsOnTableBlock(id) {
           ? `<button class="item" disabled style="opacity:.45"><b>${esc(a.name)}</b><span>hrá sa</span></button>`
           : `<button class="item" onclick="attrPick.station='${a.id}';attrPick.mode='now';attrPick.time='';render()"><b>${esc(a.name)}</b><span>voľné</span></button>`).join('')}</div>`;
     } else {
-      body = `<label class="muted" style="font-size:13px;display:block;margin-bottom:6px">Akú atrakciu?</label>
+      body = `<label class="muted" style="font-size:13px;display:block;margin-bottom:6px">Akú atrakciu spustiť?</label>
         <div class="items">${types.map(t => { const all = S.attractions.filter(a => typeOf(a) === t), fr = all.filter(a => !busy(a)).length;
           return `<button class="item" ${fr ? '' : 'disabled style="opacity:.45"'} onclick="attrPick.type=decodeURIComponent('${encodeURIComponent(t).replace(/'/g, '%27')}');render()"><b>${esc(t)}</b><span>voľné ${fr} z ${all.length}</span></button>`; }).join('')}</div>`;
     }
-    addForm = `<div style="padding:12px 14px 14px;border-top:1px solid var(--line)">${body}</div>`;
+    addForm = `<div style="padding:12px 14px 14px">${body}</div>`;
   }
-  if (!active.length && !addAttrToTableOpen && !S.attractions.length) return '';
+  if (!active.length && !S.attractions.length) return '<p class="muted">Zatiaľ nie sú žiadne atrakcie (Nastavenia → Atrakcie).</p>';
+  // hore výber (druh → konkrétna → Spustiť), dole čo už na tomto stole hrá
   return `<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden">
-    <div style="padding:14px 14px ${active.length ? '0' : '14px'}">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <b>🎮 Atrakcie na tomto stole</b>
-        <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="addAttrToTableOpen=!addAttrToTableOpen;attrPick={type:null,station:null,mode:'now',time:''};render()">${addAttrToTableOpen ? 'Zrušiť' : '+ Pridať atrakciu'}</button>
-      </div>
-    </div>
-    ${active.length ? `<div style="padding:0 14px 14px">${activeHtml}</div>` : (!addAttrToTableOpen ? '<p class="muted" style="padding:0 14px 14px;margin:0">Zatiaľ nič.</p>' : '')}
     ${addForm}
+    ${active.length ? `<div style="padding:12px 14px 14px;border-top:2px solid var(--line)"><b>🎮 Hrá na tomto stole</b><div style="margin-top:6px">${activeHtml}</div></div>` : ''}
   </div>`;
 }
 
@@ -2244,7 +2241,7 @@ function renderTable() {
   // Tlačidlá sú spolu v jednom riadku - na mieste prvého z týchto blokov podľa rozloženia.
   const nAttr = S.sessions.filter(s => s.tableId === tableId).length, nRes = S.queue.filter(x => x.tableId === tableId).length;
   // (2026-10-15) väčšie tlačidlá – štvorčeky s veľkou ikonou, aby sa dobre trafilo prstom
-  const chip = (k, icon, label, extra, hot) => `<button class="btn ghost" style="width:100%;min-height:76px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:15px;font-weight:700;${hot ? 'border-color:var(--ok);background:var(--okbg);' : ''}" onclick="tblModal='${k}';movePickGroup=null;render()"><span style="font-size:26px;line-height:1">${icon}</span><span>${label}</span>${extra ? `<small style="font-size:12px;font-weight:700;${hot ? 'color:var(--ok)' : ''}">${extra}</small>` : ''}</button>`;
+  const chip = (k, icon, label, extra, hot) => `<button class="btn ghost" style="width:100%;min-height:76px;padding:10px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:15px;font-weight:700;${hot ? 'border-color:var(--ok);background:var(--okbg);' : ''}" onclick="tblModal='${k}';movePickGroup=null;attrPick={type:null,station:null,mode:'now',time:''};render()"><span style="font-size:26px;line-height:1">${icon}</span><span>${label}</span>${extra ? `<small style="font-size:12px;font-weight:700;${hot ? 'color:var(--ok)' : ''}">${extra}</small>` : ''}</button>`;
   const shown = k => !lay.hidden.has(k);
   const chipList = [
     shown('attractions') && S.attractions.length ? chip('attr', '🎮', 'Atrakcie', nAttr ? `${nAttr} hrá` : '', nAttr > 0) : '',
@@ -2993,13 +2990,16 @@ function renderUzavierka() {
   // len tí, ktorým to vedúci v Nastaveniach nevypol (payShares).
   const tip = num(tipOf(dayKey)) || 0;
   const { names: checkedNames, sharers, splitShare, tipShare, shares } = payShares(dayHours, pctAmount, tip);
-  const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
-  const empRows = (S.employees || []).map((e, i) => { const on = e.name in dayHours; const h = dayHours[e.name] || '';
-    const hourly = (num(h) || 0) * (e.wage || 0), empTotal = hourly + (on ? (shares(e.name) ? splitShare : 0) + tipShare : 0);
+  const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), 0);
+  // (2026-10-22) kto má v tento deň smenu (zo Smien) – je hore a označený "📅 na smene"; ostatní pod ním
+  const onShift = shiftNamesFor(dayKey);
+  const empOrder = (S.employees || []).map((e, i) => ({ e, i })).sort((a, b) => (onShift.includes(b.e.name) ? 1 : 0) - (onShift.includes(a.e.name) ? 1 : 0));
+  const empRows = empOrder.map(({ e, i }) => { const on = e.name in dayHours; const h = dayHours[e.name] || ''; const sh = onShift.includes(e.name);
+    const hourly = (num(h) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + (on ? (shares(e.name) ? splitShare : 0) + tipShare : 0);
     // netreba nič zaškrtávať: kto má zapísané hodiny (> 0), ráta sa do výplat (aj do % z tržby a trinkgeľu)
-    return `<div id="payEmpRow-${i}" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line);${on ? '' : 'opacity:.6'}">
+    return `<div id="payEmpRow-${i}" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line);${on || sh ? '' : 'opacity:.6'}">
       <div class="row" style="gap:8px;align-items:center">
-        <span style="flex:1">${esc(e.name)}</span>
+        <span style="flex:1">${esc(e.name)}${sh ? ' <small style="color:var(--ok);font-weight:700">📅 na smene</small>' : ''}</span>
         <!-- hodinová sadzba sa tu už nezobrazuje - vidí/mení ju len vedúci v Nastaveniach -> Zamestnanci -->
         ${isManager && !e.wage ? '<small class="muted" title="Nastav v Nastaveniach -> Zamestnanci">bez sadzby</small>' : ''}
         <input type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="hodín" value="${h}"
@@ -3035,6 +3035,9 @@ function renderUzavierka() {
 
     <h2 style="margin-top:18px">Výplatná kalkulačka – ${fmtDay(uzavDate)}</h2>
     <div class="card">
+      <label style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 10px;border-radius:10px;${isHoliday(dayKey) ? 'background:var(--warnbg);color:var(--warn);font-weight:700' : 'border:1px dashed var(--line)'}">
+        <input type="checkbox" style="width:22px;height:22px;flex:none" ${isHoliday(dayKey) ? 'checked' : ''} onchange="setHoliday(this.checked)">
+        <span>🎉 Sviatok – dvojnásobná hodinovka${skHolidayName(dayKey) ? ` <small>(${esc(skHolidayName(dayKey))})</small>` : ''}</span></label>
       ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách a nastav im sadzbu v Nastaveniach.</p>'}
       <div class="row" style="margin-top:10px;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
         <span class="muted" style="flex:1;font-size:13px">Percentá z tržby pre personál: <b>${pct} %</b>${noShareSet().size ? ` · nedelia sa: ${esc([...noShareSet()].join(', '))}` : ''}
@@ -3047,6 +3050,11 @@ function renderUzavierka() {
       ${(S.access && S.access.noPctItems && S.access.noPctItems.length) ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
         <p class="muted" style="font-size:13px;margin:0">Bez % z tržby: <b>${S.access.noPctItems.map(esc).join(', ')}</b>${isManager ? ' <a href="#" onclick="role=\'nastavenia\';settingsTab=\'zamestnanci\';store.set(\'role\',role);render();return false" style="font-size:13px">(zmeniť v Nastaveniach)</a>' : ''}</p>
         </div>` : ''}
+      <div class="row" style="margin-top:10px;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
+        <label style="flex:1;font-size:13px">🏫 <b>Škola / uzavretá spoločnosť</b> – koľko z dnešnej tržby to bolo<br><small class="muted">${schoolPct() !== null ? `z tejto sumy sa ráta ${schoolPct()} % (namiesto ${pct} %)` : (isManager ? 'najprv nastav „% zo školy“ v Nastaveniach → Zamestnanci' : '% zo školy zatiaľ nenastavil vedúci')}</small></label>
+        <input id="pSchool" type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="0" value="${esc(schoolOf(dayKey))}" oninput="setPayrollSchool(this.value)">
+        <span class="muted">€</span>
+      </div>
       <div class="row" style="margin-top:10px;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
         <label class="muted" style="flex:1;font-size:13px">Trinkgeľ za deň (rozdelí sa rovným dielom medzi tých, čo majú zapísané hodiny)</label>
         <input id="pTip" type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" value="${esc(tipOf(dayKey))}" oninput="setPayrollTip(this.value)">
@@ -3155,7 +3163,7 @@ function recomputePayroll() {
   const pctAmount = pctAmountFor(paidToday, pctBase, pct);
   const tip = num(tipOf(payDayKey())) || 0;
   const { names: checkedNames, sharers, splitShare, tipShare, shares } = payShares(dayHours, pctAmount, tip);
-  const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0), 0);
+  const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), 0);
   if ($('#payHourly')) $('#payHourly').textContent = eur(hourlyTotal);
   if ($('#payPct')) $('#payPct').textContent = eur(sharers.length ? pctAmount : 0);
   if ($('#payPctLabel')) $('#payPctLabel').textContent = `Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''}${sharers.length ? ', delí sa ' + sharers.length : ''})`;
@@ -3167,7 +3175,7 @@ function recomputePayroll() {
     if (row) row.style.opacity = on ? '' : '.6';
     if (!note) return;
     if (!on) { note.innerHTML = ''; return; }
-    const hourly = (num(dayHours[e.name]) || 0) * (e.wage || 0), empTotal = hourly + (shares(e.name) ? splitShare : 0) + tipShare;
+    const hourly = (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + (shares(e.name) ? splitShare : 0) + tipShare;
     note.innerHTML = payNoteHtml(hourly, shares(e.name), splitShare, tip, tipShare, empTotal);
   });
 }
@@ -3218,6 +3226,9 @@ function pctAmountFor(paidOrders, pctBase, pct) {
     const cp = catPctOf(i);
     if (cp !== null) adj += (Number(i.price) || 0) * (Number(i.qty) || 0) * (cp - pct) / 100;
   }));
+  // 🏫 škola: jej suma (najviac celý základ) sa ráta % zo školy namiesto bežného %
+  const sp = schoolPct(), sAmt = Math.min(Math.max(0, num(schoolOf(payDayKey())) || 0), Math.max(0, pctBase));
+  if (sp !== null && sAmt > 0) adj += sAmt * (sp - pct) / 100;
   return Math.max(0, Math.round((pctBase * pct / 100 + adj) * 100) / 100);
 }
 async function setCatPct(enc, val) {
@@ -3247,6 +3258,62 @@ async function toggleNoShareEmp(name, share) {
   const set = noShareSet(); if (share) set.delete(name); else set.add(name);
   await call('PUT', '/api/access', { noShareEmps: [...set] });
 }
+// ---------- 🏫 škola / uzavretá spoločnosť (2026-10-22) ----------
+// Suma zo školy je súčasťou tržby dňa; zapíše sa do meta/payroll/{deň}/school a z nej sa ráta % zo školy
+// (access.schoolPct) namiesto bežného %. pctAmountFor pripočíta rozdiel.
+const schoolOf = day => { const v = (sharedPay[day] || {}).school; return v === undefined || v === null ? '' : String(v); };
+const schoolPct = () => (S.access && S.access.schoolPct !== undefined && S.access.schoolPct !== null && S.access.schoolPct !== '') ? (num(S.access.schoolPct) || 0) : null;
+function setPayrollSchool(val) {
+  const k = payDayKey(), v = (num(val) || 0) > 0 ? String(val) : null;
+  sharedPay[k] = sharedPay[k] || {}; if (v) sharedPay[k].school = v; else delete sharedPay[k].school;
+  recomputePayroll();
+  db.ref(`meta/payroll/${k}/school`).set(v).catch(() => toast('Sumu za školu sa nepodarilo uložiť'));
+}
+async function setSchoolPct(val) {
+  if (!isManager) return;
+  const raw = String(val).trim(), v = num(raw);
+  if (raw !== '' && !(v >= 0 && v <= 100)) return toast('Zadaj % od 0 do 100');
+  try { await call('PUT', '/api/access', { schoolPct: raw === '' ? null : v }); toast(raw === '' ? '🏫 % zo školy zrušené' : `🏫 Zo školy ${v} % ✓`); } finally { render(); }
+}
+// ---------- 🎉 sviatok = dvojnásobná hodinovka (2026-10-22) ----------
+// Slovenské sviatky sa označia samé (pevné dátumy + Veľký piatok a Veľkonočný pondelok); v Uzávierke sa dá
+// pre deň ručne zapnúť/vypnúť (meta/payroll/{deň}/holiday = true/false má prednosť). Percentá a trinkgeľ sa nemenia.
+const SK_FIXED_HOLIDAYS = { '01-01': 'Deň vzniku SR', '01-06': 'Traja králi', '05-01': 'Sviatok práce', '05-08': 'Deň víťazstva nad fašizmom',
+  '07-05': 'Cyril a Metod', '08-29': 'Výročie SNP', '09-01': 'Deň Ústavy', '09-15': 'Sedembolestná Panna Mária', '11-01': 'Sviatok všetkých svätých',
+  '11-17': 'Deň boja za slobodu a demokraciu', '12-24': 'Štedrý deň', '12-25': '1. sviatok vianočný', '12-26': '2. sviatok vianočný' };
+function easterSunday(y) {   // gregoriánsky výpočet Veľkej noci
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31), day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(y, month - 1, day);
+}
+function skHolidayName(day) {
+  const md = day.slice(5); if (SK_FIXED_HOLIDAYS[md]) return SK_FIXED_HOLIDAYS[md];
+  const y = +day.slice(0, 4), es = easterSunday(y), k = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const gf = new Date(es); gf.setDate(gf.getDate() - 2); const em = new Date(es); em.setDate(em.getDate() + 1);
+  if (day === k(gf)) return 'Veľký piatok'; if (day === k(em)) return 'Veľkonočný pondelok';
+  return '';
+}
+function isHoliday(day) { const v = (sharedPay[day] || {}).holiday; return v === true ? true : v === false ? false : !!skHolidayName(day); }
+const wageMult = day => isHoliday(day) ? 2 : 1;
+function setHoliday(on) {
+  const k = payDayKey(); sharedPay[k] = sharedPay[k] || {}; sharedPay[k].holiday = !!on;
+  db.ref(`meta/payroll/${k}/holiday`).set(!!on).catch(() => toast('Nepodarilo sa uložiť'));
+  render();
+}
+// ---------- 📅 kto má v daný deň smenu (zo Smien, len čítanie; obnovuje sa každých 5 min) ----------
+const shiftCache = {};
+function shiftNamesFor(day) {
+  const c = shiftCache[day];
+  if (!c || (Date.now() - c.t > 5 * 60e3 && !c.loading)) {
+    shiftCache[day] = { t: Date.now(), names: c ? c.names : [], loading: true };
+    db.ref('schedule/days/' + day + '/employees').once('value').then(s => {
+      const v = s.val(); shiftCache[day] = { t: Date.now(), names: (Array.isArray(v) ? v : Object.values(v || {})).filter(Boolean), loading: false };
+      safeRender();
+    }).catch(() => { shiftCache[day] = { t: Date.now(), names: [], loading: false }; });
+  }
+  return shiftCache[day].names;
+}
 function setPayrollTip(val) {
   const k = payDayKey(), v = (num(val) || 0) > 0 ? String(val) : null;
   sharedPay[k] = sharedPay[k] || {}; if (v) sharedPay[k].tip = v; else delete sharedPay[k].tip;
@@ -3271,12 +3338,14 @@ async function downloadPayrollCsv() {
   (S.employees || []).forEach(e => {
     if (!(e.name in dayHours)) return;
     const h = num(dayHours[e.name]) || 0;
-    const hourly = h * (e.wage || 0), share = shares(e.name) ? splitShare : 0;
+    const hourly = h * (e.wage || 0) * wageMult(payDayKey()), share = shares(e.name) ? splitShare : 0;
     hourlyTotal += hourly;
     rows.push([e.name, h, ...(isManager ? [e.wage || 0] : []), hourly.toFixed(2), share.toFixed(2), (hourly + share).toFixed(2), tipShare.toFixed(2), (hourly + share + tipShare).toFixed(2)]);
   });
   rows.push([]);
   rows.push(['Tržba za deň €', total.toFixed(2)]);
+  if (isHoliday(payDayKey())) rows.push(['Sviatok – dvojnásobná hodinovka', skHolidayName(payDayKey()) || 'áno']);
+  if (num(schoolOf(payDayKey())) > 0) rows.push(['z toho škola / uzavretá spoločnosť €', (num(schoolOf(payDayKey())) || 0).toFixed(2), schoolPct() !== null ? schoolPct() + ' %' : '']);
   if (excludedRevenue > 0) rows.push(['z toho bez percent (' + ((S.access && S.access.noPctItems) || []).join(', ') + ') €', excludedRevenue.toFixed(2)]);
   rows.push(['Základ pre percentá €', pctBase.toFixed(2)]);
   rows.push(['Percentá %', pct]);
@@ -3571,6 +3640,10 @@ function renderSettings() {
         <button class="btn ${pctSaved ? 'ghost' : ''}" style="width:auto;padding:8px 14px" onclick="setPayPct($('#payPctIn').value)">💾 Uložiť pre všetkých</button>
       </div>
       <p style="font-size:13px;margin:8px 0 0;${pctSaved ? 'color:var(--ok)' : 'color:var(--warn);font-weight:700'}">${pctSaved ? `✓ Uložené pre všetky zariadenia: ${esc(String(S.access.payPct))} %` : '⚠ Zatiaľ NIE JE uložené spoločne – ťukni „Uložiť pre všetkých“, inak každý mobil ráta inak.'}</p>
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">
+        <label style="flex:1;min-width:180px;font-size:14px">🏫 <b>% zo školy / uzavretej spoločnosti</b><br><small class="muted">v Uzávierke sa napíše, koľko z tržby bola škola – z tej sumy sa ráta toto %</small></label>
+        <input type="number" min="0" max="100" step="0.5" inputmode="decimal" placeholder="—" style="width:80px;font-size:18px;font-weight:700" value="${schoolPct() !== null ? schoolPct() : ''}" onkeydown="if(event.key==='Enter')this.blur()" onchange="setSchoolPct(this.value)"><span class="muted">%</span>
+      </div>
       <p class="muted" style="font-size:12px;margin:6px 0 0">Ráta sa z celej tržby dňa, okrem položiek nižšie. Rozdelí sa rovným dielom medzi tých, čo majú v Uzávierke zapísané hodiny (a nemajú odškrtnuté „delí sa o %“).</p></div>
     <h2>🚫 Z čoho personál NEDOSTÁVA %</h2><div class="card">
       <p class="muted" style="font-size:13px;margin:0">Zaškrtni len výnimky (napr. Pixel, vstupné). Všetko ostatné sa ráta do %. Rýchla platba s „🚫 Bez %“ sa vynechá sama.</p>

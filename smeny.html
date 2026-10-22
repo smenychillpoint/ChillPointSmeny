@@ -673,7 +673,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-20· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-22· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -1597,8 +1597,9 @@
         const out = fn(day);
         if(out===null) return undefined;
         suDiffInto(out, before, out.employees||[], 'mgr');
-        // (2026-10-20) zmena ľudí na dni = všetci musia smenu POTVRDIŤ ZNOVA (potvrdenia sa zrušia)
-        { const aft=out.employees||[]; if(aft.length!==before.length || aft.some(n=>!before.includes(n))) delete out.cf; }
+        // (2026-10-22) potvrdenie je osobné: kto bol odobratý, jeho potvrdenie zmizne; kto pribudol, potvrdí sám
+        // (ešte potvrdenie nemá); ostatní NEMUSIA potvrdzovať znova
+        { const aft=out.employees||[]; if(out.cf){ const cf={...out.cf}; Object.keys(cf).forEach(k=>{ if(!aft.includes(nameFromKey(k))) delete cf[k]; }); if(Object.keys(cf).length) out.cf=cf; else delete out.cf; } }
         { const addedNames=(out.employees||[]).filter(n=>!before.includes(n)); if(out.sb && addedNames.length){ out.sb={ ...out.sb }; addedNames.forEach(n=>{ delete out.sb[ratingKey(n)]; }); if(!Object.keys(out.sb).length) delete out.sb; } }
         if(!out.employees.length) delete out.employees;
         if(!out.closed) delete out.closed;
@@ -1725,7 +1726,8 @@
       }
     }
     const snap=snapDays([key]);
-    const ok=await mutateDay(key, day=>{ day.closed=!!val; delete day.cf; return day; });
+    // (2026-10-22) zavretie / znovuotvorenie dňa potvrdenia neruší (kto už potvrdil, nemusí znova)
+    const ok=await mutateDay(key, day=>{ day.closed=!!val; return day; });
     if(ok){ showUndoToast(val?'Deň zavretý a uložený':'Prihlasovanie znovu otvorené', snap); logEvent(key, val?'Vedúci zavrel/a deň':'Vedúci znovu otvoril/a deň'); }
   }
   async function addEmployeeToDay(key, name){
@@ -1743,9 +1745,8 @@
   async function saveNote(key, text){
     if(!manager||!dbAvailable) return;
     text=(text||'').trim();
-    // (2026-10-20) zmena poznámky dňa = smenu treba potvrdiť znova (aby si ju každý prečítal)
-    const noteChanged=(dayObj(key).note||'').trim()!==text;
-    if(await writeDay(key, noteChanged ? {note:text||null, cf:null} : {note:text||null})){ showToast(text?'Poznámka uložená':'Poznámka odstránená'); logEvent(key, text?('Vedúci upravil/a poznámku: '+text.slice(0,120)):'Vedúci odstránil/a poznámku'); }
+    // (2026-10-22) zmena poznámky už potvrdenia NEruší (potvrdzuje sa len vlastná smena)
+    if(await writeDay(key,{note:text||null})){ showToast(text?'Poznámka uložená':'Poznámka odstránená'); logEvent(key, text?('Vedúci upravil/a poznámku: '+text.slice(0,120)):'Vedúci odstránil/a poznámku'); }
   }
   async function addReservation(key, title, note, staff){
     if(!manager||!dbAvailable) return;
@@ -1815,7 +1816,7 @@
     const wcount = mode==='close' ? targets.reduce((n,k)=>n+dayWarnings(k,true,true).length,0) : 0;
     if(!confirm(q + (wcount ? `\n\nUpozornenie: v týchto dňoch je ${wcount} ${plural(wcount,'varovanie','varovania','varovaní')} (pozri „🔍 Kontrola plánu“).` : ''))) return;
     const snap=snapDays(targets);
-    const patch={}; targets.forEach(k=>{ patch[k+'/closed']= mode==='close' ? true : null; patch[k+'/cf']=null; });
+    const patch={}; targets.forEach(k=>{ patch[k+'/closed']= mode==='close' ? true : null; });   // potvrdenia ostávajú (2026-10-22)
     try{ await scheduleRef.update(patch); showUndoToast(mode==='close'?`Zavretých ${targets.length} dní`:`Otvorených ${targets.length} dní`, snap, 12000); logEvent('', `Hromadne ${mode==='close'?'zavreté':'znovu otvorené'}: ${targets.length} dní (${fmtDayNum($('bulkFrom').value)} – ${fmtDayNum($('bulkTo').value)})`); updateBulkInfo(); }
     catch(e){ showToast('Nepodarilo sa uložiť (chýba oprávnenie alebo si offline).'); }
   }
@@ -2501,8 +2502,9 @@
     patch[`schedule/days/${X}/employees`]=newX;
     suPatch(patch, `schedule/days/${X}`, ex, newX, 'mgr'); sbClearPatch(patch, `schedule/days/${X}`, X, ex, newX);
     if(Y){ const newY=ey.map(n=>n===x.to?x.from:n); patch[`schedule/days/${Y}/employees`]=newY; suPatch(patch, `schedule/days/${Y}`, ey, newY, 'mgr'); sbClearPatch(patch, `schedule/days/${Y}`, Y, ey, newY); }
-    // (2026-10-20) po výmene musia smenu potvrdiť znova všetci na oboch dňoch
-    patch[`schedule/days/${X}/cf`]=null; if(Y) patch[`schedule/days/${Y}/cf`]=null;
+    // (2026-10-22) po výmene: kto odišiel, jeho potvrdenie zmizne; kto prišiel, potvrdí sám; ostatní nemusia znova
+    if((dayObj(X).cf||{})[ratingKey(x.from)]) patch[`schedule/days/${X}/cf/${ratingKey(x.from)}`]=null;
+    if(Y && (dayObj(Y).cf||{})[ratingKey(x.to)]) patch[`schedule/days/${Y}/cf/${ratingKey(x.to)}`]=null;
     patch[`swaps/${id}/status`]='approved';
     const snap=snapDays(Y?[X,Y]:[X]).concat([{ path:`swaps/${id}/status`, v:x.status }]);
     try{
@@ -2654,7 +2656,7 @@
     if(!confirm(msg)) return;
     const key=selected;
     const snap=snapDays([key]);
-    const ok=await mutateDay(key, day=>{ day.employees=names.slice(); if(closeAfter){ day.closed=true; delete day.cf; } return day; });
+    const ok=await mutateDay(key, day=>{ day.employees=names.slice(); if(closeAfter){ day.closed=true; } return day; });   // potvrdenia ostávajúcich ľudí ostanú
     if(ok){
       showUndoToast(closeAfter?'Návrh použitý, deň zavretý':'Návrh použitý', snap);
       logEvent(key, `Vedúci použil/a návrh zostavy (${names.length} ľudí${r.drop.length?'; odstránení: '+r.drop.map(q=>q.name).join(', '):''}${r.add.length?'; pridaní: '+r.add.map(q=>q.name).join(', '):''})${closeAfter?' a zavrel/a deň':''}`);
@@ -3114,7 +3116,7 @@
     if(!confirm(`Použiť návrh pre ${items.length} dní? Odstráni sa ${removed} a pridá ${added} prihlásení.`+(closeAfter?'\nDni sa potom zavrú.':''))) return;
     const snap=snapDays(items.map(x=>x.key));
     const patch={};
-    items.forEach(x=>{ patch[`schedule/days/${x.key}/employees`]=x.names; suPatch(patch, `schedule/days/${x.key}`, dayObj(x.key).employees||[], x.names, 'mgr'); sbClearPatch(patch, `schedule/days/${x.key}`, x.key, dayObj(x.key).employees||[], x.names); const cur0=dayObj(x.key).employees||[]; if(closeAfter || cur0.length!==x.names.length || x.names.some(n=>!cur0.includes(n))) patch[`schedule/days/${x.key}/cf`]=null; if(closeAfter){ patch[`schedule/days/${x.key}/closed`]=true; } });
+    items.forEach(x=>{ patch[`schedule/days/${x.key}/employees`]=x.names; suPatch(patch, `schedule/days/${x.key}`, dayObj(x.key).employees||[], x.names, 'mgr'); sbClearPatch(patch, `schedule/days/${x.key}`, x.key, dayObj(x.key).employees||[], x.names); Object.keys(dayObj(x.key).cf||{}).forEach(k=>{ if(!x.names.includes(nameFromKey(k))) patch[`schedule/days/${x.key}/cf/${k}`]=null; }); if(closeAfter){ patch[`schedule/days/${x.key}/closed`]=true; } });
     try{
       await rtdb.ref().update(patch);
       showUndoToast(`Návrh použitý pre ${items.length} dní${closeAfter?' (zavreté)':''}`, snap, 12000);
