@@ -673,7 +673,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-22· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-25· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -1654,7 +1654,7 @@
     const d=dayObj(key), t=dayTotals(key);
     if(key<todayKey()) return 'Tento deň už uplynul.';
     if(d.off) return 'V tento deň nie je prevádzka.';
-    if(d.closed) return 'Tento deň je už zavretý.';
+    if(d.closed && !availClosedOn()) return 'Tento deň je už zavretý.';   // (2026-10-25) na zavretý deň sa dá aspoň Môžem/Nemôžem
     if(myName && (d.employees||[]).includes(myName)) return 'Na tento deň už si prihlásený/á.';
     if(t.full && feat('signup')) return 'Táto smena je už plná.';
     return '';
@@ -2010,7 +2010,7 @@
     if(key<todayKey()) return {ok:false, reason:'Tento deň už uplynul.'};
     const d=dayObj(key);
     if(d.off) return {ok:false, reason:'V tento deň nie je prevádzka.'};
-    if(d.closed) return {ok:false, reason:'Tento deň je už zavretý.'};
+    if(d.closed && !availClosedOn()) return {ok:false, reason:'Tento deň je už zavretý.'};
     if(state && (d.employees||[]).includes(myName)) return {ok:false, reason:'Najprv sa odhlás z tejto smeny.'};
     const nk=ratingKey(myName), curMark=avMark(key,myName), inNa=(d.na||[]).includes(myName);
     const fail={ok:false, reason:'Nepodarilo sa uložiť, skús znova.'};
@@ -3449,6 +3449,7 @@
     { id:'signup',     label:'Zamestnanci sa sami prihlasujú / odhlasujú na smeny (vypnuté = zapisuje len vedúci)' },
     { id:'avail',      label:'Môžem / Nemôžem / Chcem (dostupnosť)' },
     { id:'want',       label:'★ „Chcem tento deň“' },
+    { id:'availClosed', label:'Môžem / Nemôžem aj na zavretý deň' },
     { id:'notices',    label:'Nástenka oznamov' },
     { id:'confirm',    label:'Potvrdenie smeny zamestnancom' },
     { id:'checklists', label:'Checklisty a záznam zo smeny' },
@@ -3458,6 +3459,8 @@
   const feat=id=>featCfg[id]!==false;
   // (2026-10-16) "★ Chcem" sa dá vypnúť v Nastaveniach (predvolene zapnuté – majiteľ ho chce nechať)
   function wantOn(){ return featCfg.avail!==false && featCfg.want!==false; }
+  // (2026-10-25) zamestnanci sa zakliknú Môžem/Nemôžem/Chcem aj na zavretý deň (vedúci vidí, kto by ešte mohol)
+  function availClosedOn(){ return featCfg.avail!==false && featCfg.availClosed!==false; }
   async function setFeature(id, on){
     if(!manager||!dbAvailable) return;
     const f=FEATURES.find(x=>x.id===id); if(!f) return;
@@ -5307,6 +5310,11 @@
     const subReq=myReqs.find(x=>x.status==='open')||null, subBusy=myReqs.length>0;
     const memberHtml=n=>`<div class="member"><span class="avatar">${esc(n[0]||'?')}</span>${manager?`<span class="pname" data-person="${esc(n)}">${esc(n)}</span>${isPersonDone(n)?' <span class="done-mark" title="Označené ako hotovo">✅</span>':''}`:esc(n)}${manager?memberAvTag(date,n):''}${(manager && closed && !isOff && feat('confirm'))?`<button class="cfm" data-cf-toggle="${esc(n)}" title="Potvrdenie účasti (kliknutím zmeníš)" style="font-weight:700;${cfNames(date).includes(n)?'color:#7fdc9b;border-color:#3f8f55':'color:#ffb347;border-color:#a8742a'}">${cfNames(date).includes(n)?'✓ potvrdil/a':'⏳ nepotvrdil/a'}</button>${(!cfNames(date).includes(n) && mismatchOf(date,n))?` <span style="color:#ff7b7b;font-size:12px;font-weight:700" title="Napísal/a vedúcemu">⚠ nesedí: ${esc(mismatchOf(date,n).slice(0,80))}</span>`:''}`:''}${manager?`${rateBtns(n)}<button class="remove" data-emp-remove="${esc(n)}" title="Odstrániť">×</button>`:''}</div>`;
     let statusHtml, teamHtml, actionHtml='';
+    const availSegHtml=()=>{
+      const cur=avState(date,myName);
+      const seg=(id,state,label)=>`<button class="seg${cur===state?' on':''}" id="${id}">${label}</button>`;
+      return `<div class="segbox"><div class="seglabel">TVOJ VÝBER PRE TENTO DEŇ</div><div class="segrow">${seg('okDay','can','✓ Môžem')}${seg('cantDay','cant','✗ Nemôžem')}${wantOn()?seg('wantDay','want','★ Chcem tento deň'):''}</div><p class="sub" style="margin:6px 0 0;font-size:12px;">Ťuknutím na zvolenú možnosť ju zrušíš. ${closed?'Deň je už zavretý, ale vedúci uvidí, že by si mohol/mohla prísť, keby niekto vypadol.':`Vedúci to uvidí pri plánovaní. ${feat('signup')?'Nič ťa to neprihlási, na smenu sa prihlasuješ sám.':'Podľa toho ťa vedúci zapíše.'}`}</p></div>`;
+    };
     if(isOff){
       statusHtml = '<div class="sfree" style="color:#8f9297;">🚫 Bez prevádzky</div>';
       teamHtml = '<p class="sub" style="margin:6px 0 0;">V tento deň nie je prevádzka, prihlásiť sa nedá.</p>';
@@ -5338,7 +5346,8 @@
       statusHtml = '<div class="sfree ok">✓ Zavreté</div>';
       teamHtml = emps.map(memberHtml).join('') || '<p class="sub" style="margin:6px 0 0;">Na smene nikto nie je.</p>';
       actionHtml = ((already && !past && myName && feat('confirm')) ? `<button class="seg${cfNames(date).includes(myName)?' on':''}" id="confirmDay">${cfNames(date).includes(myName)?'✓ Účasť potvrdená – zrušiť':'✓ Potvrdzujem, prídem'}</button>${cfNames(date).includes(myName)?'':'<button class="outline" id="mismatchDay" style="margin-top:6px;width:100%">✗ Niečo mi nesedí – napísať vedúcemu</button>'}` : '') + `<p class="sub" style="margin:10px 0 0;font-size:12px;">${already?'Si na tejto smene. ':''}Zmeny už robí iba vedúci.</p>`
-        + `<div class="manage-row" style="margin-top:10px;">${emps.length?`<button class="outline" id="copyList">📋 Kopírovať zoznam</button>`:''}${(already&&!past&&myName&&feat('swaps'))?`<button class="outline" id="swapBtn">🔁 Požiadať o výmenu</button>${subReq?`<button class="outline" id="subCancel">✕ Zrušiť hľadanie náhrady</button>`:(subBusy?'':`<button class="outline" id="subBtn">🙋 Nemôžem prísť – hľadám náhradu</button>`)}`:''}</div>`;
+        + `<div class="manage-row" style="margin-top:10px;">${emps.length?`<button class="outline" id="copyList">📋 Kopírovať zoznam</button>`:''}${(already&&!past&&myName&&feat('swaps'))?`<button class="outline" id="swapBtn">🔁 Požiadať o výmenu</button>${subReq?`<button class="outline" id="subCancel">✕ Zrušiť hľadanie náhrady</button>`:(subBusy?'':`<button class="outline" id="subBtn">🙋 Nemôžem prísť – hľadám náhradu</button>`)}`:''}</div>`
+        + ((!past && myName && !already && availClosedOn()) ? availSegHtml() : '');
     } else {
       statusHtml = full ? `<div class="sfree full">Plné · ${emps.length} z ${lim}</div>` : `<div class="sfree pending">Otvorené · ${emps.length}${lim?' z '+lim:''} prihl.</div>`;
       teamHtml = `<p class="sub" style="margin:6px 0 0;">${already?'✓ Si prihlásený/á. ':''}Zoznam ľudí sa zobrazí po potvrdení vedúcim.</p>`;
@@ -5348,11 +5357,7 @@
       else if(already) actionHtml = `<button class="outline" id="leaveDay" style="margin-top:10px;width:100%;">Odhlásiť sa</button>`;
       else if(full) actionHtml = `<button class="primary small" disabled style="margin-top:10px;">Smena je plná</button>`;
       else actionHtml = `<button class="primary small" id="signUpDay" style="margin-top:10px;">Prihlásiť sa na tento deň</button>`;
-      if(!past && myName && !already && feat('avail')){
-        const cur=avState(date,myName);
-        const seg=(id,state,label)=>`<button class="seg${cur===state?' on':''}" id="${id}">${label}</button>`;
-        actionHtml += `<div class="segbox"><div class="seglabel">TVOJ VÝBER PRE TENTO DEŇ</div><div class="segrow">${seg('okDay','can','✓ Môžem')}${seg('cantDay','cant','✗ Nemôžem')}${wantOn()?seg('wantDay','want','★ Chcem tento deň'):''}</div><p class="sub" style="margin:6px 0 0;font-size:12px;">Ťuknutím na zvolenú možnosť ju zrušíš. Vedúci to uvidí pri plánovaní. ${feat('signup')?'Nič ťa to neprihlási, na smenu sa prihlasuješ sám.':'Podľa toho ťa vedúci zapíše.'}</p></div>`;
-      }
+      if(!past && myName && !already && feat('avail')) actionHtml += availSegHtml();
       if(!past && myName && !already && feat('avail')){
         const dw=new Date(date+'T12:00').getDay(), hasCan=canDaysOf(recFor(myName)).includes(dw);
         actionHtml += hasCan
