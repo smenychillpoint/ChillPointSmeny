@@ -280,6 +280,22 @@
       .filter(t => tdRecur(t) ? (!tdDone(t) || t.doneAt >= dayStart) : (t.day ? tdTarget(t) === tk : !t.done))
       .sort((a, b) => (tdDone(a) - tdDone(b)) || String(a.text).localeCompare(String(b.text), 'sk'));
   }
+  // ✔ Čo sa spravilo včera a dnes – vidia VŠETCI (aby nikto nerobil to isté znova): hotové úlohy (aj cudzie)
+  // + „navyše“ zo Smien (schedule/days/<deň>/dl, k:'extra'). Kalendárne dni ako v Smenách.
+  function doneFeed() {
+    const tk = iso(new Date()), y = new Date(); y.setDate(y.getDate() - 1); const yk = iso(y);
+    const from = new Date(yk + 'T00:00:00').getTime(), out = [];
+    if (featCfg.todos !== false) Object.values(todos || {}).forEach(t => {
+      if (!t || typeof t.text !== 'string' || !t.doneAt || t.doneAt < from) return;
+      if (!tdRecur(t) && !t.done) return;   // medzitým vrátené späť
+      out.push({ ic: '☑', text: t.text, by: t.doneBy || '', t: t.doneAt, day: iso(new Date(t.doneAt)) });
+    });
+    if (featCfg.checklists !== false) [yk, tk].forEach(k => {
+      const dl = ((upcoming && upcoming[k]) || {}).dl || {};
+      Object.values(dl).forEach(e => { if (e && e.k === 'extra' && e.x) out.push({ ic: '✨', text: e.x, by: e.n || '', t: e.t || 0, day: k }); });
+    });
+    return out.filter(x => x.day === tk || x.day === yk).sort((a, b) => b.t - a.t).map(x => ({ ...x, today: x.day === tk }));
+  }
   let tdBusy = false;
   async function toggleHubTodo(id, val) {
     const t = (todos || {})[id]; if (!t || tdBusy || !tdCan({ id, ...t })) return;
@@ -389,7 +405,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-26f</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-26g</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -439,16 +455,26 @@
       ${day && day.note ? `<div class="note">📝 ${esc(day.note)}</div>` : ''}
       ${notice ? `<div class="note">📣 ${esc(notice.text.length > 160 ? notice.text.slice(0, 160) + '…' : notice.text)}</div>` : ''}
     </div>`;
-    // ☑ Dnešné úlohy zo Smien – odškrtnúť priamo tu (2026-10-26)
-    if (hubTd.length) {
+    // ☑ Dnešné úlohy zo Smien – odškrtnúť priamo tu (2026-10-26) + ✔ čo sa spravilo včera a dnes
+    const feed = doneFeed();
+    if (hubTd.length || feed.length) {
       const tk0 = iso(new Date());
+      const fRow = x => `<div style="display:flex;gap:8px;padding:6px 0;border-top:1px solid #26292d;font-size:14px;line-height:1.35"><span style="flex:none">${x.ic}</span>
+        <span style="flex:1;min-width:0">${esc(x.text)}<small style="display:block;color:var(--muted);font-size:12px">${x.by ? '✓ ' + esc(x.by) + ' · ' : ''}${x.today ? 'dnes' : 'včera'}${x.t ? ' ' + hhmm(x.t) : ''}</small></span></div>`;
+      const nToday = feed.filter(x => x.today).length, nY = feed.length - nToday;
+      const feedHtml = feed.length ? `<button onclick="ui.doneOpen=!ui.doneOpen;render()" style="display:flex;justify-content:space-between;width:100%;background:#0d0f11;border:1px solid var(--line);color:var(--white);font:inherit;font-size:14px;padding:10px 12px;margin-top:10px;cursor:pointer">
+          <span>✔ Čo sa spravilo · včera ${nY} · dnes ${nToday}</span><span style="color:var(--yellow)">${ui.doneOpen ? '▴' : '▾'}</span></button>
+        ${ui.doneOpen ? `<div style="padding:4px 2px 0">${nToday ? `<h5 style="margin:8px 0 2px;font-size:11px;letter-spacing:.1em;color:var(--muted)">DNES</h5>${feed.filter(x => x.today).map(fRow).join('')}` : ''}
+          ${nY ? `<h5 style="margin:10px 0 2px;font-size:11px;letter-spacing:.1em;color:var(--muted)">VČERA</h5>${feed.filter(x => !x.today).map(fRow).join('')}` : ''}</div>` : ''}` : '';
       html += `<div class="card" id="todoCard" style="border-left:6px solid ${tdLeft ? 'var(--yellow)' : 'var(--green)'}">
-        <h3 style="margin:0 0 6px"><span>☑ Dnešné úlohy</span><span style="font-size:13px;color:var(--muted)">${hubTd.length - tdLeft} / ${hubTd.length} hotové</span></h3>
+        <h3 style="margin:0 0 6px"><span>☑ Dnešné úlohy</span><span style="font-size:13px;color:var(--muted)">${hubTd.length ? `${hubTd.length - tdLeft} / ${hubTd.length} hotové` : ''}</span></h3>
+        ${hubTd.length ? '' : '<div class="empty" style="margin:0">Na dnes nemáš žiadne úlohy 👍</div>'}
         ${hubTd.map(t => { const dn = tdDone(t), rolled = !tdRecur(t) && t.day && t.day < tk0;
           return `<button onclick="toggleHubTodo('${t.id}',${!dn})" style="display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;background:none;border:0;border-top:1px solid #26292d;padding:10px 0;color:inherit;font:inherit;cursor:pointer">
             <span style="flex:none;width:26px;height:26px;border:2px solid ${dn ? 'var(--green)' : '#6b6e73'};background:${dn ? 'var(--green)' : 'transparent'};color:#111;display:grid;place-items:center;font-weight:900">${dn ? '✓' : ''}</span>
             <span style="flex:1;min-width:0;font-size:15px;line-height:1.35${dn ? ';opacity:.55' : ''}">${dn ? `<s>${esc(t.text)}</s>` : esc(t.text)}
               <small style="display:block;color:var(--muted);font-size:12px">${[tdRecur(t) ? '🔁 opakuje sa' : '', rolled ? `↪ presunuté z ${Number(t.day.slice(8))}. ${Number(t.day.slice(5, 7))}.` : '', t.assignee ? '→ ' + esc(t.assignee) : '', dn && t.doneBy ? '✓ ' + esc(t.doneBy) : ''].filter(Boolean).join(' · ')}</small></span></button>`; }).join('')}
+        ${feedHtml}
       </div>`;
     }
     if (allowed('odovzdavka')) {
@@ -530,7 +556,7 @@
         + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-26f</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-26g</footer>`;
     app.innerHTML = html;
   }
 
