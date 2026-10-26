@@ -133,8 +133,10 @@ body:has(.login:not(.hide)){overflow:hidden}
   </nav>
 </header>
 <main id="app"></main>
+<!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
+<div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-22b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-26</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1337,6 +1339,7 @@ function render() {
   }
   const canUzavierka = isManager || !!(S.access && S.access.uzavierkaPin);
   $('#tabNastavenia').classList.toggle('hide', !isManager);
+  if ($('#resLinkBox')) $('#resLinkBox').classList.toggle('hide', !isManager);
   $('#tabUzavierka').classList.toggle('hide', !canUzavierka);
   const boardMissing = S.board.filter(b => b.type !== 'buy' && !b.done).length;
   if ($('#boardTopBtn')) $('#boardTopBtn').innerHTML = '📦' + (boardMissing ? `<span style="display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin-left:4px;border-radius:99px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;vertical-align:middle">${boardMissing}</span>` : '');

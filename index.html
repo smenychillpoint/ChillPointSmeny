@@ -1,4 +1,4 @@
-﻿<!doctype html>
+<!doctype html>
 <html lang="sk">
 <head>
   <meta charset="utf-8">
@@ -345,7 +345,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-25</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-26</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -410,7 +410,7 @@
     // (2026-10-25) 📆 Rezervácie laser game z webu – zatiaľ beta, len vedúci (nie ani v režime 👁)
     if (isMgr) {
       const r = laserStats();
-      html += `<a class="tile" href="rezervacie.html" style="border-left-color:var(--blue)"><span class="ic">📆</span><span class="tx"><b>Rezervácie${r.fresh ? `<span class="badge">${r.fresh}</span>` : ''} <small style="font-size:10px;background:var(--blue);color:#111;padding:1px 5px;vertical-align:middle">BETA</small></b><span>${r.ok ? `${r.today ? `Dnes: ${r.today} · ` : ''}Nadchádzajúce: ${r.upcoming}${r.fresh ? ` · 🆕 nové: ${r.fresh}` : ''}${laserEnv === 'test' ? ' · 🧪 test' : ''}` : 'Laser game z webu – pridať, upraviť, zrušiť'}</span></span><span class="arr">›</span></a>`;
+      html += `<a class="tile" href="rezervacie.html" style="border-left-color:var(--blue)"><span class="ic">🎯</span><span class="tx"><b>Rezervácie laser game${r.fresh ? `<span class="badge">${r.fresh}</span>` : ''} <small style="font-size:10px;background:var(--blue);color:#111;padding:1px 5px;vertical-align:middle">BETA</small></b><span>${r.ok ? `${r.today ? `Dnes: ${r.today} · ` : ''}Nadchádzajúce: ${r.upcoming}${r.fresh ? ` · 🆕 nové: ${r.fresh}` : ''}${laserEnv === 'test' ? ' · 🧪 test' : ''}` : 'Laser game z webu – pridať, upraviť, zrušiť'}</span></span><span class="arr">›</span></a>`;
     }
     if (allowed('kupit')) {
       // otvorené položky s tlačidlom "✓ doplnené/kúpené", vybavené (7 dní) s "↺ vrátiť", vedúci môže mazať
@@ -466,7 +466,7 @@
         + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-25</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-26</footer>`;
     app.innerHTML = html;
   }
 
