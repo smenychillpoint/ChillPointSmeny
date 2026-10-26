@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="sk">
 <head>
   <meta charset="utf-8">
@@ -303,6 +303,21 @@
     try { await firebase.database().ref('board/' + id).remove(); } catch (e) { toast('Nepodarilo sa zmazať.'); }
   }
 
+  // ---- 📆 Rezervácie laser game (laser/<env>/bookings, číta len vedúci) – 2026-10-25 ----
+  const laserEnv = ls.get('cp_laserEnv') === 'live' ? 'live' : 'test';
+  let laserBk = null;
+  function laserStats() {
+    if (!laserBk) return { ok: false };
+    const tk = iso(new Date()), out = { ok: true, today: 0, upcoming: 0, fresh: 0 };
+    Object.values(laserBk).forEach(b => {
+      if (!b || b.status === 'cancelled') return;
+      const days = Object.keys(b.games || {}).map(g => g.slice(0, 10));
+      if (!days.some(d => d >= tk)) return;
+      out.upcoming++; if (days.includes(tk)) out.today++; if ((b.status || 'new') === 'new') out.fresh++;
+    });
+    return out;
+  }
+
   // ---- nastavenie prístupov (len vedúci) ----
   async function setAccess(name, key, on) {
     if (!isMgr) return;
@@ -330,7 +345,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-22</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-25</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -392,6 +407,11 @@
     html += `<h2>Kam ideš?</h2><div class="tiles">`;
     if (allowed('smeny')) html += `<a class="tile" href="smeny.html"><span class="ic">📅</span><span class="tx"><b>Smeny</b><span>Rozpis zmien, úlohy a navyše, vzal/a som si</span></span><span class="arr">›</span></a>`;
     if (allowed('objednavky')) html += `<a class="tile" href="objednavky.html"><span class="ic">🍹</span><span class="tx"><b>Objednávky</b><span>Stoly, bar, atrakcie, platby a uzávierka</span></span><span class="arr">›</span></a>`;
+    // (2026-10-25) 📆 Rezervácie laser game z webu – zatiaľ beta, len vedúci (nie ani v režime 👁)
+    if (isMgr) {
+      const r = laserStats();
+      html += `<a class="tile" href="rezervacie.html" style="border-left-color:var(--blue)"><span class="ic">📆</span><span class="tx"><b>Rezervácie${r.fresh ? `<span class="badge">${r.fresh}</span>` : ''} <small style="font-size:10px;background:var(--blue);color:#111;padding:1px 5px;vertical-align:middle">BETA</small></b><span>${r.ok ? `${r.today ? `Dnes: ${r.today} · ` : ''}Nadchádzajúce: ${r.upcoming}${r.fresh ? ` · 🆕 nové: ${r.fresh}` : ''}${laserEnv === 'test' ? ' · 🧪 test' : ''}` : 'Laser game z webu – pridať, upraviť, zrušiť'}</span></span><span class="arr">›</span></a>`;
+    }
     if (allowed('kupit')) {
       // otvorené položky s tlačidlom "✓ doplnené/kúpené", vybavené (7 dní) s "↺ vrátiť", vedúci môže mazať
       // jeden zoznam "Kúpiť" (staré položky typu "chýba" sú v ňom tiež)
@@ -446,7 +466,7 @@
         + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-22</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-25</footer>`;
     app.innerHTML = html;
   }
 
@@ -487,6 +507,7 @@
       user = u; isMgrAuth = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL; authReady = true; applyView();
       if (!u) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); } catch (e) {} return; }
       if (!authOn) { authOn = true; on('queue', v => { queue = v || {}; }); on('meta/handover', v => { handover = v || {}; }); on('meta/worklist', v => { worklist = v || {}; }); }
+      if (isMgrAuth && laserBk === null) { laserBk = {}; db.ref(`laser/${laserEnv}/bookings`).on('value', s => { laserBk = s.val() || {}; render(); }, () => { laserBk = null; }); }
       render();
     });
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
