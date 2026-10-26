@@ -136,7 +136,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-26</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-26b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -318,6 +318,23 @@ const dayShort = s => { const [y, mo, da] = s.split('-').map(Number); return `${
 const str = (v, max = 100) => String(v ?? '').trim().slice(0, max);
 const num = v => Math.round(Number(String(v ?? '').replace(',', '.')) * 100) / 100;
 function fail(msg) { toast(msg); throw new Error(msg); }
+// ---------- 🎯 Laser game – rozdelím pri platení (2026-10-26) ----------
+// Pri objednávaní sa zadá len počet hráčov × hier → na účet ide jeden riadok LG_NAME s cenou dospelého
+// (menuId dospelého, lg: {p: hráči, g: hry}, qty = vstupy). Pri platení / na účte stola sa rozdelí na dospelých /
+// študentov / deti (tables/:id/splitLaser) → nahradí sa bežnými položkami z cenníka, takže Uzávierka, % aj CSV
+// rátajú ako doteraz. Kým sa nerozdelí, počíta sa ako keby všetci boli dospelí. Položky laser game sa hľadajú
+// v cenníku podľa názvu (laser + dospel / študent / dieť|ZŤP). Vypína sa v Nastavenia → 🧩 Funkcie (laserSplit).
+const LG_NAME = '🎯 Laser game – rozdeliť';
+const LG_TYPES = [['a', '👨 Dospelí', /dospel/i], ['s', '🎓 Študenti', /študent|student/i], ['c', '🧒 Deti / ZŤP', /dieť|diet|zťp|ztp/i]];
+function lgMenu() {
+  const out = {};
+  S.menu.filter(m => /laser/i.test(m.name || '')).forEach(m => { const t = LG_TYPES.find(x => x[2].test(m.name)); if (t && !out[t[0]]) out[t[0]] = m; });
+  return out;
+}
+const lgOn = () => uiOn('laserSplit') && !!lgMenu().a;
+const isLg = i => !!(i && (i.lg || i.name === LG_NAME));
+// pre „bez % z tržby“: nerozdelený laser game sa správa ako položka, z ktorej je (Laser game dospelý)
+const pctName = i => (i && i.name === LG_NAME && i.menuId) ? ((S.menu.find(m => m.id === i.menuId) || {}).name || i.name) : (i && i.name);
 // Položky z košíka -> položky objednávky (ceny, zľavy a názvy sa berú zo servera/menu, nie od klienta).
 // Spoločné pre novú objednávku aj pre pridanie k objednávke, ktorá je ešte na bare.
 function buildOrderItems(list) {
@@ -342,10 +359,13 @@ function buildOrderItems(list) {
     const rec = { menuId: mi.id, name: mi.name, price, qty: Math.max(1, Math.min(999, i.qty | 0)), note: str(note, 140) };
     if (discountAmt > 0) { rec.discountAmt = discountAmt; rec.origPrice = origPrice; }
     else if (discountPct > 0) { rec.discountPct = discountPct; rec.origPrice = origPrice; }
+    // 🎯 laser game na rozdelenie pri platení (hráči × hry; cena zatiaľ ako dospelý)
+    if (i.lg) { const p = Math.max(1, Math.min(99, i.lg.p | 0)), g = Math.max(1, Math.min(30, i.lg.g | 0)); rec.name = LG_NAME; rec.lg = { p, g }; }
     return rec;
   }).filter(Boolean).reduce((acc, it) => {
     // (2026-10-19) rovnaké riadky (položka + cena + poznámka/výber + zľava) sa spoja do jedného – na bare "2× Mattoni · jemne perlivá"
-    const same = acc.find(x => x.menuId === it.menuId && x.price === it.price && (x.note || '') === (it.note || '') && (x.discountPct || 0) === (it.discountPct || 0) && (x.discountAmt || 0) === (it.discountAmt || 0));
+    // (🎯 laser game na rozdelenie sa nespája s ničím – má vlastný počet hráčov a hier)
+    const same = !it.lg && acc.find(x => !x.lg && x.menuId === it.menuId && x.price === it.price && (x.note || '') === (it.note || '') && (x.discountPct || 0) === (it.discountPct || 0) && (x.discountAmt || 0) === (it.discountAmt || 0));
     if (same) same.qty = Math.min(999, same.qty + it.qty); else acc.push(it);
     return acc;
   }, []);
@@ -640,6 +660,29 @@ async function callInner(m, [col, id, action], body) {
       delOrders.forEach(oid => jobs.push(db.ref('orders/' + oid).remove()));
       return Promise.all(jobs);
     }
+    // 🎯 Rozdelenie laser game (2026-10-26): všetky riadky LG_NAME na účte stola sa nahradia bežnými položkami
+    // z cenníka (dospelý / študent / dieťa) – body {a, s, c} = počty vstupov. Pridajú sa do najstaršej objednávky,
+    // v ktorej laser game bol; objednávka, ktorej nič neostane, sa zmaže.
+    if (m === 'POST' && action === 'splitLaser') {
+      const lm = lgMenu(), cnt = { a: Math.max(0, body.a | 0), s: Math.max(0, body.s | 0), c: Math.max(0, body.c | 0) };
+      const os = tableOrders(id).filter(o => o.items.some(isLg)).sort((a, b) => a.createdAt - b.createdAt);
+      if (!os.length) fail('Laser game na rozdelenie už na účte nie je');
+      const list = LG_TYPES.map(t => t[0]).filter(k => cnt[k] > 0).map(k => {
+        if (!lm[k]) fail('V cenníku chýba položka laser game: ' + LG_TYPES.find(t => t[0] === k)[1]);
+        return { menuId: lm[k].id, qty: Math.min(999, cnt[k]), note: '' };
+      });
+      if (!list.length) fail('Zadaj aspoň jedného hráča');
+      const add = isStaffTable(id) ? staffItems(buildOrderItems(list)) : buildOrderItems(list);
+      const u = {};
+      os.forEach((o, i) => {
+        const items = o.items.filter(it => !isLg(it)).map(it => ({ ...it }));
+        // rovnaká položka, ktorá už na objednávke je (napr. 1× dospelý), sa navýši namiesto druhého riadku
+        if (i === 0) add.forEach(n => { const same = items.find(x => x.menuId === n.menuId && x.price === n.price && !(x.note || '') && !x.discountPct && !x.discountAmt && !x.staffPct === !n.staffPct);
+          if (same) same.qty = Math.min(999, same.qty + n.qty); else items.push(n); });
+        if (items.length) u[o.id + '/items'] = items; else u[o.id] = null;
+      });
+      return db.ref('orders').update(u);
+    }
     // Zmena poradia stola v zozname (v Nastaveniach) - preusporiada, nech vedúci môže dať stoly, ktoré k sebe patria, vedľa seba
     if (m === 'POST' && action === 'move') {
       if (!isManager) fail('Stoly smie meniť len vedúci');
@@ -806,7 +849,7 @@ async function callInner(m, [col, id, action], body) {
       if (!add.length) fail('Nič na pridanie');
       const items = o.items.map(x => ({ ...x }));
       add.forEach(n => {
-        const same = items.find(x => x.menuId === n.menuId && x.price === n.price && (x.note || '') === (n.note || '') && !x.discountPct && !x.discountAmt && !n.discountPct && !n.discountAmt);
+        const same = !n.lg && items.find(x => !x.lg && x.menuId === n.menuId && x.price === n.price && (x.note || '') === (n.note || '') && !x.discountPct && !x.discountAmt && !n.discountPct && !n.discountAmt);
         if (same) { same.qty = Math.min(999, same.qty + n.qty); same.plus = (same.plus || 0) + n.qty; delete same.ready; }   // pridané kusy ešte nie sú pripravené
         else items.push({ ...n, plus: n.qty });
       });
@@ -1435,7 +1478,8 @@ const UI_FEATURES = [
   ['soldOut', '🚫 Vypredané položky (podržať položku → „Dnes vypredané“)'],
   ['later', '⏰ Objednávka na neskôr (na bar o určitej hodine)'],
   ['barCheck', '☑ Odškrtávanie položiek na Bare (všetko odškrtnuté = hotové)'],
-  ['offlineBar', '🔴 Veľký pás „Bez internetu“, keď vypadne spojenie']
+  ['offlineBar', '🔴 Veľký pás „Bez internetu“, keď vypadne spojenie'],
+  ['laserSplit', '🎯 Laser game – dospelí / študenti / deti rozdeliť až pri platení']
 ];
 const uiOn = k => !(((S.access && S.access.uiOff) || []).includes(k));
 async function setUiFeature(k, on) {
@@ -2204,7 +2248,8 @@ function renderTable() {
     ${acctOpen ? `<div style="padding:0 14px 14px">
       <div class="cart-list">${acctRows.map(r => `
         <div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span>
-          <button class="btn ok" style="width:auto;padding:6px 10px;font-size:15px" title="Ešte 1 to isté (pridá do košíka)" onclick="acctPlusOne('${esc(r.name).replace(/'/g, "\\'")}',${r.price})">+1</button>
+          ${r.name === LG_NAME ? `<button class="btn" style="width:auto;padding:6px 10px;font-size:13px" title="Rozdeliť na dospelých / študentov / deti" onclick="openLaserSplit()">🎯 Rozdeliť</button>`
+          : `<button class="btn ok" style="width:auto;padding:6px 10px;font-size:15px" title="Ešte 1 to isté (pridá do košíka)" onclick="acctPlusOne('${esc(r.name).replace(/'/g, "\\'")}',${r.price})">+1</button>`}
           <button class="del" style="width:auto;padding:6px 8px;font-size:13px" title="Odstrániť z účtu" onclick="removeAcctItem('${esc(r.name).replace(/'/g, "\\'")}',${r.price},${r.qty})">✕</button></div>`).join('')}</div>
       ${pending.length ? `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)">${pending.map(o => `
         <div class="row" style="justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
@@ -2347,8 +2392,12 @@ function renderItems() {
   const list = words.length ? S.menu.filter(m => named(m) && words.every(w => fold(m.name).includes(w))).slice(0, 60)
                             : S.menu.filter(m => named(m) && m.category === cat);
   $('#cats').classList.toggle('hide', words.length > 0);
-  const qty = id => cart.filter(c => c.menuId === id).reduce((a, c) => a + c.qty, 0);
-  el.innerHTML = list.length ? list.map(m => `
+  const qty = id => cart.filter(c => c.menuId === id && !c.lg).reduce((a, c) => a + c.qty, 0);
+  // 🎯 laser game na rozdelenie – prvá dlaždica v kategórii, kde je „Laser game dospelý“
+  const lga = lgOn() && !words.length ? lgMenu().a : null, lgInCart = cart.filter(c => c.lg).length;
+  const lgTile = lga && lga.category === cat ? `<button class="item" style="border:2px dashed var(--accent);${catColor(cat) ? `box-shadow:inset 5px 0 0 ${catColor(cat)};` : ''}" onclick="addLaserSplit()"><b>🎯 Laser game – rozdelím pri platení</b><span>hráči × hry · deti / študenti / dospelí neskôr</span>
+    ${lgInCart ? `<div class="qwrap"><div class="q">${lgInCart}</div></div>` : ''}</button>` : '';
+  el.innerHTML = list.length ? lgTile + list.map(m => `
     <button class="item" style="${catColor(m.category) ? `box-shadow:inset 5px 0 0 ${catColor(m.category)};` : ''}${isSoldOut(m.id) ? 'opacity:.45;' : ''}" onclick="itemTap('${m.id}')" onpointerdown="lpStart('${m.id}')" onpointerup="lpCancel()" onpointerleave="lpCancel()" onpointercancel="lpCancel()" oncontextmenu="return false"><b>${esc(m.name)}</b><span>${isSoldOut(m.id) ? '🚫 dnes vypredané' : (m.customPrice ? '✎ vlastná suma' : eur(m.price))}${words.length ? ' · ' + esc(m.category) : ''}</span>
     ${qty(m.id) ? `<div class="qwrap"><div class="q">${qty(m.id)}</div><span class="qminus" role="button" tabindex="0" onclick="event.stopPropagation();removeItem('${m.id}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();removeItem('${m.id}')}">−</span></div>` : ''}</button>`).join('')
     : '<div class="empty" style="grid-column:1/-1">Nič sa nenašlo</div>';
@@ -2390,7 +2439,9 @@ function repeatLastOrder() {
     if (!mi) { skipped = true; return; }
     // iná cena než je teraz v cenníku = vtedy to bola vlastná/zľavnená suma (napr. biliard) - zachová sa aj teraz
     const customPrice = Math.abs(it.price - mi.price) > 0.004 ? it.price : null;
-    const c = cart.find(x => x.menuId === it.menuId && (x.note || '') === (it.note || '') && (x.price ?? null) === customPrice);
+    // 🎯 nerozdelený laser game sa zopakuje znova ako „rozdelím pri platení“
+    if (it.lg) { cart.push({ menuId: it.menuId, qty: it.qty, note: it.note || '', lg: { p: it.lg.p, g: it.lg.g } }); added += it.qty; return; }
+    const c = cart.find(x => !x.lg && x.menuId === it.menuId && (x.note || '') === (it.note || '') && (x.price ?? null) === customPrice);
     if (c) c.qty += it.qty; else cart.push({ menuId: it.menuId, qty: it.qty, note: it.note || '', ...(customPrice != null ? { price: customPrice } : {}) });
     added += it.qty;
   });
@@ -2410,9 +2461,22 @@ function addItem(id) {
   // 🥤 kategória s pohármi (limonády, karafy) – opýta sa, koľko pohárov
   if (mi && catExtra(mi.category).glasses) return askGlasses(id);
   // 🧊 nový kus sa pridá k riadku "s ľadom" (predvolené), nie k riadku, ktorý sa prepol na "bez ľadu"
-  const c = cart.find(x => x.menuId === id && !x.note && x.price == null && !x.glasses && (x.ice || 'with') === 'with');
+  const c = cart.find(x => x.menuId === id && !x.lg && !x.note && x.price == null && !x.glasses && (x.ice || 'with') === 'with');
   c ? c.qty++ : cart.push({ menuId: id, qty: 1, note: '' });
   renderItems(); renderFavs(); renderCart();
+}
+// 🎯 laser game bez rozdelenia: len počet hráčov a hier (cena zatiaľ ako dospelí, rozdelí sa pri platení)
+function addLaserSplit() {
+  const a = lgMenu().a; if (!a) return toast('V cenníku chýba „Laser game dospelý“');
+  const pv = prompt('🎯 Laser game – koľko hráčov?', '');
+  if (pv === null) return;
+  const p = parseInt(pv, 10); if (!p || p < 1 || p > 99) return toast('Zadaj počet hráčov (1 – 99)');
+  const gv = prompt(`Koľko hier? (${p} ${p === 1 ? 'hráč' : p < 5 ? 'hráči' : 'hráčov'})`, '1');
+  if (gv === null) return;
+  const g = parseInt(gv, 10); if (!g || g < 1 || g > 30) return toast('Zadaj počet hier (1 – 30)');
+  cart.push({ menuId: a.id, qty: Math.min(999, p * g), note: '', lg: { p, g } });
+  cartOpen = true; renderItems(); renderFavs(); renderCart();
+  toast(`🎯 ${p} × ${g} – dospelých / študentov / deti rozdelíš pri platení`);
 }
 let itemOptionsQty = 1;   // (2026-10-19) koľko kusov s týmto výberom (napr. 3× Mattoni jemne perlivá)
 function setItemOptionsQty(d) { itemOptionsQty = Math.max(1, Math.min(999, itemOptionsQty + d)); renderItemOptions(); }
@@ -2498,7 +2562,7 @@ function addCustomPriceItem(id) {
 function removeItem(id) {
   // hľadá od konca - pri položkách s vlastnou sumou (napr. biliard) tak odoberie naposledy pridanú
   let idx = -1;
-  for (let i = cart.length - 1; i >= 0; i--) { if (cart[i].menuId === id && !cart[i].note) { idx = i; break; } }
+  for (let i = cart.length - 1; i >= 0; i--) { if (cart[i].menuId === id && !cart[i].note && !cart[i].lg) { idx = i; break; } }
   if (idx === -1) return;
   const c = cart[idx];
   if (c.price != null) cart.splice(idx, 1);
@@ -2539,7 +2603,72 @@ function setDiscount(i) {
 // ---------- rýchla poznámka k položke v košíku: ťuknutím na hotové možnosti (+ vlastný text) ----------
 const QUICK_NOTES = ['bez ľadu', 's ľadom', 's citrónom', 'bez slamky', 'veľké', 'malé', 'teplé', 'studené', 'bez cukru', 'neskôr'];
 let noteEdit = null;   // { i, picks: Set, text }
-function closeQuickModal() { $('#quickModal').classList.add('hide'); noteEdit = null; }
+function closeQuickModal() { $('#quickModal').classList.add('hide'); noteEdit = null; lgS = null; }
+// ---------- 🎯 rozdelenie laser game na dospelých / študentov / deti (okno #quickModal) ----------
+// lgS = { mode: 'players' (hráči × hry) | 'entries' (vstupy – keď niekto hral menej hier), g, a, s, c, P, E }
+let lgS = null, lgSaving = false;
+function lgOnTable() { const its = []; tableOrders(tableId).forEach(o => o.items.forEach(i => { if (isLg(i)) its.push(i); })); return its; }
+function openLaserSplit() {
+  const its = lgOnTable(); if (!its.length) return toast('Na účte nie je laser game na rozdelenie');
+  const P = its.reduce((s, i) => s + ((i.lg && i.lg.p) | 0), 0), E = its.reduce((s, i) => s + (i.qty | 0), 0);
+  const gs = [...new Set(its.map(i => i.lg && i.lg.g).filter(Boolean))];
+  const byPlayers = P > 0 && gs.length === 1 && P * gs[0] === E;   // inak (napr. ručne zmenený počet) podľa vstupov
+  lgS = byPlayers ? { mode: 'players', g: gs[0], a: P, s: 0, c: 0, P, E } : { mode: 'entries', g: gs[0] || 1, a: E, s: 0, c: 0, P, E };
+  renderLgModal(); $('#quickModal').classList.remove('hide');
+}
+// + pri študentoch / deťoch uberie dospelého (súčet ostane), − ho vráti
+function lgStep(k, d) {
+  if (!lgS) return;
+  if (k === 'g') { lgS.g = Math.max(1, Math.min(30, lgS.g + d)); return renderLgModal(); }
+  const v = lgS[k] + d; if (v < 0) return;
+  if (k !== 'a') { if (d > 0 && lgS.a > 0) lgS.a--; else if (d < 0) lgS.a++; }
+  lgS[k] = Math.min(999, v); renderLgModal();
+}
+function lgSetMode(mode) {
+  if (!lgS || lgS.mode === mode) return;
+  if (mode === 'entries') { ['a', 's', 'c'].forEach(k => { lgS[k] *= lgS.g; }); }
+  else { lgS.a = lgS.P || Math.max(1, Math.round(lgS.E / lgS.g)); lgS.s = 0; lgS.c = 0; }
+  lgS.mode = mode; renderLgModal();
+}
+function renderLgModal() {
+  if (!lgS) return closeQuickModal();
+  const lm = lgMenu(), pl = lgS.mode === 'players', mult = pl ? lgS.g : 1;
+  const types = LG_TYPES.filter(t => lm[t[0]]);
+  const sum = types.reduce((s, t) => s + lgS[t[0]], 0), need = pl ? lgS.P : lgS.E;
+  const total = types.reduce((s, t) => s + lgS[t[0]] * mult * lm[t[0]].price, 0);
+  const btn = (k, d) => `<button class="btn ghost" style="width:46px;padding:8px 0;font-size:20px" onclick="lgStep('${k}',${d})">${d > 0 ? '+' : '−'}</button>`;
+  const row = (k, label, extra) => `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)">
+      <span style="flex:1;min-width:0"><b>${label}</b>${extra ? `<br><small class="muted">${extra}</small>` : ''}</span>
+      ${btn(k, -1)}<b style="min-width:34px;text-align:center;font-size:20px">${lgS[k]}</b>${btn(k, 1)}</div>`;
+  $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 4px">🎯 Rozdeliť laser game</h3>
+    <p class="muted" style="margin:0 0 10px">Na účte: ${lgS.P ? `${lgS.P} hráčov · ` : ''}${lgS.E} ${lgS.E === 1 ? 'vstup' : lgS.E < 5 ? 'vstupy' : 'vstupov'} (zatiaľ ako dospelí ${eur(lgS.E * lm.a.price)})</p>
+    <div class="row" style="gap:6px;margin-bottom:8px">
+      <button class="btn ${pl ? '' : 'ghost'}" style="flex:1;padding:8px" onclick="lgSetMode('players')">Hráči × hry</button>
+      <button class="btn ${pl ? 'ghost' : ''}" style="flex:1;padding:8px" onclick="lgSetMode('entries')">Rôzny počet hier</button></div>
+    ${pl ? row('g', '🕹 Počet hier', 'každý hráč') : '<p class="muted" style="font-size:13px;margin:0 0 6px">Zadávaš vstupy (1 hráč × 1 hra = 1 vstup), napr. dieťa hralo 2 hry = 2.</p>'}
+    ${types.map(t => row(t[0], t[1], `${eur(lm[t[0]].price)} ${pl ? '/ hra' : '/ vstup'}`)).join('')}
+    <div style="border-top:2px solid var(--line);padding-top:10px;margin-top:4px">
+      <div class="row" style="justify-content:space-between"><span>${pl ? 'Hráčov' : 'Vstupov'}: <b>${sum}</b>${need ? ` z ${need}` : ''}</span><b style="font-size:20px">${eur(total)}</b></div>
+      ${need && sum !== need ? `<p style="color:var(--warn);font-size:13px;margin:6px 0 0">⚠ Objednané bolo ${need} ${pl ? 'hráčov' : 'vstupov'}, rozdelených je ${sum}. Môžeš aj tak uložiť (účet sa upraví).</p>` : ''}
+    </div>
+    <button class="btn ok" style="margin-top:12px" onclick="saveLaserSplit()" ${sum ? '' : 'disabled'}>✓ Hotovo – zapísať na účet · ${eur(total)}</button>
+    <p style="text-align:center;margin:10px 0 0"><a href="#" onclick="closeQuickModal();return false" style="font-size:13px">Zrušiť</a></p>`;
+}
+async function saveLaserSplit() {
+  if (!lgS || lgSaving) return;
+  const mult = lgS.mode === 'players' ? lgS.g : 1;
+  const body = { a: lgS.a * mult, s: lgS.s * mult, c: lgS.c * mult };
+  if (!(body.a + body.s + body.c)) return;
+  lgSaving = true;
+  try { await call('POST', `/api/tables/${tableId}/splitLaser`, body); closeQuickModal(); toast('🎯 Laser game rozdelený ✓'); }
+  catch (e) {}
+  lgSaving = false;
+}
+// pred platbou: nerozdelený laser game sa zaplatí ako dospelí – len po potvrdení
+function lgPayOk(names) {
+  const has = names ? names.includes(LG_NAME) : lgOnTable().length > 0;
+  return !has || confirm('🎯 Laser game ešte nie je rozdelený na dospelých / študentov / deti – zaplatí sa ako dospelí.\n\nPokračovať v platbe? (Zrušiť = najprv rozdeliť)');
+}
 function setNote(i) {
   if (!cart[i]) return;
   // existujúcu poznámku rozložíme späť na ťuknuté možnosti + zvyšok ako vlastný text
@@ -2601,7 +2730,7 @@ function addQtyCustom(id) {
   addQty(id, Math.min(999, n));
 }
 function addQty(id, n) {
-  const c = cart.find(x => x.menuId === id && !x.note && x.price == null && !x.glasses && (x.ice || 'with') === 'with');
+  const c = cart.find(x => x.menuId === id && !x.lg && !x.note && x.price == null && !x.glasses && (x.ice || 'with') === 'with');
   c ? c.qty = Math.min(999, c.qty + n) : cart.push({ menuId: id, qty: n, note: '' });
   closeQuickModal(); renderItems(); renderFavs(); renderCart();
   const mi = S.menu.find(x => x.id === id); toast(`+${n}× ${mi ? mi.name : ''}`);
@@ -2613,7 +2742,7 @@ function acctPlusOne(name, price) {
   if (!mi) return toast('Túto položku nejde pridať znova (nie je v menu)');
   if (mi.customPrice) cart.push({ menuId: mi.id, qty: 1, note: '', price: Number(price) });   // napr. biliard - rovnaká suma
   else if (mi.opts && parseOpts(mi.opts).length) return addItem(mi.id);                       // vyberie možnosti
-  else { const c = cart.find(x => x.menuId === mi.id && !x.note && x.price == null); c ? c.qty++ : cart.push({ menuId: mi.id, qty: 1, note: '' }); }
+  else { const c = cart.find(x => x.menuId === mi.id && !x.lg && !x.note && x.price == null); c ? c.qty++ : cart.push({ menuId: mi.id, qty: 1, note: '' }); }
   cartOpen = true; renderItems(); renderFavs(); renderCart();
   toast(`+1 ${mi.name} v košíku – odošli na bar`);
 }
@@ -2647,7 +2776,7 @@ function renderCart() {
   el.innerHTML = `<div class="cart-in">
     <button class="btn ghost" style="margin-bottom:8px;width:100%" onclick="cartOpen=false;renderCart()">Skryť ▼</button>
     <div class="cart-list">${cart.map((c, i) => `
-    <div class="line"><div class="n">${esc(m(c.menuId).name)}${(c.discountPct || c.discountAmt)
+    <div class="line"><div class="n">${c.lg ? `${esc(LG_NAME)} <span class="muted">· ${c.lg.p} hr. × ${c.lg.g} ${c.lg.g === 1 ? 'hra' : c.lg.g < 5 ? 'hry' : 'hier'}</span>` : esc(m(c.menuId).name)}${(c.discountPct || c.discountAmt)
         ? ` · <s class="muted">${eur(basePrice(c))}</s> <b>${eur(linePrice(c))}</b> <span style="color:var(--warn);font-weight:700">-${c.discountAmt ? eur(c.discountAmt) : c.discountPct + '%'}</span>`
         : (c.price != null ? ` · <b>${eur(c.price)}</b>` : '')}
       <small onclick="setNote(${i})" style="cursor:pointer">${c.note ? '✎ ' + esc(c.note) : '+ poznámka'}</small>
@@ -2762,7 +2891,12 @@ function renderBill() {
   const allTotal = sumOrders(os);
   const selTotal = rows.reduce((s, r) => s + r.price * (billSel[r.name + '|' + r.price] || 0), 0);
   const anySel = selTotal > 0;
-  $('#app').innerHTML = `<div class="card"><div class="total"><span>Celý účet</span><span>${eur(allTotal)}</span></div></div>
+  const lgLeft = lgOnTable().reduce((s, i) => s + (i.qty | 0), 0);
+  $('#app').innerHTML = `${lgLeft ? `<div class="card" style="border:2px solid var(--warn);margin-bottom:10px">
+      <b>🎯 Laser game ešte nie je rozdelený</b>
+      <p class="muted" style="margin:4px 0 8px">${lgLeft} ${lgLeft === 1 ? 'vstup' : lgLeft < 5 ? 'vstupy' : 'vstupov'} sa zatiaľ počíta ako dospelí. Rozdeľ, koľko hrali deti, študenti a dospelí – suma sa prepočíta.</p>
+      <button class="btn" onclick="openLaserSplit()">🎯 Rozdeliť dospelí / študenti / deti</button></div>` : ''}
+    <div class="card"><div class="total"><span>Celý účet</span><span>${eur(allTotal)}</span></div></div>
     ${rows.length ? `<button class="btn ok" style="margin-top:10px" onclick="payAll()">💶 Zaplatiť celý účet naraz · ${eur(allTotal)}</button>` : ''}
     ${rows.length ? `<div class="card" style="margin-top:10px">
       <b>➗ Rozdeliť rovným dielom</b>
@@ -2793,6 +2927,7 @@ function billMinus(k) { billSel[k] = Math.max(0, (billSel[k] || 0) - 1); render(
 async function payAll() {
   const os = tableOrders(tableId);
   if (!os.length) return;
+  if (!lgPayOk()) return;
   if (!confirm('Označiť stôl ako zaplatený? Objednávky sa uzavrú.')) return;
   const agg = {};
   os.forEach(o => o.items.forEach(i => { const k = i.name + '|' + i.price; agg[k] = agg[k] || { name: i.name, price: i.price, qty: 0 }; agg[k].qty += i.qty; }));
@@ -2808,6 +2943,7 @@ function updateSplitPreview(total) {
 async function paySplit(total) {
   const inp = $('#splitParts');
   const n = Math.max(2, Math.min(20, parseInt(inp ? inp.value : '2', 10) || 2));
+  if (!lgPayOk()) return;
   if (!confirm(`Rozdeliť účet (${eur(total)}) na ${n} rovnakých častí po ${eur(total / n)}? Celý účet sa tým zaplatí a uzavrie.`)) return;
   await call('POST', `/api/tables/${tableId}/paySplit`, { parts: n, waiter: store.get('waiter', '') });
   billSel = {}; tableId = null; toast('Účet rozdelený a zaplatený ✓'); render();
@@ -2821,6 +2957,7 @@ async function payItems() {
   const allTotal = sumOrders(os);
   const selTotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const isAll = Math.abs(selTotal - allTotal) < 0.005;
+  if (!lgPayOk(items.map(i => i.name))) return;
   if (!confirm(isAll ? 'Označiť stôl ako zaplatený? Objednávky sa uzavrú.' : `Označiť vybrané položky (${eur(selTotal)}) ako zaplatené? Zvyšok účtu ostane na stole otvorený.`)) return;
   await call('POST', `/api/tables/${tableId}/paySome`, { items, waiter: store.get('waiter', '') });
   billSel = {};
@@ -3146,7 +3283,7 @@ function pctBaseFor(paidOrders, total) {
   // (napr. rýchla platba s "🚫 Bez %") – každá sa ráta len raz
   const noPctSet = new Set((S.access && S.access.noPctItems) || []);
   let excludedRevenue = 0;
-  (paidOrders || []).forEach(o => (o.items || []).forEach(i => { if (i.noPct || noPctSet.has(i.name)) excludedRevenue += (Number(i.price) || 0) * (Number(i.qty) || 0); }));
+  (paidOrders || []).forEach(o => (o.items || []).forEach(i => { if (i.noPct || noPctSet.has(pctName(i))) excludedRevenue +=(Number(i.price) || 0) * (Number(i.qty) || 0); }));
   excludedRevenue = Math.round(excludedRevenue * 100) / 100;
   return { pctBase: Math.max(0, total - excludedRevenue), excludedRevenue };
 }
@@ -3225,7 +3362,7 @@ function pctAmountFor(paidOrders, pctBase, pct) {
   const noPctSet = new Set((S.access && S.access.noPctItems) || []);
   let adj = 0;
   (paidOrders || []).forEach(o => (o.items || []).forEach(i => {
-    if (i.noPct || noPctSet.has(i.name)) return;
+    if (i.noPct || noPctSet.has(pctName(i))) return;
     const cp = catPctOf(i);
     if (cp !== null) adj += (Number(i.price) || 0) * (Number(i.qty) || 0) * (cp - pct) / 100;
   }));
