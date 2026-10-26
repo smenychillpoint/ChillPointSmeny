@@ -93,7 +93,7 @@
   // zdieľané zariadenie (rovnaké ako v Objednávkach) - aby sa dali čítať rezervácie a odovzdávky
   const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk', DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
   // časti, ku ktorým vedúci nastavuje prístup (settings/hubAccess/e/<meno>/<kľúč> = false -> nemá prístup)
-  const AREAS = [['smeny', '📅 Smeny'], ['objednavky', '🍹 Objednávky'], ['kupit', '📦 Kúpiť'], ['spravit', '🔧 Spraviť'], ['odovzdavka', '📝 Odovzdávka']];
+  const AREAS = [['smeny', '📅 Smeny'], ['objednavky', '🍹 Objednávky'], ['kupit', '📦 Kúpiť'], ['spravit', '🔧 Spraviť'], ['odovzdavka', '📝 Odovzdávka'], ['rezervacie', '📆 Rezervácie']];
   const DAY_NAMES = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
 
   const $ = id => document.getElementById(id);
@@ -303,7 +303,7 @@
     try { await firebase.database().ref('board/' + id).remove(); } catch (e) { toast('Nepodarilo sa zmazať.'); }
   }
 
-  // ---- 📆 Rezervácie laser game (laser/<env>/bookings, číta len vedúci) – 2026-10-25 ----
+  // ---- 📆 Rezervácie laser game (laser/<env>/bookings; číta vedúci, po vložení pravidiel aj zariadenie) – 2026-10-25 ----
   const laserEnv = ls.get('cp_laserEnv') === 'live' ? 'live' : 'test';
   let laserBk = null;
   function laserStats() {
@@ -345,7 +345,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-26</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-26d</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -407,10 +407,11 @@
     html += `<h2>Kam ideš?</h2><div class="tiles">`;
     if (allowed('smeny')) html += `<a class="tile" href="smeny.html"><span class="ic">📅</span><span class="tx"><b>Smeny</b><span>Rozpis zmien, úlohy a navyše, vzal/a som si</span></span><span class="arr">›</span></a>`;
     if (allowed('objednavky')) html += `<a class="tile" href="objednavky.html"><span class="ic">🍹</span><span class="tx"><b>Objednávky</b><span>Stoly, bar, atrakcie, platby a uzávierka</span></span><span class="arr">›</span></a>`;
-    // (2026-10-25) 📆 Rezervácie laser game z webu – zatiaľ beta, len vedúci (nie ani v režime 👁)
-    if (isMgr) {
+    // (2026-10-26d) 🎯 Rezervácie laser game – vedúci vždy; zamestnanci až keď vedúci v Rezerváciách → ⚙ zapne
+    // „Aj zamestnanci“ (settings/hubAccess/rezAll) a človek nemá v Prístupoch odškrtnuté 📆 Rezervácie
+    if (isMgr || (access.rezAll && me && allowed('rezervacie'))) {
       const r = laserStats();
-      html += `<a class="tile" href="rezervacie.html" style="border-left-color:var(--blue)"><span class="ic">🎯</span><span class="tx"><b>Rezervácie laser game${r.fresh ? `<span class="badge">${r.fresh}</span>` : ''} <small style="font-size:10px;background:var(--blue);color:#111;padding:1px 5px;vertical-align:middle">BETA</small></b><span>${r.ok ? `${r.today ? `Dnes: ${r.today} · ` : ''}Nadchádzajúce: ${r.upcoming}${r.fresh ? ` · 🆕 nové: ${r.fresh}` : ''}${laserEnv === 'test' ? ' · 🧪 test' : ''}` : 'Laser game z webu – pridať, upraviť, zrušiť'}</span></span><span class="arr">›</span></a>`;
+      html += `<a class="tile" href="rezervacie.html" style="border-left-color:var(--blue)"><span class="ic">🎯</span><span class="tx"><b>Rezervácie laser game${r.fresh ? `<span class="badge">${r.fresh}</span>` : ''}</b><span>${r.ok ? `${r.today ? `Dnes: ${r.today} · ` : ''}Nadchádzajúce: ${r.upcoming}${r.fresh ? ` · 🆕 nové: ${r.fresh}` : ''}${laserEnv === 'test' ? ' · 🧪 test' : ''}` : 'Laser game z webu – pridať, upraviť, zrušiť'}</span></span><span class="arr">›</span></a>`;
     }
     if (allowed('kupit')) {
       // otvorené položky s tlačidlom "✓ doplnené/kúpené", vybavené (7 dní) s "↺ vrátiť", vedúci môže mazať
@@ -466,7 +467,7 @@
         + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-26</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-26d</footer>`;
     app.innerHTML = html;
   }
 
@@ -507,7 +508,7 @@
       user = u; isMgrAuth = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL; authReady = true; applyView();
       if (!u) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); } catch (e) {} return; }
       if (!authOn) { authOn = true; on('queue', v => { queue = v || {}; }); on('meta/handover', v => { handover = v || {}; }); on('meta/worklist', v => { worklist = v || {}; }); }
-      if (isMgrAuth && laserBk === null) { laserBk = {}; db.ref(`laser/${laserEnv}/bookings`).on('value', s => { laserBk = s.val() || {}; render(); }, () => { laserBk = null; }); }
+      if (laserBk === null) { laserBk = {}; db.ref(`laser/${laserEnv}/bookings`).on('value', s => { laserBk = s.val() || {}; render(); }, () => { laserBk = null; }); }
       render();
     });
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }

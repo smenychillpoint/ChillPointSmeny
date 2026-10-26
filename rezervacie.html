@@ -353,7 +353,7 @@
     busyAct = false;
   }
   async function deleteBooking(id) {
-    const b = bookings[id]; if (!b || busyAct) return;
+    const b = bookings[id]; if (!b || busyAct || !isMgr) return;
     if (!confirm(`Natrvalo zmazať rezerváciu ${b.name}?`)) return;
     busyAct = true;
     const u = {}; u[`${base()}/bookings/${id}`] = null; freeSlotsPatch(u, id, b);
@@ -621,7 +621,7 @@
   }
   async function saveCfg() {
     blurNow();
-    if (!cfgF || busyAct) return;
+    if (!cfgF || busyAct || !isMgr) return;
     const c = cfgF, fail = m => { cfgErr = m; render(); };
     const NUMS = [['step', 'Krok (začiatky hier)', 5, 120], ['game', 'Dĺžka hry', 5, 120], ['change', 'Výmena partií', 0, 60], ['rest', 'Oddych partie', 0, 240],
       ['minPlayers', 'Najmenej hráčov', 1, 30], ['maxPlayers', 'Najviac hráčov', 1, 30], ['maxGames', 'Najviac hier v rezervácii', 1, 30], ['leadMinutes', 'Rezervácia najneskôr pred hrou', 0, 1440]];
@@ -757,7 +757,7 @@
         ${st === 'arrived' ? `<button class="btn sm ghost" onclick="setStatus('${b.id}','confirmed')">↺ Ešte neprišli</button>` : ''}
         <button class="btn sm ghost" onclick="openForm('${b.id}')">✎ Upraviť</button>
         ${st !== 'cancelled' ? `<button class="btn sm red" onclick="cancelBooking('${b.id}')">✕ Zrušiť</button>` : ''}
-        <button class="btn sm red" onclick="deleteBooking('${b.id}')">🗑 Zmazať</button>
+        ${isMgr ? `<button class="btn sm red" onclick="deleteBooking('${b.id}')">🗑 Zmazať</button>` : ''}
       </div></div></div>`;
   }
 
@@ -820,25 +820,26 @@
     const a = document.activeElement;
     if (a && a.closest && a.closest('#app') && (a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || (a.tagName === 'INPUT' && !/^(checkbox|radio|button|submit)$/.test(a.type)))) return;
     const app = $('app');
-    let html = `<div class="top"><a href="./">‹ Úvod</a><a href="objednavky.html">🍹 Objednávky</a><h1>🎯 Rezervácie laser game <small>BETA</small></h1></div>`;
-    if (!authReady) { app.innerHTML = html + '<p class="empty">Načítavam…</p>'; return; }
-    if (!isMgr) {
-      app.innerHTML = html + `<div class="card"><p style="margin:0 0 10px">Rezervácie sú zatiaľ v skúšobnej verzii a vidí ich len vedúci.</p><a class="btn" href="./" style="text-decoration:none;display:inline-block">Prihlásiť sa ako vedúci na úvode</a></div>`;
+    let html = `<div class="top"><a href="./">‹ Úvod</a><a href="objednavky.html">🍹 Objednávky</a><h1>🎯 Rezervácie laser game</h1></div>`;
+    if (!authReady || hubAccess === null) { app.innerHTML = html + '<p class="empty">Načítavam…</p>'; return; }
+    if (!canUse()) {
+      app.innerHTML = html + `<div class="card"><p style="margin:0 0 10px">${!myName() ? 'Najprv sa prihlás na úvodnej stránke.' : 'Rezervácie zatiaľ vidí len vedúci.'}</p><a class="btn" href="./" style="text-decoration:none;display:inline-block">‹ Na úvod</a></div>`;
       return;
     }
+    if (!isMgr && view === 'set') view = 'cal';
     // okno (formulár / detail) sa kreslí nad stránku; scroll okna sa zachová
     const ovScroll = document.querySelector('.ov') ? document.querySelector('.ov').scrollTop : 0;
     html += `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <div class="seg" style="flex:1;min-width:220px;margin:0"><button class="${env === 'test' ? 'on' : ''}" onclick="setEnv('test')">🧪 Test</button><button class="${env === 'live' ? 'on' : ''}" onclick="setEnv('live')">🟢 Ostré (web)</button></div>
-        ${env === 'test' ? '<a class="btn ghost sm" href="https://smenychillpoint.github.io/Teststranky/" target="_blank" rel="noopener" style="text-decoration:none">🧪 Ako zákazník ›</a>' : ''}</div>
-      <div class="tabs">${[['cal', '🗓 Kalendár'], ['sheet', '📋 Hárok dňa'], ['list', '📃 Zoznam'], ['set', '⚙ Nastavenia']]
+        ${env === 'test' && isMgr ? '<a class="btn ghost sm" href="https://smenychillpoint.github.io/Teststranky/" target="_blank" rel="noopener" style="text-decoration:none">🧪 Ako zákazník ›</a>' : ''}</div>
+      <div class="tabs">${[['cal', '🗓 Kalendár'], ['sheet', '📋 Hárok dňa'], ['list', '📃 Zoznam']].concat(isMgr ? [['set', '⚙ Nastavenia']] : [])
         .map(([k, l]) => `<button class="${view === k ? 'on' : ''}" onclick="setView('${k}')">${l}</button>`).join('')}</div>`;
     if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
     if (view === 'set') html += settingsHtml();
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-26c · beta</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-26d</footer>`;
     if (f) html += formHtml();
     else if (sel && bookings[sel]) html += detailHtml({ id: sel, ...bookings[sel] });
     app.innerHTML = html;
@@ -851,7 +852,7 @@
     offFns.forEach(fn => fn()); offFns = [];
     bookings = {}; slots = {}; loaded = false; loadErr = '';
     cfgRaw = null; cfgLoaded = false; cfgF = null; cfgDirty = false; cfgErr = ''; applyCfg(null);
-    if (!isMgr) return;
+    if (!canUse()) return;
     const db = firebase.database();
     const err = e => { console.error('[rezervácie]', e); loadErr = 'Rezervácie sa nepodarilo načítať. Skontroluj, či sú vo Firebase vložené pravidlá pre „laser“ (firebase-rules.json).'; render(); };
     const bRef = db.ref(`${base()}/bookings`), sRef = db.ref(`${base()}/slots`), cRef = db.ref(`${base()}/config`);
@@ -877,12 +878,19 @@
       appId: "1:251580957782:web:801f838e4cd65abb4027f7"
     });
     // vedúci je prihlásený z úvodu (Firebase Auth je spoločné pre celú appku); v režime 👁 sa správa ako zamestnanec
-    firebase.auth().onAuthStateChanged(u => {
+    // zamestnanci: keď nikto nie je prihlásený, prihlási sa zariadenie (ako na úvode)
+    let watching = false;
+    const rewatch = () => { const on = canUse(); if (on !== watching) { watching = on; watch(); } };
+    firebase.auth().onAuthStateChanged(async u => {
+      authUser = u;
+      if (!u) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); return; } catch (e) {} }
       const mgr = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL && !ls.get('cp_viewAs');
       authReady = true;
-      if (mgr !== isMgr) { isMgr = mgr; watch(); }
+      if (mgr !== isMgr) { isMgr = mgr; watching = canUse(); watch(); }   // watch() zruší staré odbery a pripojí nové
+      else rewatch();
       render();
     });
+    firebase.database().ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; rewatch(); render(); }, () => { hubAccess = {}; render(); });
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
   render();
   window.addEventListener('focusout', () => setTimeout(render, 50));
