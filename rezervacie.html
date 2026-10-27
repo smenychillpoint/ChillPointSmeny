@@ -176,14 +176,24 @@
   // DEF = predvolené hodnoty pluginu; kým config nie je uložený, web berie hodiny z WordPressu (tu sa ukážu tieto).
   // hours: kľúč = deň v týždni (0 = nedeľa), chýbajúci deň = zatvorené; "24:00" = polnoc
   const DEF = { hours: { 0: ['13:00', '22:00'], 1: ['15:00', '22:00'], 2: ['15:00', '22:00'], 3: ['15:00', '22:00'], 4: ['15:00', '22:00'], 5: ['15:00', '24:00'], 6: ['13:00', '24:00'] },
-    daysOff: [], step: 20, game: 15, change: 5, rest: 40, minPlayers: 2, maxPlayers: 16, maxGames: 8, leadMinutes: 15, offer: { minPlayers: 8, paid: 3, free: 1 } };
-  const CFG_KEYS = ['hours', 'daysOff', 'step', 'game', 'change', 'rest', 'minPlayers', 'maxPlayers', 'maxGames', 'leadMinutes', 'offer'];
+    daysOff: [], step: 20, game: 15, change: 5, rest: 40, minPlayers: 2, maxPlayers: 16, maxGames: 8, leadMinutes: 15, offers: [{ minPlayers: 8, paid: 3, free: 1 }], offerStep: 'off' };
+  // (2026-10-27) offers = zoznam ponúk (namiesto jednej „offer“, tá sa ešte číta zo starých nastavení),
+  // offerStep = výber ponuky zákazníkom na webe: 'off' | 'before' | 'after' (pred / po počte hráčov)
+  const CFG_KEYS = ['hours', 'daysOff', 'step', 'game', 'change', 'rest', 'minPlayers', 'maxPlayers', 'maxGames', 'leadMinutes', 'offers', 'offerStep'];
   // hra 15 min + 5 min výmena → iná partia najskôr o 20 min (BLOCK); tá istá partia oddych 40 min (rest)
   let B = null, BLOCK = 20;
+  function offersNorm(v) {
+    const raw = Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+    return raw.filter(o => o && +o.minPlayers >= 1 && +o.paid >= 1).map(o => ({ minPlayers: +o.minPlayers, paid: +o.paid, free: Math.max(1, +o.free || 1) }))
+      .sort((a, b) => a.minPlayers - b.minPlayers || a.paid - b.paid);
+  }
   function mergeCfg(c) {
     const o = JSON.parse(JSON.stringify(DEF));
     if (c && typeof c === 'object') CFG_KEYS.forEach(k => { if (c[k] !== undefined && c[k] !== null) o[k] = c[k]; });
     if (!Array.isArray(o.daysOff)) o.daysOff = Object.values(o.daysOff || {});   // "" (prázdne dni voľna) → []
+    // staré nastavenie s jednou ponukou (offer) → zoznam; "" / false = žiadna ponuka
+    if (c && (c.offers === undefined || c.offers === null) && c.offer !== undefined && c.offer !== null) o.offers = c.offer ? [c.offer] : [];
+    o.offers = offersNorm(o.offers);
     return o;
   }
   function applyCfg(c) { B = mergeCfg(c); BLOCK = (+B.game || 15) + (+B.change || 0); }
@@ -247,14 +257,23 @@
     for (let m = T_FROM; m <= T_TO; m += st) out.push(toTime(m));
     return out;
   }
-  // 🎁 ponuka 3+1 (ako v plugine): partia ≥ offer.minPlayers, v jeden deň každá (paid+free)-tá hra zadarmo
-  const offerOn = () => !!(B.offer && B.offer.minPlayers && B.offer.paid);
-  const offerName = () => B.offer.paid + '+' + (B.offer.free || 1);
+  // 🎁 ponuky (ako v plugine): partia ≥ minPlayers, v jeden deň v každom bloku (paid + free) posledných free hier zadarmo.
+  // Platí ponuka, ktorú si zákazník vybral na webe (b.offerPick), inak najvýhodnejšia pre počet hráčov.
+  const offerOn = () => (B.offers || []).length > 0;
+  const oName = o => o.paid + '+' + o.free;
+  const oRate = o => o.free / (o.paid + o.free);
+  function offerFor(b) {
+    const n = +b.players || 0, list = B.offers || [];
+    if (b.offerPick) { if (b.offerPick === 'none') return null; const p = list.find(o => oName(o) === b.offerPick); return p && n >= p.minPlayers ? p : null; }
+    return list.filter(o => n >= o.minPlayers).sort((a, c) => oRate(c) - oRate(a) || a.paid - c.paid)[0] || null;
+  }
   function offerInfo(b, date) {
-    if (!offerOn() || isMc(b) || (+b.players || 0) < B.offer.minPlayers) return null;
-    const bundle = B.offer.paid + (B.offer.free || 1), day = gamesOf(b).filter(g => g.date === date);
-    if (day.length < bundle) return null;
-    return { name: offerName(), free: day.filter((g, i) => (i + 1) % bundle === 0).map(g => g.time) };
+    const o = offerOn() && !isMc(b) ? offerFor(b) : null;
+    if (!o) return null;
+    const bundle = o.paid + o.free, day = gamesOf(b).filter(g => g.date === date);
+    const free = day.filter((g, i) => i % bundle >= o.paid).map(g => g.time);
+    if (!free.length) return null;
+    return { name: oName(o), free };
   }
 
   let env = ls.get('cp_laserEnv') === 'live' ? 'live' : 'test';
@@ -671,15 +690,19 @@
   const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
   const HOUR_OPTS = []; for (let m = 6 * 60; m <= 1440; m += 15) HOUR_OPTS.push(toTime(m));   // 24:00 = polnoc
   function cfgFromB(o) {
-    const of = o.offer && o.offer.minPlayers && o.offer.paid ? o.offer : null;
     return {
       hours: [0, 1, 2, 3, 4, 5, 6].map(i => { const h = (o.hours || {})[i];
         return h && h[0] && h[1] ? { open: true, from: h[0], to: h[1] } : { open: false, from: DEF.hours[i][0], to: DEF.hours[i][1] }; }),
       daysOff: [...(o.daysOff || [])].filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort(),
       step: o.step, game: o.game, change: o.change, rest: o.rest, minPlayers: o.minPlayers, maxPlayers: o.maxPlayers, maxGames: o.maxGames, leadMinutes: o.leadMinutes,
-      offerOn: !!of, oMin: of ? of.minPlayers : 8, oPaid: of ? of.paid : 3, oFree: of ? (of.free || 1) : 1
+      offers: offersNorm(o.offers).map(x => ({ ...x })),
+      offerStep: ['before', 'after'].includes(o.offerStep) ? o.offerStep : 'off'
     };
   }
+  // 🎁 zoznam ponúk vo formulári nastavení
+  function cfgOffer(i, k, v) { if (cfgF.offers[i]) { cfgF.offers[i][k] = v; cfgDirty = true; cfgErr = ''; } }
+  function cfgAddOffer() { cfgF.offers.push({ minPlayers: 12, paid: 5, free: 2 }); cfgDirty = true; render(); }
+  function cfgDelOffer(i) { cfgF.offers.splice(i, 1); cfgDirty = true; render(); }
   function cfgSet(k, v) { cfgF[k] = v; cfgDirty = true; cfgErr = ''; }
   function cfgSetR(k, v) { cfgSet(k, v); blurNow(); render(); }
   function cfgHour(i, k, v) { cfgF.hours[i][k] = v; cfgDirty = true; cfgErr = ''; blurNow(); render(); }
@@ -728,13 +751,20 @@
     if (!Object.keys(out.hours).length) return fail('Aspoň jeden deň musí byť otvorený (na zatvorenie konkrétnych dní použi Dni voľna).');
     // prázdne pole by Firebase vynechal a web by vzal dni voľna z WordPressu → "" (plugin z neho spraví [])
     out.daysOff = c.daysOff.length ? [...c.daysOff].sort() : '';
-    if (c.offerOn) {
-      const o = { minPlayers: Number(c.oMin), paid: Number(c.oPaid), free: Number(c.oFree) };
-      if (!Number.isInteger(o.minPlayers) || o.minPlayers < 1 || o.minPlayers > 30) return fail('Ponuka: od koľkých hráčov 1–30.');
-      if (!Number.isInteger(o.paid) || o.paid < 1 || o.paid > 10) return fail('Ponuka: platených hier 1–10.');
-      if (!Number.isInteger(o.free) || o.free < 1 || o.free > 5) return fail('Ponuka: zadarmo 1–5.');
-      out.offer = o;
-    } else out.offer = false;
+    const offers = [];
+    for (const [i, x] of c.offers.entries()) {
+      const o = { minPlayers: Number(x.minPlayers), paid: Number(x.paid), free: Number(x.free) }, lbl = `Ponuka č. ${i + 1}`;
+      if (!Number.isInteger(o.minPlayers) || o.minPlayers < 1 || o.minPlayers > 30) return fail(`${lbl}: od koľkých hráčov 1–30.`);
+      if (!Number.isInteger(o.paid) || o.paid < 1 || o.paid > 10) return fail(`${lbl}: platených hier 1–10.`);
+      if (!Number.isInteger(o.free) || o.free < 1 || o.free > 5) return fail(`${lbl}: zadarmo 1–5.`);
+      if (offers.some(y => y.paid === o.paid && y.free === o.free)) return fail(`Ponuka ${o.paid}+${o.free} je v zozname dvakrát.`);
+      offers.push(o);
+    }
+    offers.sort((a, b) => a.minPlayers - b.minPlayers);
+    // prázdny zoznam by Firebase vynechal → "" (web z neho spraví „žiadna ponuka“); offer = pre staršiu verziu webu
+    out.offers = offers.length ? offers : '';
+    out.offer = offers[0] || false;
+    out.offerStep = offers.length && ['before', 'after'].includes(c.offerStep) ? c.offerStep : 'off';
     out.updatedAt = firebase.database.ServerValue.TIMESTAMP;
     busyAct = true;
     try { await firebase.database().ref(`${base()}/config`).set(out); cfgF = null; cfgDirty = false; cfgErr = ''; toast('Nastavenia uložené – web ich použije pri ďalšom načítaní ✓'); }
@@ -779,14 +809,21 @@
       <h2>👥 Hráči (na webe)</h2>
       <div class="card"><div class="row2">${num('minPlayers', 'Najmenej hráčov')}${num('maxPlayers', 'Najviac hráčov')}</div>
         <p class="hint" style="margin:0">Vedúci tu v appke môže zapísať 1–30 hráčov bez ohľadu na toto.</p></div>
-      <h2>🎁 Ponuka ${c.offerOn ? esc(c.oPaid) + '+' + esc(c.oFree) : '3+1'}</h2>
+      <h2>🎁 Ponuky na webe${c.offers.length ? ' · ' + c.offers.map(o => esc(o.paid) + '+' + esc(o.free)).join(', ') : ''}</h2>
       <div class="card">
-        <label class="chk" style="margin-bottom:10px"><input type="checkbox" ${c.offerOn ? 'checked' : ''} onchange="cfgSetR('offerOn',this.checked)"><b>Ponuka zapnutá</b></label>
-        ${c.offerOn ? `<div class="row3">
-          <div><label class="f">Od koľkých hráčov</label><input id="c_oMin" type="number" inputmode="numeric" value="${esc(c.oMin)}" oninput="cfgSet('oMin',this.value)"></div>
-          <div><label class="f">Platené hry</label><input id="c_oPaid" type="number" inputmode="numeric" value="${esc(c.oPaid)}" oninput="cfgSet('oPaid',this.value)"></div>
-          <div><label class="f">Zadarmo</label><input id="c_oFree" type="number" inputmode="numeric" value="${esc(c.oFree)}" oninput="cfgSet('oFree',this.value)"></div></div>
-          <p class="hint" style="margin:0">Partia aspoň ${esc(c.oMin)} hráčov, ktorá si v jeden deň vyberie ${esc(c.oPaid)} hry, dostane ďalšiu zadarmo.</p>` : '<p class="hint" style="margin:0">Web ponuku neukazuje.</p>'}</div>
+        ${c.offers.length ? c.offers.map((o, i) => `<div style="border:1px solid var(--line);padding:10px;margin-bottom:8px">
+          <div class="row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>🎁 ${esc(o.paid)}+${esc(o.free)}</b><button class="btn red sm" onclick="cfgDelOffer(${i})">✕ Odstrániť</button></div>
+          <div class="row3">
+            <div><label class="f">Od koľkých hráčov</label><input id="c_o${i}m" type="number" inputmode="numeric" value="${esc(o.minPlayers)}" oninput="cfgOffer(${i},'minPlayers',this.value)"></div>
+            <div><label class="f">Platené hry</label><input id="c_o${i}p" type="number" inputmode="numeric" value="${esc(o.paid)}" oninput="cfgOffer(${i},'paid',this.value)"></div>
+            <div><label class="f">Zadarmo</label><input id="c_o${i}f" type="number" inputmode="numeric" value="${esc(o.free)}" oninput="cfgOffer(${i},'free',this.value)"></div></div>
+          <p class="hint" style="margin:6px 0 0">Partia aspoň ${esc(o.minPlayers)} hráčov, ktorá si v jeden deň vyberie ${esc(o.paid)} ${+o.paid === 1 ? 'hru' : 'hry'}, dostane ďalšie ${esc(o.free)} zadarmo.</p></div>`).join('')
+          : '<p class="hint" style="margin:0 0 8px">Žiadna ponuka – web ponuky neukazuje.</p>'}
+        <button class="btn ghost sm" onclick="cfgAddOffer()">➕ Pridať ponuku</button>
+        ${c.offers.length > 1 ? '<p class="hint" style="margin:8px 0 0">Keď sa na partiu hodí viac ponúk, web jej dá tú najvýhodnejšiu (ak si ju nevyberá sám).</p>' : ''}
+        ${c.offers.length ? `<h3 style="font-size:14px;margin:14px 0 6px">Zákazník si vyberá ponuku na webe</h3>
+          <div class="seg" style="flex-wrap:wrap"><button class="${c.offerStep === 'off' ? 'on' : ''}" onclick="cfgSetR('offerStep','off')">Nie</button><button class="${c.offerStep === 'before' ? 'on' : ''}" onclick="cfgSetR('offerStep','before')">Pred počtom hráčov</button><button class="${c.offerStep === 'after' ? 'on' : ''}" onclick="cfgSetR('offerStep','after')">Po počte hráčov</button></div>
+          <p class="hint" style="margin:0">${c.offerStep === 'off' ? 'Zákazník si nič nevyberá – web mu sám ponúkne najvýhodnejšiu ponuku.' : 'Na prvej obrazovke si zákazník vyberie ponuku alebo „Len laser game“. Výber uvidíš pri rezervácii v appke.'}</p>` : ''}</div>
       <div class="err">${esc(cfgErr)}</div>
       <div class="acts" style="position:sticky;bottom:0;background:var(--black);padding:10px 0;flex-wrap:nowrap">
         <button class="btn" style="flex:1" onclick="saveCfg()">💾 Uložiť pre ${env === 'test' ? '🧪 test' : '🟢 ostrý web'}</button>
@@ -831,6 +868,7 @@
       <div class="info" style="margin-top:10px">
         👥 <b>${esc(b.players)}</b> ${plural(+b.players || 0, 'osoba', 'osoby', 'osôb')}${b.seat ? ` · 📍 <b>${esc(b.seat)}</b>` : ''}<br>
         🕹 ${[...new Set(g.map(x => x.date))].map(dd => `${esc(dayTitle(dd))}: <b>${g.filter(x => x.date === dd).map(x => x.time).join(' · ')}</b>`).join('; ')} <span style="color:var(--muted)">(${g.length} ${plural(g.length, 'hra', 'hry', 'hier')})</span>
+        ${b.offerPick ? `<br>🎁 Na webe si vybrali: <b>${b.offerPick === 'none' ? 'len laser game (bez ponuky)' : 'ponuku ' + esc(b.offerPick)}</b>${b.offerPick !== 'none' && !offerFor(b) ? ' <span style="color:var(--red)">(málo hráčov – ponuka neplatí)</span>' : ''}` : ''}
         ${[...new Set(g.map(x => x.date))].map(dd => { const oi = offerInfo(b, dd); return oi ? `<br>🎁 Ponuka ${oi.name}${g.some(x => x.date !== dd) ? ` (${esc(dayTitle(dd))})` : ''}: zadarmo hra o <b>${oi.free.join(', ')}</b>` : ''; }).join('')}
         ${mc ? `<br>🎁 začiatok <b>${esc(b.mStart || firstGame(b).time)}</b> · ${b.mOrder === 'attr' ? 'najprv atrakcie, potom laser game' : 'najprv laser game, potom atrakcie'}<br>
           ${pkgOf(b).attrMin ? `<span style="color:var(--purple)">🎮 ${esc(pkgOf(b).attrText || 'Atrakcie')} cca ${toTime(a.from)}–${toTime(a.to)}${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}</span>` : ''}` : ''}
@@ -927,7 +965,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-27</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-27b</footer>`;
     if (f) html += formHtml();
     else if (sel && bookings[sel]) html += detailHtml({ id: sel, ...bookings[sel] });
     app.innerHTML = html;
