@@ -5,8 +5,8 @@
 //  • Stránky appky: vždy sa skúsi najprv internet (nech je vždy aktuálna verzia), ale keď internet neodpovie do
 //    2,5 s, ukáže sa uložená kópia (a nová sa medzitým uloží na ďalšie otvorenie). Bez internetu = uložená kópia.
 //  • Dáta (Firebase databáza, prihlásenie) service worker NEchytá – idú vždy priamo.
-const CACHE = 'cp-smeny-v4';   // v4 (2026-10-25): + rezervacie.html
-const SHELL = ['./', './index.html', './smeny.html', './objednavky.html', './rezervacie.html','./manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const CACHE = 'cp-smeny-v5';   // v5 (2026-10-26): + odpovede.html (v4: + rezervacie.html)
+const SHELL = ['./', './index.html', './smeny.html', './objednavky.html', './rezervacie.html', './odpovede.html','./manifest.webmanifest', './icon-192.png', './icon-512.png'];
 const LIBS = [
   'https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js',
   'https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js',

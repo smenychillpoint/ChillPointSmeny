@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>Odpovede na e-maily · ChillPoint</title>
+  <meta name="theme-color" content="#0a0c0f">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app">
+  <link rel="preconnect" href="https://api.anthropic.com">
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
+  <style>
+    :root{--yellow:#f5bb16;--black:#0a0c0f;--panel:#17191d;--line:#34373c;--muted:#a7a9ad;--white:#fff;--red:#ff6c6c;--green:#5fd67a;--blue:#6fb3ff}
+    *{box-sizing:border-box}
+    html,body{margin:0;background:var(--black);color:var(--white);font-family:Arial,Helvetica,sans-serif;overflow-x:clip}
+    body:has(.ov){overflow:hidden}
+    .wrap{width:min(820px,100% - 24px);margin:0 auto;padding:14px 0 40px}
+    .top{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+    .top a{color:var(--yellow);text-decoration:none;font-weight:700;font-size:14px}
+    h1{font-size:22px;margin:0;flex:1;text-transform:uppercase;min-width:220px}
+    h2{font-size:12px;letter-spacing:.12em;color:var(--muted);margin:18px 0 8px;text-transform:uppercase}
+    .card{background:var(--panel);border:1px solid var(--line);padding:14px;margin-bottom:10px}
+    .btn{background:var(--yellow);color:#111;border:0;font:inherit;font-weight:800;padding:11px 14px;cursor:pointer;text-transform:uppercase;letter-spacing:.03em;font-size:14px}
+    .btn.sm{padding:7px 10px;font-size:12px}
+    .btn.ghost{background:transparent;color:var(--white);border:1px solid var(--line)}
+    .btn.red{background:transparent;color:var(--red);border:1px solid #7a3434}
+    .btn:disabled{opacity:.5;cursor:default}
+    input,select,textarea{width:100%;background:#0d0f11;color:#fff;border:1px solid #55585c;padding:10px;font:inherit;font-size:16px;margin-bottom:8px}
+    textarea{min-height:80px;resize:vertical;line-height:1.45}
+    textarea.big{min-height:220px}
+    label.f{display:block;font-size:12px;color:var(--muted);margin-bottom:3px}
+    .seg{display:flex;border:1px solid var(--line);margin-bottom:10px}
+    .seg button{flex:1;background:none;border:0;color:var(--muted);font:inherit;font-size:14px;padding:10px 8px;cursor:pointer}
+    .seg button.on{background:var(--yellow);color:#111;font-weight:800}
+    .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap}
+    .tabs button{flex:1;min-width:110px;background:var(--panel);border:1px solid var(--line);color:var(--muted);font:inherit;font-size:14px;padding:10px;cursor:pointer}
+    .tabs button.on{border-color:var(--yellow);color:var(--yellow);font-weight:800}
+    .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .res{border-left:5px solid var(--green)}
+    .res.nomatch{border-left-color:var(--yellow)}
+    .pick{font-size:15px;margin:0 0 6px}
+    .pick b{color:var(--green)}
+    .res.nomatch .pick b{color:var(--yellow)}
+    .why{font-size:13px;color:#d9dbde;line-height:1.45;margin-bottom:10px}
+    .chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+    .chip{background:#26292d;border:1px solid var(--line);font-size:13px;padding:5px 8px}
+    .chip small{color:var(--muted)}
+    .chip.miss{background:#3a1717;border-color:#6d2a2a;color:#ffb0b0}
+    .tp{border-left:5px solid var(--blue);cursor:pointer}
+    .tp h3{margin:0 0 4px;font-size:16px}
+    .tp p{margin:0;font-size:13px;color:var(--muted);line-height:1.4;white-space:pre-wrap;max-height:3.6em;overflow:hidden}
+    .tp .when{color:#d9c88a;margin-bottom:4px}
+    .ov{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:5;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:max(12px,env(safe-area-inset-top)) 10px 30px}
+    .box{background:var(--panel);border:1px solid var(--yellow);width:min(680px,100%);padding:16px;position:relative}
+    .box .x{position:sticky;top:0;float:right;background:#26292d;border:1px solid var(--line);color:#fff;font-size:18px;width:36px;height:36px;cursor:pointer;margin:-6px -6px 0 8px}
+    .box h3{margin:0 0 12px;font-size:18px}
+    .empty{color:var(--muted);font-size:14px;padding:6px 0}
+    .err{color:var(--red);font-size:13px;min-height:18px;font-weight:700}
+    .warn{background:#2a2410;border:1px solid #6b5a1a;color:#ffd66b;font-size:13px;padding:10px;margin-bottom:10px;line-height:1.45}
+    .hint{font-size:12px;color:var(--muted);margin:-4px 0 8px;line-height:1.45}
+    .spin{display:inline-block;width:14px;height:14px;border:2px solid #111;border-right-color:transparent;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px;margin-right:6px}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    footer{color:var(--muted);font-size:11px;opacity:.6;text-align:center;margin-top:28px}
+    .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--yellow);color:#111;font-weight:700;padding:10px 16px;z-index:9;max-width:90vw}
+  </style>
+</head>
+<body>
+  <div class="wrap" id="app"><p class="empty">Načítavam…</p></div>
+  <script>
+  // ===== ✉️ ODPOVEDE NA E-MAILY (2026-10-26) =====
+  // Zamestnanec vloží prijatý e-mail → Claude vyberie z uložených šablón najvhodnejšiu odpoveď a doplní do nej
+  // údaje z e-mailu (meno, priezvisko, počet detí, dátum…). Nič sa neodosiela samo – odpoveď sa skopíruje do pošty.
+  // Kto ju vidí: vedúci vždy; zamestnanci až keď vedúci v ⚙ Nastavenia prepne „👥 Aj zamestnanci“
+  // (settings/hubAccess/odpAll) a človek nemá na úvode v Prístupoch odškrtnuté „✉️ Odpovede“.
+  // Dáta (čítanie len vedúci, pri odpAll aj zariadenie – pravidlá Firebase „ai“):
+  //   ai/key = API kľúč Anthropic (mení len vedúci)   ai/style = pravidlá a štýl (podpis, tykanie…)
+  //   ai/templates/<id> = {title, when?, text, by, createdAt, updatedAt}
+  const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
+  // zdieľané zariadenie (ako na úvode a v Rezerváciách) – aby zamestnanci mohli čítať šablóny
+  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk', DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
+  const AI_MODEL = 'claude-opus-5-5';
+  const API_URL = 'https://api.anthropic.com/v1/messages';
+  const LIM = { title: 80, when: 300, text: 6000, style: 3000, mail: 20000, note: 600 };
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
+  function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+  const blurNow = () => { try { document.activeElement && document.activeElement.blur(); } catch (e) {} };
+
+  let authReady = false, isMgr = false, authUser = null, hubAccess = null;
+  let tpls = {}, apiKey = '', style = '', loaded = false, loadErr = '';
+  const VIEWS = ['reply', 'tpl', 'set'];
+  let view = VIEWS.includes(ls.get('cp_odpView')) ? ls.get('cp_odpView') : 'reply';
+  // rozpísané veci držíme v premenných (nie v DOM) → živé prekreslenie ich nevymaže
+  let mail = '', note = '', busy = false, aiErr = '', result = null, out = '';
+  let tf = null;          // formulár šablóny {id?, title, when, text}
+  let sf = null;          // formulár nastavení {key, style}
+  let busyAct = false;
+
+  // ---- kto smie ----
+  const myName = () => ls.get('cp_viewAs') || ls.get('cp_myname') || '';
+  const odpAll = () => !!(hubAccess && hubAccess.odpAll);
+  function staffAllowed() {
+    const n = myName();
+    if (!n || !odpAll()) return false;
+    const enc = encodeURIComponent(n).replace(/\./g, '%2E');
+    return !(hubAccess.e && hubAccess.e[enc] && hubAccess.e[enc].odpovede === false);
+  }
+  const canUse = () => isMgr || (!!authUser && staffAllowed());
+  const whoAmI = () => isMgr ? 'Vedúci' : (myName() || 'Vedúci');
+  async function setOdpAll(on) {
+    if (!isMgr || busyAct) return; busyAct = true;
+    try { await firebase.database().ref('settings/hubAccess/odpAll').set(on ? true : null); toast(on ? '👥 Odpovede teraz vidia aj zamestnanci' : '🔒 Odpovede vidí len vedúci'); }
+    catch (e) { toast('Nepodarilo sa uložiť (len vedúci).'); }
+    busyAct = false;
+  }
+  function setView(v) { blurNow(); view = v; ls.set('cp_odpView', v); render(); }
+
+  // šablóny v stálom poradí (od najstaršej) – rovnaký začiatok požiadavky = lacnejšie opakované volania (cache)
+  const tplList = () => Object.entries(tpls || {}).map(([id, t]) => ({ id, ...t })).filter(t => t && typeof t.text === 'string' && t.text.trim())
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.id.localeCompare(b.id));
+
+  // ---- ✨ návrh odpovede cez Claude ----
+  const RULES = `Si pomocník podniku ChillPoint Laser Aréna Trnava (laser game, oslavy, atrakcie). Píšeš návrhy odpovedí na e-maily zákazníkov. Každý návrh si pred odoslaním prečíta a skontroluje zamestnanec.
+
+Postup:
+1. Prečítaj prijatý e-mail a zisti, čo zákazník chce.
+2. Zo šablón nižšie vyber tú, ktorá na e-mail sedí najlepšie. Šablóny sú overené odpovede podniku – drž sa ich obsahu, cien, podmienok aj štýlu a meň len to, čo treba.
+3. Uprav ju na tento e-mail: oslovenie, meno, priezvisko, počet detí / hráčov, vek, dátum, čas, druh oslavy a ďalšie údaje, ktoré zákazník uviedol. Miesta v šablóne v hranatých zátvorkách [TAKTO] nahraď hodnotou z e-mailu. Ak šablóna obsahuje údaje pôvodného zákazníka (iné meno, iný počet, iný dátum), nahraď ich údajmi z nového e-mailu. Pri mene dbaj na správne skloňovanie v oslovení.
+4. Nevymýšľaj ceny, termíny, voľné časy ani sľuby, ktoré nie sú v šablóne, v pravidlách alebo v poznámke zamestnanca. Keď údaj chýba, nechaj v texte [DOPLNIŤ: čo treba] a uveď ho v "missing".
+5. Ak žiadna šablóna nesedí, napíš krátku zdvorilú odpoveď v rovnakom štýle, "templateId" nechaj prázdne a v "why" napíš, prečo nesedí žiadna šablóna.
+6. Odpovedaj v jazyku e-mailu (zvyčajne slovenčina alebo čeština).
+
+Vráť:
+- templateId: id vybranej šablóny alebo ""
+- why: jednou-dvomi vetami, prečo táto šablóna
+- subject: návrh predmetu odpovede (napr. "Re: " + pôvodný predmet, ak ho poznáš)
+- reply: celý text odpovede pripravený na odoslanie
+- filled: čo si doplnil/a z e-mailu (field = čo, napr. "Meno", "Počet detí"; value = hodnota)
+- missing: čo v e-maile chýba a zamestnanec to musí doplniť`;
+  const SCHEMA = {
+    type: 'object', additionalProperties: false,
+    required: ['templateId', 'why', 'subject', 'reply', 'filled', 'missing'],
+    properties: {
+      templateId: { type: 'string' }, why: { type: 'string' }, subject: { type: 'string' }, reply: { type: 'string' },
+      filled: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['field', 'value'], properties: { field: { type: 'string' }, value: { type: 'string' } } } },
+      missing: { type: 'array', items: { type: 'string' } }
+    }
+  };
+  function systemText(list) {
+    return RULES
+      + (style.trim() ? `\n\n<pravidla_podniku>\n${style.trim()}\n</pravidla_podniku>` : '')
+      + `\n\n<sablony>\n${list.map(t => `<sablona id="${t.id}">\nNázov: ${t.title || ''}\n${t.when ? 'Kedy použiť: ' + t.when + '\n' : ''}Text:\n${t.text}\n</sablona>`).join('\n')}\n</sablony>`;
+  }
+  // chyba z API → zrozumiteľná veta
+  function apiErrText(status, msg) {
+    const m = String(msg || '');
+    if (status === 401) return 'API kľúč nie je platný. Vedúci ho musí v ⚙ Nastavenia vložiť znova.';
+    if (status === 403) return 'API kľúč nemá oprávnenie. Skontroluj ho v console.anthropic.com.';
+    if (/credit balance/i.test(m)) return 'Na účte Anthropic došiel kredit – treba ho dobiť v console.anthropic.com (Billing).';
+    if (status === 429) return 'Príliš veľa požiadaviek naraz. Skús to o minútu.';
+    if (status === 529 || status >= 500) return 'Claude je práve preťažený. Skús to o chvíľu znova.';
+    return 'Nepodarilo sa vytvoriť odpoveď' + (m ? ': ' + m : '.');
+  }
+  async function callClaude(body, withFallback) {
+    const headers = { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2026-10-21', 'anthropic-dangerous-direct-browser-access': 'true' };
+    // keď bezpečnostný filter odmietne požiadavku, API ju samo skúsi na inom modeli (fallbacks "default")
+    if (withFallback) headers['anthropic-beta'] = 'server-side-fallback-2026-07-01';
+    return fetch(API_URL, { method: 'POST', headers, body: JSON.stringify(withFallback ? { ...body, fallbacks: 'default' } : body) });
+  }
+  async function makeReply() {
+    if (busy) return;
+    mail = ($('mailIn') ? $('mailIn').value : mail).trim(); note = ($('noteIn') ? $('noteIn').value : note).trim(); blurNow();
+    const list = tplList();
+    if (!mail) { aiErr = 'Vlož sem e-mail, na ktorý chceš odpovedať.'; return render(); }
+    if (!apiKey) { aiErr = 'Chýba API kľúč – vedúci ho vloží v ⚙ Nastavenia.'; return render(); }
+    if (!list.length) { aiErr = 'Zatiaľ nie je uložená žiadna šablóna. Pridaj ich v 📚 Šablóny.'; return render(); }
+    busy = true; aiErr = ''; result = null; render();
+    const body = {
+      model: AI_MODEL, max_tokens: 16000,
+      output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA } },
+      system: [{ type: 'text', text: systemText(list), cache_control: { type: 'ephemeral' } }],
+      messages: [{ role: 'user', content: `<prijaty_email>\n${mail.slice(0, LIM.mail)}\n</prijaty_email>` + (note ? `\n\n<poznamka_zamestnanca>\n${note.slice(0, LIM.note)}\n</poznamka_zamestnanca>` : '') }]
+    };
+    try {
+      let res = await callClaude(body, true);
+      let data = await res.json().catch(() => ({}));
+      // keby API náhradný model (fallbacks) neprijalo, skúsi sa raz bez neho
+      if (res.status === 400 && /fallback/i.test(((data || {}).error || {}).message || '')) { res = await callClaude(body, false); data = await res.json().catch(() => ({})); }
+      if (!res.ok) throw new Error(apiErrText(res.status, ((data || {}).error || {}).message));
+      if (data.stop_reason === 'refusal') throw new Error('Claude na tento e-mail odmietol odpovedať. Napíš odpoveď ručne.');
+      if (data.stop_reason === 'max_tokens') throw new Error('Odpoveď bola príliš dlhá a nedokončila sa. Skús to znova.');
+      const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+      const r = JSON.parse(txt);
+      const t = list.find(x => x.id === r.templateId);
+      result = { ...r, templateId: t ? t.id : '', templateTitle: t ? (t.title || 'Šablóna') : '' };
+      out = r.reply || '';
+    } catch (e) {
+      aiErr = e instanceof SyntaxError ? 'Claude vrátil neočakávanú odpoveď. Skús to znova.' : (e && e.message && !/fetch/i.test(e.message) ? e.message : 'Nepodarilo sa spojiť s Claude. Skontroluj internet.');
+    }
+    busy = false; render();
+  }
+  async function copyOut() {
+    const t = $('outTx') ? $('outTx').value : out;
+    try { await navigator.clipboard.writeText(t); toast('Skopírované 📋 – vlož do e-mailu'); }
+    catch (e) { const a = $('outTx'); if (a) { a.focus(); a.select(); try { document.execCommand('copy'); toast('Skopírované 📋'); } catch (x) { toast('Označ text a skopíruj ručne.'); } } }
+  }
+  function clearReply() { mail = ''; note = ''; result = null; out = ''; aiErr = ''; render(); }
+
+  // ---- 📚 šablóny ----
+  function openTpl(id) {
+    const t = id ? tpls[id] : null;
+    blurNow();
+    tf = { id: id || '', title: t ? t.title || '' : '', when: t ? t.when || '' : '', text: t ? t.text || '' : '', err: '' };
+    render();
+  }
+  function tplFromResult() {
+    if (!result) return;
+    blurNow();
+    tf = { id: '', title: '', when: '', text: $('outTx') ? $('outTx').value : out, err: '' };
+    render();
+  }
+  function closeOv() { tf = null; render(); }
+  function readTf() { if (!tf) return; ['title', 'when', 'text'].forEach(k => { const el = $('tf_' + k); if (el) tf[k] = el.value; }); }
+  async function saveTpl() {
+    readTf(); blurNow();
+    const title = tf.title.trim().slice(0, LIM.title), when = tf.when.trim().slice(0, LIM.when), text = tf.text.trim().slice(0, LIM.text);
+    if (!title) { tf.err = 'Napíš názov šablóny (napr. „Oslava – cenník“).'; return render(); }
+    if (!text) { tf.err = 'Vlož text odpovede.'; return render(); }
+    if (busyAct) return; busyAct = true;
+    const db = firebase.database(), now = Date.now();
+    const old = tf.id ? tpls[tf.id] || {} : {};
+    const doc = { title, text, by: whoAmI().slice(0, 60), createdAt: old.createdAt || now, updatedAt: now, ...(when ? { when } : {}) };
+    try {
+      if (tf.id) await db.ref('ai/templates/' + tf.id).set(doc);
+      else await db.ref('ai/templates').push(doc);
+      tf = null; toast('Šablóna uložená ✓');
+    } catch (e) { tf.err = 'Nepodarilo sa uložiť. ' + (isMgr ? 'Skontroluj, či sú vo Firebase vložené pravidlá „ai“.' : 'Ozvi sa vedúcemu.'); }
+    busyAct = false; render();
+  }
+  async function delTpl(id) {
+    if (!isMgr || !confirm('Zmazať túto šablónu?')) return;
+    try { await firebase.database().ref('ai/templates/' + id).remove(); tf = null; toast('Šablóna zmazaná'); render(); }
+    catch (e) { toast('Nepodarilo sa zmazať.'); }
+  }
+
+  // ---- ⚙ nastavenia (len vedúci) ----
+  async function saveSettings() {
+    if (!isMgr || busyAct) return;
+    const k = ($('sf_key').value || '').trim(), st = ($('sf_style').value || '').slice(0, LIM.style); blurNow();
+    if (k && !/^sk-ant-[A-Za-z0-9_-]{20,}$/.test(k)) { sf.err = 'Toto nevyzerá ako API kľúč Anthropic (začína sa „sk-ant-“).'; sf.key = k; sf.style = st; return render(); }
+    busyAct = true;
+    try {
+      await firebase.database().ref('ai').update({ style: st.trim() ? st : null, ...(k ? { key: k } : {}) });
+      sf = null; toast('Nastavenia uložené ✓');
+    } catch (e) { sf.err = 'Nepodarilo sa uložiť. Skontroluj, či sú vo Firebase vložené pravidlá „ai“ (firebase-rules.json).'; }
+    busyAct = false; render();
+  }
+  async function delKey() {
+    if (!isMgr || !confirm('Odstrániť API kľúč? Odpovede potom nebudú fungovať, kým nevložíš nový.')) return;
+    try { await firebase.database().ref('ai/key').remove(); toast('API kľúč odstránený'); } catch (e) { toast('Nepodarilo sa odstrániť.'); }
+  }
+
+  // ---- vykreslenie ----
+  function replyHtml() {
+    const list = tplList();
+    let h = '';
+    if (!apiKey) h += `<div class="warn">${isMgr ? 'Ešte nie je vložený API kľúč. Vlož ho v <b>⚙ Nastavenia</b>.' : 'Vedúci ešte nenastavil API kľúč – odpovede zatiaľ nefungujú.'}</div>`;
+    if (!list.length) h += `<div class="warn">Zatiaľ tu nie je žiadna šablóna. Pridaj v <b>📚 Šablóny</b> vaše overené odpovede – bot z nich vyberá.</div>`;
+    h += `<div class="card">
+      <label class="f">✉️ Prijatý e-mail (skopíruj sem celý e-mail od zákazníka)</label>
+      <textarea id="mailIn" class="big" maxlength="${LIM.mail}" placeholder="Dobrý deň, chceli by sme objednať oslavu pre syna Jakuba, bude mať 10 rokov, 12 detí, sobota 15. 11. poobede…" oninput="mail=this.value">${esc(mail)}</textarea>
+      <label class="f">📝 Poznámka pre bota (nepovinné)</label>
+      <input id="noteIn" maxlength="${LIM.note}" placeholder="napr. termín 15. 11. o 14:00 je voľný · záloha 50 €" value="${esc(note)}" oninput="note=this.value">
+      <div class="err">${esc(aiErr)}</div>
+      <div class="acts" style="margin-top:0">
+        <button class="btn" onclick="makeReply()" ${busy ? 'disabled' : ''}>${busy ? '<span class="spin"></span>Píšem odpoveď…' : '✨ Navrhni odpoveď'}</button>
+        ${mail || result ? '<button class="btn ghost" onclick="clearReply()" ' + (busy ? 'disabled' : '') + '>Nový e-mail</button>' : ''}
+      </div></div>`;
+    if (result) {
+      const nm = !result.templateId;
+      h += `<div class="card res ${nm ? 'nomatch' : ''}">
+        <p class="pick">${nm ? '<b>⚠ Žiadna šablóna presne nesedí</b> – návrh napísal bot sám, skontroluj ho dôkladne.' : `📚 Použitá šablóna: <b>${esc(result.templateTitle)}</b>`}</p>
+        ${result.why ? `<div class="why">${esc(result.why)}</div>` : ''}
+        ${(result.filled || []).length || (result.missing || []).length ? `<div class="chips">
+          ${(result.filled || []).map(f => `<span class="chip"><small>${esc(f.field)}:</small> ${esc(f.value)}</span>`).join('')}
+          ${(result.missing || []).map(m => `<span class="chip miss">❗ chýba: ${esc(m)}</span>`).join('')}</div>` : ''}
+        ${result.subject ? `<label class="f">Predmet</label><input value="${esc(result.subject)}" readonly onclick="this.select()">` : ''}
+        <label class="f">Odpoveď (môžeš ju tu ešte upraviť)</label>
+        <textarea id="outTx" class="big" oninput="out=this.value">${esc(out)}</textarea>
+        ${/\[DOPLNIŤ/i.test(out) ? '<div class="warn" style="margin:0 0 8px">V texte je <b>[DOPLNIŤ: …]</b> – pred odoslaním to doplň.</div>' : ''}
+        <div class="acts" style="margin-top:0">
+          <button class="btn" onclick="copyOut()">📋 Kopírovať odpoveď</button>
+          <button class="btn ghost" onclick="makeReply()" ${busy ? 'disabled' : ''}>↺ Skúsiť znova</button>
+          <button class="btn ghost" onclick="tplFromResult()">💾 Uložiť ako novú šablónu</button>
+        </div>
+        <p class="hint" style="margin:10px 0 0">Bot nič neodosiela – skopíruj odpoveď do e-mailu a pred odoslaním ju prečítaj.</p></div>`;
+    }
+    return h;
+  }
+  function tplHtml() {
+    const list = tplList();
+    return `<div class="card"><p class="hint" style="margin:0 0 10px">Šablóny sú vaše overené odpovede (cenník osláv, voľné termíny, firemné akcie, školy…). Bot vyberie najvhodnejšiu a doplní do nej údaje zákazníka. Miesta, ktoré sa menia, môžeš označiť napr. <b>[MENO]</b>, <b>[POČET DETÍ]</b>, <b>[DÁTUM]</b> – alebo vlož celú staršiu odpoveď a bot si mená a čísla vymení sám.</p>
+        <button class="btn" onclick="openTpl()">➕ Nová šablóna</button></div>
+      ${list.length ? list.map(t => `<div class="card tp" onclick="openTpl('${t.id}')"><h3>${esc(t.title || 'Bez názvu')}</h3>
+          ${t.when ? `<p class="when">Kedy: ${esc(t.when)}</p>` : ''}<p>${esc(t.text)}</p></div>`).join('')
+        : '<p class="empty">Zatiaľ žiadne šablóny.</p>'}`;
+  }
+  function settingsHtml() {
+    if (!sf) sf = { key: '', style: style, err: '' };
+    const masked = apiKey ? apiKey.slice(0, 10) + '…' + apiKey.slice(-4) : '';
+    return `<h2>👥 Kto vidí Odpovede</h2>
+      <div class="card"><div class="seg" style="margin-bottom:8px"><button class="${!odpAll() ? 'on' : ''}" onclick="setOdpAll(false)">🔒 Len vedúci</button><button class="${odpAll() ? 'on' : ''}" onclick="setOdpAll(true)">👥 Aj zamestnanci</button></div>
+        <p class="hint" style="margin:0">${odpAll() ? 'Zamestnanci vidia na úvode dlaždicu ✉️ Odpovede, môžu písať odpovede a pridávať/upravovať šablóny. Nastavenia, API kľúč a mazanie šablón len vedúci. Jednotlivým ľuďom sa dá prístup zobrať na úvode v ⚙ Prístupy zamestnancov (✉️ Odpovede).' : 'Zamestnanci Odpovede na úvode nevidia. Ukáže sa im hneď, ako to tu prepneš.'}</p></div>
+      <h2>🔑 API kľúč Anthropic</h2>
+      <div class="card">
+        <p class="hint" style="margin:0 0 8px">${apiKey ? `Uložený kľúč: <b>${esc(masked)}</b>` : 'Kľúč zatiaľ nie je uložený.'} Kľúč vytvoríš na <b>console.anthropic.com</b> → API Keys (na firemnom účte, nie osobnom). Tam si nastav aj mesačný limit míňania (Limits). Kľúč je uložený vo Firebase, čítať ho smie len vedúci (a zariadenie, keď sú Odpovede zapnuté pre zamestnancov).</p>
+        <input id="sf_key" type="password" autocomplete="off" placeholder="${apiKey ? 'Nový kľúč (nechaj prázdne = nemeniť)' : 'sk-ant-…'}" value="${esc(sf.key)}">
+        ${apiKey ? '<button class="btn red sm" onclick="delKey()">🗑 Odstrániť kľúč</button>' : ''}
+      </div>
+      <h2>✍️ Pravidlá a štýl odpovedí</h2>
+      <div class="card">
+        <p class="hint" style="margin:0 0 8px">Čo má bot vedieť vždy: ako sa podpisovať, či vykať, kontakty, otváracie hodiny, čo nikdy nesľubovať…</p>
+        <textarea id="sf_style" class="big" maxlength="${LIM.style}" placeholder="Vykáme. Podpis: S pozdravom, tím ChillPoint Laser Aréna Trnava, tel. …&#10;Rezerváciu potvrdzujeme až po zaplatení zálohy.">${esc(sf.style)}</textarea>
+        <div class="err">${esc(sf.err)}</div>
+        <button class="btn" onclick="saveSettings()" ${busyAct ? 'disabled' : ''}>💾 Uložiť nastavenia</button>
+      </div>
+      <p class="hint">Model: ${AI_MODEL}. Jedna odpoveď stojí zvyčajne do pár centov (podľa toho, koľko je šablón).</p>`;
+  }
+  function tplFormHtml() {
+    return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box">
+      <button class="x" onclick="closeOv()">✕</button>
+      <h3>${tf.id ? '✎ Upraviť šablónu' : '➕ Nová šablóna'}</h3>
+      <label class="f">Názov</label>
+      <input id="tf_title" maxlength="${LIM.title}" placeholder="napr. Oslava pre deti – cena a priebeh" value="${esc(tf.title)}">
+      <label class="f">Kedy ju použiť (nepovinné, pomôže botovi vybrať)</label>
+      <input id="tf_when" maxlength="${LIM.when}" placeholder="napr. keď sa pýtajú na detskú oslavu / Monster Chill" value="${esc(tf.when)}">
+      <label class="f">Text odpovede</label>
+      <textarea id="tf_text" class="big" maxlength="${LIM.text}" placeholder="Dobrý deň [MENO],&#10;ďakujeme za záujem o oslavu pre [POČET DETÍ] detí…">${esc(tf.text)}</textarea>
+      <div class="err">${esc(tf.err)}</div>
+      <div class="acts" style="margin-top:0">
+        <button class="btn" onclick="saveTpl()" ${busyAct ? 'disabled' : ''}>💾 Uložiť</button>
+        <button class="btn ghost" onclick="closeOv()">Zrušiť</button>
+        ${tf.id && isMgr ? `<button class="btn red" onclick="delTpl('${tf.id}')" style="margin-left:auto">🗑 Zmazať</button>` : ''}
+      </div></div></div>`;
+  }
+  function render() {
+    // nerušiť písanie pri živej zmene dát (po opustení poľa sa prekreslí cez focusout)
+    const a = document.activeElement;
+    if (a && a.closest && a.closest('#app') && (a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || (a.tagName === 'INPUT' && !/^(checkbox|radio|button|submit)$/.test(a.type)))) return;
+    if (tf) readTf();   // formulár šablóny sa pri prekreslení nestratí
+    if (sf && $('sf_key')) { sf.key = $('sf_key').value; sf.style = $('sf_style').value; }
+    const app = $('app');
+    let html = `<div class="top"><a href="./">‹ Úvod</a><h1>✉️ Odpovede na e-maily</h1></div>`;
+    if (!authReady || hubAccess === null) { app.innerHTML = html + '<p class="empty">Načítavam…</p>'; return; }
+    if (!canUse()) {
+      app.innerHTML = html + `<div class="card"><p style="margin:0 0 10px">${!myName() && !isMgr ? 'Najprv sa prihlás na úvodnej stránke.' : 'Odpovede na e-maily zatiaľ používa len vedúci.'}</p><a class="btn" href="./" style="text-decoration:none;display:inline-block">‹ Na úvod</a></div>`;
+      return;
+    }
+    if (!isMgr && view === 'set') view = 'reply';
+    if (view !== 'set') sf = null;
+    html += `<div class="tabs">${[['reply', '✨ Odpovedať'], ['tpl', `📚 Šablóny (${tplList().length})`]].concat(isMgr ? [['set', '⚙ Nastavenia']] : [])
+      .map(([k, l]) => `<button class="${view === k ? 'on' : ''}" onclick="setView('${k}')">${l}</button>`).join('')}</div>`;
+    if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
+    if (!loaded && !loadErr) html += '<p class="empty">Načítavam šablóny…</p>';
+    else html += view === 'tpl' ? tplHtml() : view === 'set' ? settingsHtml() : replyHtml();
+    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-10-26e</footer>`;
+    if (tf) html += tplFormHtml();
+    const ovScroll = document.querySelector('.ov') ? document.querySelector('.ov').scrollTop : 0;
+    app.innerHTML = html;
+    const ov = document.querySelector('.ov'); if (ov && ovScroll) ov.scrollTop = ovScroll;
+  }
+
+  // ---- Firebase ----
+  let aiRef = null;
+  function watch() {
+    if (aiRef) { aiRef.off(); aiRef = null; }
+    tpls = {}; apiKey = ''; style = ''; loaded = false; loadErr = '';
+    if (!canUse()) return;
+    aiRef = firebase.database().ref('ai');
+    aiRef.on('value', s => { const v = s.val() || {}; tpls = v.templates || {}; apiKey = typeof v.key === 'string' ? v.key : ''; style = typeof v.style === 'string' ? v.style : ''; loaded = true; render(); },
+      e => { console.error('[odpovede]', e); loadErr = 'Šablóny sa nepodarilo načítať. Skontroluj, či sú vo Firebase vložené pravidlá pre „ai“ (firebase-rules.json).'; render(); });
+  }
+  try {
+    firebase.initializeApp({
+      apiKey: "AIzaSyB-2HeoePKrcsdawvI1LCOTQ6vWjibItpU",
+      authDomain: "chillpoint-smeny-350c4.firebaseapp.com",
+      databaseURL: "https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "chillpoint-smeny-350c4",
+      storageBucket: "chillpoint-smeny-350c4.firebasestorage.app",
+      messagingSenderId: "251580957782",
+      appId: "1:251580957782:web:801f838e4cd65abb4027f7"
+    });
+    // vedúci je prihlásený z úvodu (Firebase Auth je spoločné); v režime 👁 sa správa ako zamestnanec
+    // zamestnanci: keď nikto nie je prihlásený, prihlási sa zariadenie (ako na úvode)
+    let watching = false;
+    const rewatch = () => { const on = canUse(); if (on !== watching) { watching = on; watch(); } };
+    firebase.auth().onAuthStateChanged(async u => {
+      authUser = u;
+      if (!u) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); return; } catch (e) {} }
+      const mgr = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL && !ls.get('cp_viewAs');
+      authReady = true;
+      if (mgr !== isMgr) { isMgr = mgr; watching = canUse(); watch(); }
+      else rewatch();
+      render();
+    });
+    firebase.database().ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; rewatch(); render(); }, () => { hubAccess = {}; render(); });
+  } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
+  render();
+  window.addEventListener('focusout', () => setTimeout(render, 50));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && tf) closeOv(); });
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+  }
+  </script>
+</body>
+</html>
