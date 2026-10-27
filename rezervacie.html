@@ -196,7 +196,22 @@
   //   najprv hry: hry v čase začiatku, +40, +80; potom (často pizza) atrakcie VR + PS spolu cca 60 min
   //   najprv atrakcie: atrakcie 60 min od začiatku, potom 3 hry
   //   ďalší Monster Chill môže začať najskôr 60 min po začiatku predchádzajúceho (16:20 → 17:20)
-  const MC = { games: 3, attrMin: 60, pizzaMin: 30, spacing: 60 };
+  // (2026-10-27) Balíčky sa dajú upravovať v ⚙ Nastavenia → 🎁 Balíčky: settings/rezPackages/{id} =
+  //   {name, games (počet hier laser game), attrMin (atrakcie min), attrText ("VR + PS"), pizzaMin (pauza po hrách),
+  //    spacing (ďalší balíček najskôr o X min po začiatku), players (predvolený počet ľudí)}
+  // Kým nie je nič uložené, platí predvolený Monster Chill. Rezervácia má pkg = id balíčka ('laser' = len laser game).
+  const PKG_DEF = { monster: { name: 'Monster Chill', games: 3, attrMin: 60, attrText: 'VR + PS', pizzaMin: 30, spacing: 60, players: 10 } };
+  let pkgRaw = null;   // settings/rezPackages (null = ešte nenačítané / nič uložené)
+  const PKG_NUM = { games: [1, 12, 3], attrMin: [0, 600, 60], pizzaMin: [0, 240, 30], spacing: [0, 600, 60], players: [1, 30, 10] };
+  function pkgNorm(p) {
+    const o = { name: String((p && p.name) || 'Balíček').slice(0, 40), attrText: String((p && p.attrText != null ? p.attrText : 'VR + PS')).slice(0, 40) };
+    Object.keys(PKG_NUM).forEach(k => { const [lo, hi, d] = PKG_NUM[k], v = parseInt(p && p[k], 10); o[k] = Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d; });
+    return o;
+  }
+  function pkgs() { const src = pkgRaw && Object.keys(pkgRaw).length ? pkgRaw : PKG_DEF; const out = {}; Object.keys(src).forEach(id => { if (src[id]) out[id] = pkgNorm(src[id]); }); return out; }
+  // balíček rezervácie (null = len laser game); neznámy balíček (zmazaný v nastaveniach) → predvolené hodnoty s jeho id
+  const pkgOf = b => (b && b.pkg && b.pkg !== 'laser') ? (pkgs()[b.pkg] || pkgNorm({ name: b.pkg === 'monster' ? 'Monster Chill' : b.pkg })) : null;
+  const pkgShort = p => p.name.split(/\s+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 4) || 'B';
   const STATUS = { new: '🆕 nová', confirmed: '✓ potvrdená', arrived: '🚶 prišli', cancelled: '✕ zrušená' };
   const DAY_NAMES = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
 
@@ -263,6 +278,57 @@
     return !(hubAccess.e && hubAccess.e[enc] && hubAccess.e[enc].rezervacie === false);
   }
   const canUse = () => isMgr || (!!authUser && staffAllowed());
+  // ---- 🎁 úprava balíčkov (len vedúci) – zapisuje sa vždy celá mapa settings/rezPackages ----
+  let pkEdit = {};   // rozpísané (neuložené) zmeny balíčkov podľa id
+  const pkVal = id => pkEdit[id] || pkgs()[id];
+  function pkSet(id, k, v) { pkEdit[id] = { ...pkVal(id), [k]: v }; }
+  async function pkWrite(map, msg) {
+    if (!isMgr || busyAct) return false; busyAct = true;
+    try { await firebase.database().ref('settings/rezPackages').set(map); toast(msg); busyAct = false; return true; }
+    catch (e) { toast('Nepodarilo sa uložiť (len vedúci).'); busyAct = false; return false; }
+  }
+  async function savePkg(id) {
+    blurNow();
+    const v = pkgNorm(pkVal(id));
+    if (!v.name.trim()) return toast('Zadaj názov balíčka.');
+    if (await pkWrite({ ...pkgs(), [id]: v }, `🎁 ${v.name} uložený ✓`)) { delete pkEdit[id]; render(); }
+  }
+  async function addPkg() {
+    const name = (prompt('Názov nového balíčka (napr. Big Bang Chill):', '') || '').trim().slice(0, 40);
+    if (!name) return;
+    let id = name.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'balicek';
+    const all = pkgs(); let n = 2, base0 = id; while (all[id] || id === 'laser') id = base0 + '-' + n++;
+    if (await pkWrite({ ...all, [id]: pkgNorm({ name }) }, `🎁 ${name} pridaný – nastav ho nižšie`)) render();
+  }
+  async function delPkg(id) {
+    const all = pkgs(), p = all[id]; if (!p) return;
+    if (Object.keys(all).length <= 1) return toast('Posledný balíček nejde zmazať – uprav ho.');
+    const used = live().filter(b => b.pkg === id && b.status !== 'cancelled').length;
+    if (!confirm(`Zmazať balíček ${p.name}?${used ? `\n\nPoužíva ho ${used} ${plural(used, 'rezervácia', 'rezervácie', 'rezervácií')} – tie ostanú, len sa nebude dať vybrať pri nových.` : ''}`)) return;
+    const rest = { ...all }; delete rest[id];
+    if (await pkWrite(rest, `Balíček ${p.name} zmazaný`)) { delete pkEdit[id]; render(); }
+  }
+  function pkgSettingsHtml() {
+    const all = pkgs();
+    const num = (id, k, label, hint) => `<div><label class="f">${label}</label><input id="pk_${id}_${k}" type="number" inputmode="numeric" value="${esc(pkVal(id)[k])}" oninput="pkSet('${id}','${k}',this.value)">${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
+    return `<h2>🎁 Balíčky (Monster Chill a pod.)</h2>
+      <p class="hint" style="margin:0 0 8px">Pri rezervácii balíčka appka sama rozpíše hry laser game (každá ďalšia o ${esc(B.rest)} min) a ukáže čas atrakcií. Ďalší balíček nepustí skôr ako o „rozostup“ minút.</p>
+      ${Object.keys(all).map(id => { const v = pkVal(id), dirty = !!pkEdit[id];
+        return `<div class="card" style="border-left:5px solid var(--purple)">
+          <label class="f">Názov</label><input id="pk_${id}_name" maxlength="40" value="${esc(v.name)}" oninput="pkSet('${id}','name',this.value)">
+          <div class="row2">
+            ${num(id, 'games', '🔫 Počet hier laser game')}
+            ${num(id, 'players', '👥 Predvolený počet ľudí')}
+            ${num(id, 'attrMin', '🎮 Atrakcie (min)', '0 = bez atrakcií')}
+            <div><label class="f">🎮 Aké atrakcie</label><input id="pk_${id}_attrText" maxlength="40" value="${esc(v.attrText)}" oninput="pkSet('${id}','attrText',this.value)"></div>
+            ${num(id, 'pizzaMin', '🍕 Pauza po hrách (min)', 'napr. pizza pred atrakciami')}
+            ${num(id, 'spacing', '⏱ Rozostup balíčkov (min)', 'ďalší najskôr o toľko po začiatku')}
+          </div>
+          <div class="acts" style="margin-top:4px"><button class="btn sm" onclick="savePkg('${id}')">💾 Uložiť${dirty ? ' *' : ''}</button>
+            ${dirty ? `<button class="btn ghost sm" onclick="delete pkEdit['${id}'];render()">↺ Zahodiť</button>` : ''}
+            <button class="btn red sm" onclick="delPkg('${id}')">🗑 Zmazať</button></div></div>`; }).join('')}
+      <button class="btn ghost" style="width:100%;margin-bottom:6px" onclick="addPkg()">➕ Pridať balíček</button>`;
+  }
   async function setRezAll(on) {
     if (!isMgr || busyAct) return; busyAct = true;
     try { await firebase.database().ref('settings/hubAccess/rezAll').set(on ? true : null); toast(on ? '👥 Rezervácie teraz vidia aj zamestnanci' : '🔒 Rezervácie vidí len vedúci'); }
@@ -274,7 +340,7 @@
   const gamesOf = b => Object.keys((b && b.games) || {}).filter(g => /^\d{4}-\d{2}-\d{2}_\d{4}$/.test(g)).sort()
     .map(g => ({ date: g.slice(0, 10), time: g.slice(11, 13) + ':' + g.slice(13, 15), key: g }));
   const firstGame = b => gamesOf(b)[0] || null;
-  const isMc = b => b && b.pkg === 'monster';
+  const isMc = b => !!pkgOf(b);   // rezervácia s balíčkom (Monster Chill a pod.)
   const todayKey = () => iso(new Date());
   const live = () => Object.entries(bookings || {}).map(([id, b]) => ({ id, ...b })).filter(b => b && b.name && firstGame(b));
   function list() {
@@ -292,23 +358,24 @@
     return null;
   }
   const restNear = (date, time) => f && f.items.some(it => it.date === date && it.time !== time && Math.abs(toMin(it.time) - toMin(time)) < B.rest);
-  // Monster Chill: časy 3 hier podľa začiatku a poradia
-  function mcGames(start, order) {
-    const s = toMin(start) + (order === 'attr' ? MC.attrMin : 0);
-    return Array.from({ length: MC.games }, (_, i) => toTime(s + i * B.rest));
+  // balíček: časy hier podľa začiatku a poradia (najprv atrakcie → hry až po nich)
+  function mcGames(start, order, P) {
+    const s = toMin(start) + (order === 'attr' ? P.attrMin : 0);
+    return Array.from({ length: P.games }, (_, i) => toTime(s + i * B.rest));
   }
-  // kedy majú atrakcie (VR + PS) – len orientačne
-  function mcAttr(b) {
+  // kedy majú atrakcie – len orientačne (P = balíček, inak podľa rezervácie)
+  function mcAttr(b, P) {
+    P = P || pkgOf(b) || pkgNorm({});
     const g = gamesOf(b), d = (firstGame(b) || {}).date, s = toMin(b.mStart || (firstGame(b) || {}).time || '12:00');
-    if (b.mOrder === 'attr') return { from: s, to: s + MC.attrMin, pizza: false };
+    if (b.mOrder === 'attr') return { from: s, to: s + P.attrMin, pizza: false };
     const last = Math.max(s, ...g.filter(x => x.date === d).map(x => toMin(x.time)));
-    const from = last + B.game + MC.pizzaMin;
-    return { from, to: from + MC.attrMin, pizza: true };
+    const from = last + B.game + P.pizzaMin;
+    return { from, to: from + P.attrMin, pizza: P.pizzaMin > 0 };
   }
-  // iný Monster Chill v ten deň, ktorý začína bližšie ako 60 min
-  function mcClash(date, start, selfId) {
+  // iný balíček v ten deň, ktorý začína bližšie ako „rozostup“ (berie sa väčší z oboch balíčkov)
+  function mcClash(date, start, selfId, P) {
     return live().find(b => b.id !== selfId && isMc(b) && b.status !== 'cancelled' && (firstGame(b) || {}).date === date
-      && Math.abs(toMin(b.mStart || firstGame(b).time) - toMin(start)) < MC.spacing) || null;
+      && Math.abs(toMin(b.mStart || firstGame(b).time) - toMin(start)) < Math.max(P.spacing, pkgOf(b).spacing)) || null;
   }
   function normalizePhone(p) {
     p = String(p || '').replace(/[\s\-/()]/g, '');
@@ -374,7 +441,7 @@
     sel = '';
     if (b) {
       const fg = firstGame(b) || {};
-      f = { id, pkg: isMc(b) ? 'monster' : 'laser', day: fg.date || sheetDay, mStart: b.mStart || fg.time || '16:00', mOrder: b.mOrder === 'attr' ? 'attr' : 'games',
+      f = { id, pkg: isMc(b) ? b.pkg : 'laser', day: fg.date || sheetDay, mStart: b.mStart || fg.time || '16:00', mOrder: b.mOrder === 'attr' ? 'attr' : 'games',
         name: b.name || '', phone: b.phone || '', email: b.email || '', players: b.players || 2, seat: b.seat || '', note: b.note || '',
         items: gamesOf(b).map(g => ({ date: g.date, time: g.time })), err: '' };
     } else {
@@ -384,19 +451,22 @@
     }
     render();
   }
-  function mcRecalc() { if (f && f.pkg === 'monster') f.items = mcGames(f.mStart, f.mOrder).map(t => ({ date: f.day, time: t })); }
+  const fPkg = () => f && f.pkg !== 'laser' ? pkgOf({ pkg: f.pkg }) : null;
+  function mcRecalc() { const P = fPkg(); if (P) f.items = mcGames(f.mStart, f.mOrder, P).map(t => ({ date: f.day, time: t })); }
   function setPkg(p) {
     if (!f || f.pkg === p) return;
+    const wasPkg = !!fPkg();
     f.pkg = p; f.err = '';
-    if (p === 'monster') {
-      if (f.items.length) f.mStart = f.items[0].time;
-      if (!f.id && (+f.players || 0) < 8) f.players = 10;
+    const P = fPkg();
+    if (P) {
+      if (!wasPkg && f.items.length) f.mStart = f.items[0].time;
+      if (!f.id) f.players = P.players;
       mcRecalc();
     }
     render();
   }
   function setMc(k, v) { f[k] = v; f.err = ''; mcRecalc(); render(); }
-  function setFormDay(k) { if (!k) return; f.day = k; if (f.pkg === 'monster') mcRecalc(); render(); }
+  function setFormDay(k) { if (!k) return; f.day = k; mcRecalc(); render(); }
   function toggleSlot(date, time) {
     const i = f.items.findIndex(it => it.date === date && it.time === time);
     if (i >= 0) f.items.splice(i, 1);
@@ -415,7 +485,7 @@
     blurNow();
     if (!f || busyAct) return;
     const name = f.name.trim(), phone = f.phone.trim() ? normalizePhone(f.phone.trim()) : '', email = f.email.trim(),
-      players = parseInt(f.players, 10), note = f.note.trim().slice(0, 400), seat = f.seat.trim().slice(0, 60), mc = f.pkg === 'monster';
+      players = parseInt(f.players, 10), note = f.note.trim().slice(0, 400), seat = f.seat.trim().slice(0, 60), P = fPkg(), mc = !!P;
     const fail = m => { f.err = m; render(); };
     if (name.length < 3) return fail('Meno musí mať aspoň 3 znaky.');
     if (phone && !/^\+?\d{9,15}$/.test(phone)) return fail('Telefón nie je v poriadku (napr. 0910 123 456).');
@@ -424,8 +494,8 @@
     if (!f.items.length) return fail('Vyber aspoň jeden čas hry.');
     if (f.items.some(it => toMin(it.time) >= 24 * 60)) return fail('Hra by bola až po polnoci – vyber skorší začiatok.');
     if (mc) {
-      const c = mcClash(f.day, f.mStart, f.id);
-      if (c) return fail(`Monster Chill ${c.name} začína o ${c.mStart || firstGame(c).time}. Ďalší môže začať najskôr o ${MC.spacing} min neskôr.`);
+      const c = mcClash(f.day, f.mStart, f.id, P);
+      if (c) return fail(`${pkgOf(c).name} ${c.name} začína o ${c.mStart || firstGame(c).time}. Ďalší balíček môže začať najskôr o ${Math.max(P.spacing, pkgOf(c).spacing)} min neskôr.`);
     }
     const clash = f.items.find(it => busyBy(it.date, it.time, f.id));
     if (clash) return fail(`Čas ${dayTitle(clash.date)} ${clash.time} má iná partia.`);
@@ -449,7 +519,7 @@
     busyAct = true;
     try { await db.ref().update(u); toast(f.id ? 'Rezervácia upravená ✓' : 'Rezervácia pridaná ✓'); sheetDay = f.day; f = null; }
     catch (e) { console.error(e); f.err = String(e.code || e.message || '').toUpperCase().includes('PERMISSION')
-      ? 'Firebase to nedovolil. Treba vložiť aktuálne pravidlá (pravidla-CELE-vlozit.json) – pribudli v nich Monster Chill a „kde“.' : 'Nepodarilo sa uložiť, skús znova.'; }
+      ? 'Firebase to nedovolil. Treba vložiť aktuálne pravidlá (firebase-rules.json) – pribudli v nich balíčky a „kde“.' : 'Nepodarilo sa uložiť, skús znova.'; }
     busyAct = false; render();
   }
 
@@ -481,25 +551,30 @@
       const cell = fn => its.map(x => `<span class="it" onclick="event.stopPropagation();openDetail('${x.b.id}')">${fn(x)}</span>`).join('');
       return `<div class="sr${t.endsWith(':00') ? ' hour' : ''}${its.length ? ' has' : ''}${mc ? ' mc' : ''}${past ? ' past' : ''}"${click ? ` onclick="${click}"` : ''}>
         <span class="t">${t}</span>
-        <span>${cell(x => `${(x.b.status || 'new') === 'new' ? '<span class="nb">NOVÁ</span>' : ''}${isMc(x.b) ? `<span class="mcb">MC ${x.n}/${x.of}</span>` : ''}<b>${esc(x.b.name)}</b>${x.time !== t ? ` <small>${x.time}</small>` : ''}${x.b.status === 'arrived' ? ' <span class="ar">🚶</span>' : ''}${!isMc(x.b) && x.of > 1 ? ` <small>${x.n}/${x.of}</small>` : ''}${offerTagHtml(x.b, d, x.time)}`)}</span>
+        <span>${cell(x => `${(x.b.status || 'new') === 'new' ? '<span class="nb">NOVÁ</span>' : ''}${isMc(x.b) ? `<span class="mcb" title="${esc(pkgOf(x.b).name)}">${esc(pkgShort(pkgOf(x.b)))} ${x.n}/${x.of}</span>` : ''}<b>${esc(x.b.name)}</b>${x.time !== t ? ` <small>${x.time}</small>` : ''}${x.b.status === 'arrived' ? ' <span class="ar">🚶</span>' : ''}${!isMc(x.b) && x.of > 1 ? ` <small>${x.n}/${x.of}</small>` : ''}${offerTagHtml(x.b, d, x.time)}`)}</span>
         <span>${cell(x => `<b>${esc(x.b.players)}</b>`)}</span>
         <span>${cell(x => esc(x.b.seat || ''))}</span></div>`;
     };
     const head = '<div class="sr h"><span>Čas</span><span>Kto</span><span>Koľko</span><span>Kde</span></div>';
     const half = Math.ceil(times.length / 2);
     const mcs = dayBk.filter(isMc).sort((a, b) => (a.mStart || '').localeCompare(b.mStart || ''));
-    const attrs = mcs.map(b => ({ b, a: mcAttr(b) }));
+    const attrs = mcs.filter(b => pkgOf(b).attrMin).map(b => ({ b, a: mcAttr(b) }));
     const overlap = attrs.some((x, i) => attrs.some((y, j) => j > i && x.a.from < y.a.to && y.a.from < x.a.to));
     return `<div class="dayhead">
         <button class="btn ghost sm" onclick="goDay(addDays(sheetDay,-1))">‹</button>
         <div class="ttl">${d === tk ? 'Dnes · ' : ''}${esc(dayTitle(d))}<small>${dayBk.length ? `${dayBk.length} ${plural(dayBk.length, 'rezervácia', 'rezervácie', 'rezervácií')} · ${ppl} ${plural(ppl, 'osoba', 'osoby', 'osôb')}${nNew ? ` · 🆕 ${nNew}` : ''}` : 'zatiaľ bez rezervácií'}</small></div>
         <button class="btn ghost sm" onclick="goDay(addDays(sheetDay,1))">›</button></div>
-      <div class="chips">${quick}<input id="sDate" type="date" value="${d}" onchange="blurNow();goDay(this.value)" style="width:auto;margin:0;padding:5px 8px;font-size:14px"></div>
+      <div class="card" style="padding:10px;margin-bottom:10px">
+        <div class="dayhead" style="margin-bottom:6px"><button class="btn ghost sm" onclick="calShift(-1)">‹</button>
+          <div class="ttl" style="font-size:15px">${MONTHS[+calMonth.slice(5) - 1]} ${calMonth.slice(0, 4)}</div>
+          <button class="btn ghost sm" onclick="calShift(1)">›</button></div>
+        ${calGridHtml()}
+        ${d !== tk ? '<button class="btn ghost sm" onclick="goDay(todayKey())">Dnes</button>' : ''}</div>
       <button class="btn" style="width:100%;margin-bottom:10px" onclick="openForm('',{day:sheetDay})">➕ Rezervovať na ${esc(dayTitle(d))}</button>
       ${closedNote(d)}
-      ${attrs.length ? `<div class="card attr"><b>🎁 Monster Chill – atrakcie (VR + PS)</b>${overlap ? '<div class="err" style="margin-top:6px">⚠ Atrakcie dvoch skupín sa prekrývajú – VR a PS budú obsadené naraz.</div>' : ''}
-        ${attrs.map(({ b, a }) => `<div class="ln" onclick="openDetail('${b.id}')"><b>${esc(b.name)}</b> (${esc(b.players)}) · začiatok ${esc(b.mStart || firstGame(b).time)} · ${b.mOrder === 'attr' ? 'najprv atrakcie' : 'najprv laser game'}<br>
-          <span style="color:var(--purple)">🎮 VR + PS cca ${toTime(a.from)}–${toTime(a.to)}${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}</span>${b.seat ? ` · 📍 ${esc(b.seat)}` : ''}</div>`).join('')}</div>` : ''}
+      ${attrs.length ? `<div class="card attr"><b>🎁 Balíčky – atrakcie</b>${overlap ? '<div class="err" style="margin-top:6px">⚠ Atrakcie dvoch skupín sa prekrývajú – budú obsadené naraz.</div>' : ''}
+        ${attrs.map(({ b, a }) => `<div class="ln" onclick="openDetail('${b.id}')"><b>${esc(b.name)}</b> (${esc(b.players)}) · ${esc(pkgOf(b).name)} · začiatok ${esc(b.mStart || firstGame(b).time)} · ${b.mOrder === 'attr' ? 'najprv atrakcie' : 'najprv laser game'}<br>
+          <span style="color:var(--purple)">🎮 ${esc(pkgOf(b).attrText || 'atrakcie')} cca ${toTime(a.from)}–${toTime(a.to)}${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}</span>${b.seat ? ` · 📍 ${esc(b.seat)}` : ''}</div>`).join('')}</div>` : ''}
       <div class="sheet">
         <div class="col">${head}${times.slice(0, half).map(row).join('')}</div>
         <div class="col">${head}${times.slice(half).map(row).join('')}</div>
@@ -524,7 +599,8 @@
     });
     return m;
   }
-  function calHtml() {
+  // mriežka mesiaca (calMonth) – používa Kalendár aj Hárok dňa (2026-10-27)
+  function calGridHtml() {
     const st = dayStats(), tk = todayKey(), [y, mo] = calMonth.split('-').map(Number);
     const lead = (new Date(y, mo - 1, 1, 12).getDay() + 6) % 7, dim = new Date(y, mo, 0).getDate();
     let cells = '';
@@ -534,12 +610,16 @@
       cells += `<button class="cd${k === tk ? ' today' : ''}${k === sheetDay ? ' on' : ''}${closed ? ' closed' : ''}${k < tk ? ' past' : ''}" onclick="goDay('${k}')">
         <span class="dn">${n}</span>${s ? `<span class="cnt">${s.n}${s.fresh ? ' 🆕' : ''}</span>` : closed ? '<span class="cl">zatv.</span>' : ''}</button>`;
     }
+    return `<div class="cal">${['Po', 'Ut', 'St', 'Št', 'Pi', 'So', 'Ne'].map(x => `<span class="cw">${x}</span>`).join('')}${cells}</div>`;
+  }
+  function calHtml() {
+    const st = dayStats(), tk = todayKey(), [y, mo] = calMonth.split('-').map(Number);
     const monthN = Object.keys(st).filter(k => k.startsWith(calMonth)).reduce((a, k) => a + st[k].n, 0);
     return `<div class="dayhead">
         <button class="btn ghost sm" onclick="calShift(-1)">‹</button>
         <div class="ttl">${MONTHS[mo - 1]} ${y}<small>${monthN ? `${monthN} ${plural(monthN, 'rezervácia', 'rezervácie', 'rezervácií')} v mesiaci` : 'v mesiaci zatiaľ nič'}</small></div>
         <button class="btn ghost sm" onclick="calShift(1)">›</button></div>
-      <div class="cal">${['Po', 'Ut', 'St', 'Št', 'Pi', 'So', 'Ne'].map(x => `<span class="cw">${x}</span>`).join('')}${cells}</div>
+      ${calGridHtml()}
       ${calMonth !== tk.slice(0, 7) || sheetDay !== tk ? '<button class="btn ghost sm" style="margin-bottom:6px" onclick="goDay(todayKey())">Dnes</button>' : ''}
       ${dayTableHtml(sheetDay)}`;
   }
@@ -562,7 +642,7 @@
       return bs.map(b => {
         const st = STATUS[b.status] ? b.status : 'new', g = gamesOf(b), n = g.findIndex(x => x.date === d && x.time === t) + 1;
         return `<tr class="bkr st-${st}${isMc(b) ? ' mc' : ''}${past}"><td class="t">${t}</td>
-          <td><a class="nm" onclick="openDetail('${b.id}')">${esc(b.name)}</a>${g.length > 1 ? ` <small class="mut">${n}/${g.length}</small>` : ''}${isMc(b) ? ' <span class="tag mc">🎁 MC</span>' : ''}${offerTagHtml(b, d, t)}
+          <td><a class="nm" onclick="openDetail('${b.id}')">${esc(b.name)}</a>${g.length > 1 ? ` <small class="mut">${n}/${g.length}</small>` : ''}${isMc(b) ? ` <span class="tag mc">🎁 ${esc(pkgOf(b).name)}</span>` : ''}${offerTagHtml(b, d, t)}
             ${b.seat ? `<br><small>📍 ${esc(b.seat)}</small>` : ''}${b.note ? `<br><small class="nt">📝 ${esc(b.note)}</small>` : ''}</td>
           <td><b>${esc(b.players)}</b></td>
           <td>${contact && b.phone ? `<a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>` : '<span class="mut">—</span>'}</td>
@@ -666,7 +746,7 @@
     const who = `<h2>👥 Kto vidí rezervácie</h2>
       <div class="card"><div class="seg" style="margin-bottom:8px"><button class="${!rezAll() ? 'on' : ''}" onclick="setRezAll(false)">🔒 Len vedúci</button><button class="${rezAll() ? 'on' : ''}" onclick="setRezAll(true)">👥 Aj zamestnanci</button></div>
         <p class="hint" style="margin:0">${rezAll() ? 'Zamestnanci vidia hárok, kalendár a zoznam a môžu rezervovať. Telefón, e-mail, nastavenia a mazanie len vedúci. Jednotlivým ľuďom sa dá prístup zobrať na úvode v ⚙ Prístupy zamestnancov (📆 Rezervácie).' : 'Zamestnanci rezervácie na úvode nevidia. Ukáže sa hneď, ako to tu prepneš.'}</p></div>`;
-    if (!cfgLoaded) return who + '<p class="empty">Načítavam nastavenia…</p>';
+    if (!cfgLoaded) return who + pkgSettingsHtml() + '<p class="empty">Načítavam nastavenia…</p>';
     if (!cfgF) { cfgF = cfgFromB(B); cfgDirty = false; }
     const c = cfgF;
     const opts = v => (HOUR_OPTS.includes(v) ? HOUR_OPTS : HOUR_OPTS.concat(v).sort()).map(t => `<option ${t === v ? 'selected' : ''}>${t}</option>`).join('');
@@ -675,7 +755,7 @@
         ${h.open ? `<select id="cH${i}f" onchange="cfgHour(${i},'from',this.value)">${opts(h.from)}</select><span>–</span><select id="cH${i}t" onchange="cfgHour(${i},'to',this.value)">${opts(h.to)}</select>` : '<span class="mut" style="grid-column:2/5">zatvorené</span>'}</div>`; }).join('');
     const num = (k, label, hint) => `<div><label class="f">${label}</label><input id="c_${k}" type="number" inputmode="numeric" value="${esc(c[k])}" oninput="cfgSet('${k}',this.value)">${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
     const tk = todayKey(), offs = c.daysOff.filter(k => k >= addDays(tk, -1)), oldOffs = c.daysOff.length - offs.length;
-    return who + `<h2>🌐 Rezervácia na webe</h2><div class="${cfgRaw ? 'card' : 'warn'}" style="font-size:13px;line-height:1.5">${cfgRaw
+    return who + pkgSettingsHtml() + `<h2>🌐 Rezervácia na webe</h2><div class="${cfgRaw ? 'card' : 'warn'}" style="font-size:13px;line-height:1.5">${cfgRaw
         ? `✓ Web (${env === 'test' ? '🧪 test' : '🟢 ostrý'}) používa tieto nastavenia z appky.${cfgRaw.updatedAt ? ` Uložené ${new Date(cfgRaw.updatedAt).toLocaleString('sk-SK')}.` : ''}`
         : `⚠ Pre ${env === 'test' ? '🧪 test' : '🟢 ostrý web'} zatiaľ nie sú nastavenia uložené – web berie nastavenia z WordPressu. Nižšie sú predvolené hodnoty; po uložení ich web začne používať.`}
         <br><span class="mut">Test a Ostré majú nastavenia zvlášť.</span></div>
@@ -722,7 +802,7 @@
     const st = STATUS[b.status] ? b.status : 'new', g = gamesOf(b);
     const times = g.map(x => x.date === firstGame(b).date ? x.time : `${dayTitle(x.date)} ${x.time}`).join(' · ');
     return `<div class="card bk st-${st}${isMc(b) ? ' mc' : ''}" onclick="openDetail('${b.id}')">
-      <b style="font-size:16px">${esc(b.name)}</b> <span class="tag ${st}">${STATUS[st]}</span>${isMc(b) ? '<span class="tag mc">🎁 Monster Chill</span>' : ''}
+      <b style="font-size:16px">${esc(b.name)}</b> <span class="tag ${st}">${STATUS[st]}</span>${isMc(b) ? `<span class="tag mc">🎁 ${esc(pkgOf(b).name)}</span>` : ''}
       <div class="times">🕹 ${esc(times)} · 👥 ${esc(b.players)}${b.seat ? ` · 📍 ${esc(b.seat)}` : ''}</div></div>`;
   }
   function listHtml() {
@@ -747,13 +827,13 @@
     return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box${mc ? ' mc' : ''}">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${esc(b.name)}</h3>
-      <div><span class="tag ${st}" style="margin-left:0">${STATUS[st]}</span>${mc ? '<span class="tag mc">🎁 Monster Chill</span>' : '<span class="tag src">🔫 Laser game</span>'}${b.source === 'admin' ? '<span class="tag src">zapísali sme my</span>' : '<span class="tag src">z webu</span>'}</div>
+      <div><span class="tag ${st}" style="margin-left:0">${STATUS[st]}</span>${mc ? `<span class="tag mc">🎁 ${esc(pkgOf(b).name)}</span>` : '<span class="tag src">🔫 Laser game</span>'}${b.source === 'admin' ? '<span class="tag src">zapísali sme my</span>' : '<span class="tag src">z webu</span>'}</div>
       <div class="info" style="margin-top:10px">
         👥 <b>${esc(b.players)}</b> ${plural(+b.players || 0, 'osoba', 'osoby', 'osôb')}${b.seat ? ` · 📍 <b>${esc(b.seat)}</b>` : ''}<br>
         🕹 ${[...new Set(g.map(x => x.date))].map(dd => `${esc(dayTitle(dd))}: <b>${g.filter(x => x.date === dd).map(x => x.time).join(' · ')}</b>`).join('; ')} <span style="color:var(--muted)">(${g.length} ${plural(g.length, 'hra', 'hry', 'hier')})</span>
         ${[...new Set(g.map(x => x.date))].map(dd => { const oi = offerInfo(b, dd); return oi ? `<br>🎁 Ponuka ${oi.name}${g.some(x => x.date !== dd) ? ` (${esc(dayTitle(dd))})` : ''}: zadarmo hra o <b>${oi.free.join(', ')}</b>` : ''; }).join('')}
         ${mc ? `<br>🎁 začiatok <b>${esc(b.mStart || firstGame(b).time)}</b> · ${b.mOrder === 'attr' ? 'najprv atrakcie, potom laser game' : 'najprv laser game, potom atrakcie'}<br>
-          <span style="color:var(--purple)">🎮 VR + PS cca ${toTime(a.from)}–${toTime(a.to)}${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}</span>` : ''}
+          ${pkgOf(b).attrMin ? `<span style="color:var(--purple)">🎮 ${esc(pkgOf(b).attrText || 'Atrakcie')} cca ${toTime(a.from)}–${toTime(a.to)}${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}</span>` : ''}` : ''}
         ${canSeeContact() ? `${b.phone ? `<br>📞 <a href="tel:${esc(b.phone)}">${esc(b.phone)}</a>` : ''}${b.email ? `<br>✉ <a href="mailto:${esc(b.email)}">${esc(b.email)}</a>` : ''}` : ''}
         ${b.note ? `<br>📝 ${esc(b.note)}` : ''}
         ${created ? `<br><span style="color:var(--muted);font-size:12px">vytvorené ${created.getDate()}. ${created.getMonth() + 1}. ${pad(created.getHours())}:${pad(created.getMinutes())}</span>` : ''}
@@ -770,7 +850,7 @@
 
   // ---- okno: rezervovať / upraviť ----
   function formHtml() {
-    const d = f.day, mc = f.pkg === 'monster';
+    const d = f.day, P = fPkg(), mc = !!P, PK = pkgs();
     const slotBtn = t => {
       const picked = f.items.some(it => it.date === d && it.time === t), busy = !picked && busyBy(d, t, f.id), rest = !picked && !busy && restNear(d, t);
       return `<button class="slot ${picked ? 'picked' : busy ? 'busy' : rest ? 'rest' : ''}" onclick="toggleSlot('${d}','${t}')"${busy ? ' title="obsadené"' : ''}>${t}</button>`;
@@ -780,14 +860,14 @@
       return `<button class="chip${k === d ? ' on' : ''}" onclick="setFormDay('${k}')">${n === 0 ? 'Dnes' : n === 1 ? 'Zajtra' : DAY_NAMES[x.getDay()].slice(0, 2) + ' ' + x.getDate() + '.'}</button>`; }).join('');
     let mcHtml = '';
     if (mc) {
-      const clash = mcClash(d, f.mStart, f.id), a = mcAttr({ games: Object.fromEntries(f.items.map(it => [it.date + '_' + it.time.replace(':', ''), true])), mStart: f.mStart, mOrder: f.mOrder });
+      const clash = mcClash(d, f.mStart, f.id, P), a = mcAttr({ games: Object.fromEntries(f.items.map(it => [it.date + '_' + it.time.replace(':', ''), true])), mStart: f.mStart, mOrder: f.mOrder }, P);
       const busyG = f.items.filter(it => busyBy(it.date, it.time, f.id));
-      mcHtml = `<label class="f">Začiatok Monster Chill</label>
+      mcHtml = `<label class="f">Začiatok – ${esc(P.name)} (${P.games} ${plural(P.games, 'hra', 'hry', 'hier')}${P.attrMin ? ` + ${esc(P.attrText || 'atrakcie')} ${P.attrMin} min` : ''})</label>
         <select id="fMStart" onchange="blurNow();setMc('mStart',this.value)">${(grid.includes(f.mStart) ? grid : grid.concat(f.mStart).sort()).map(t => `<option ${t === f.mStart ? 'selected' : ''}>${t}</option>`).join('')}</select>
         <div class="seg mc"><button class="${f.mOrder === 'games' ? 'on' : ''}" onclick="setMc('mOrder','games')">🔫 Najprv laser game</button><button class="${f.mOrder === 'attr' ? 'on' : ''}" onclick="setMc('mOrder','attr')">🎮 Najprv atrakcie</button></div>
         <div class="mcinfo">🔫 Laser game: <b>${f.items.map(it => it.time).join(' · ') || '—'}</b><br>
-          🎮 VR + PS cca <b>${toTime(a.from)}–${toTime(a.to)}</b>${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}
-          ${clash ? `<div class="err" style="margin-top:6px">⚠ Monster Chill ${esc(clash.name)} začína o ${esc(clash.mStart || firstGame(clash).time)} – ďalší najskôr o ${MC.spacing} min neskôr.</div>` : ''}
+          ${P.attrMin ? `🎮 ${esc(P.attrText || 'Atrakcie')} cca <b>${toTime(a.from)}–${toTime(a.to)}</b>${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}` : ''}
+          ${clash ? `<div class="err" style="margin-top:6px">⚠ ${esc(pkgOf(clash).name)} ${esc(clash.name)} začína o ${esc(clash.mStart || firstGame(clash).time)} – ďalší balíček najskôr o ${Math.max(P.spacing, pkgOf(clash).spacing)} min neskôr.</div>` : ''}
           ${busyG.length ? `<div class="err" style="margin-top:6px">⚠ Obsadené inou partiou: ${busyG.map(it => it.time).join(', ')} – posuň začiatok alebo uprav časy nižšie.</div>` : ''}</div>`;
     }
     return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box${mc ? ' mc' : ''}">
@@ -798,7 +878,8 @@
       <input id="fDate" type="date" value="${d}" onchange="blurNow();setFormDay(this.value)">
       <div style="font-weight:800;margin:2px 0 10px;text-transform:uppercase">${esc(dayTitle(d))}${hoursFor(d) ? '' : ' <span style="color:var(--red);font-size:12px;text-transform:none">· podľa nastavení zatvorené</span>'}</div>
       <label class="f">Čo si rezervujú</label>
-      <div class="seg"><button class="${!mc ? 'on' : ''}" onclick="setPkg('laser')">🔫 Len laser game</button><button class="${mc ? 'on' : ''}" onclick="setPkg('monster')" style="${mc ? 'background:var(--purple)' : ''}">🎁 Monster Chill</button></div>
+      <div class="seg" style="flex-wrap:wrap"><button class="${!mc ? 'on' : ''}" onclick="setPkg('laser')">🔫 Len laser game</button>${Object.keys(PK).map(id => `<button class="${f.pkg === id ? 'on' : ''}" onclick="setPkg('${id}')" style="${f.pkg === id ? 'background:var(--purple)' : ''}">🎁 ${esc(PK[id].name)}</button>`).join('')}
+        ${mc && !PK[f.pkg] ? `<button class="on" style="background:var(--purple)">🎁 ${esc(P.name)}</button>` : ''}</div>
       ${mcHtml}
       <label class="f">Meno (kto)</label><input id="fName" maxlength="80" value="${esc(f.name)}" oninput="f.name=this.value" placeholder="Meno a priezvisko">
       <div class="row2">
@@ -846,7 +927,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-26e</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-27</footer>`;
     if (f) html += formHtml();
     else if (sel && bookings[sel]) html += detailHtml({ id: sel, ...bookings[sel] });
     app.innerHTML = html;
@@ -897,6 +978,10 @@
       else rewatch();
       render();
     });
+    // 🎁 balíčky (verejne čitateľné, mení len vedúci)
+    firebase.database().ref('settings/rezPackages').on('value', s => { pkgRaw = s.val(); render(); }, () => {});
+    // odkaz z úvodu „Nastavenia rezervácií“ (rezervacie.html#nastavenia)
+    if (location.hash === '#nastavenia') view = 'set';
     firebase.database().ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; rewatch(); render(); }, () => { hubAccess = {}; render(); });
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
   render();

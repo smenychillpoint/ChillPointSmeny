@@ -413,7 +413,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-26h</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-27</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -561,10 +561,11 @@
           <table class="acc"><tr><th>Zamestnanec</th>${AREAS.map(a => `<th>${a[1]}</th>`).join('')}</tr>
           ${emps.map(e => { const a = (access.e || {})[enc(e.name)] || {}; return `<tr><td>${esc(e.name)}</td>${AREAS.map(([k]) => `<td><input type="checkbox" ${a[k] === false ? '' : 'checked'} onchange="setAccess('${esc(e.name).replace(/'/g, "\\'")}','${k}',this.checked)"></td>`).join('')}</tr>`; }).join('')}</table>`)
         + link('smeny.html#nastavenia', '📅', 'Nastavenia Smien', 'Prihlasovanie, Môžem/Nemôžem, limity, checklisty, funkcie')
-        + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
+        + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie')
+        + link('rezervacie.html#nastavenia', '🎯', 'Nastavenia rezervácií', 'Balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-26h</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-27</footer>`;
     app.innerHTML = html;
   }
 
