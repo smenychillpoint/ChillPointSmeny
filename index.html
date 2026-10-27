@@ -413,7 +413,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-27</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-27b</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -508,7 +508,7 @@
     // (2026-10-26e) ✉️ Odpovede na e-maily – vedúci vždy; zamestnanci až keď vedúci v Odpovediach → ⚙ zapne
     // „Aj zamestnanci“ (settings/hubAccess/odpAll) a človek nemá v Prístupoch odškrtnuté ✉️ Odpovede
     if (isMgr || (access.odpAll && me && allowed('odpovede'))) {
-      html += `<a class="tile" href="odpovede.html" style="border-left-color:var(--green)"><span class="ic">✉️</span><span class="tx"><b>Odpovede na e-maily</b><span>Vlož e-mail zákazníka – bot navrhne odpoveď zo šablón${isMgr && !access.odpAll ? ' · 🔒 zatiaľ len vedúci' : ''}</span></span><span class="arr">›</span></a>`;
+      html += `<a class="tile" href="odpovede.html" style="border-left-color:var(--green)"><span class="ic">✉️</span><span class="tx"><b>Odpovede na e-maily</b><span>Hotové odpovede – vyber, doplň meno, počet, dátum a skopíruj${isMgr && !access.odpAll ? ' · 🔒 zatiaľ len vedúci' : ''}</span></span><span class="arr">›</span></a>`;
     }
     if (allowed('kupit')) {
       // otvorené položky s tlačidlom "✓ doplnené/kúpené", vybavené (7 dní) s "↺ vrátiť", vedúci môže mazať
@@ -565,7 +565,7 @@
         + link('rezervacie.html#nastavenia', '🎯', 'Nastavenia rezervácií', 'Balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-27</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-27b</footer>`;
     app.innerHTML = html;
   }
 
