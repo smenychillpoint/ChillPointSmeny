@@ -673,7 +673,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-25· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-26· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -757,7 +757,8 @@
       <button class="close" data-close>×</button>
       <h2>Režim vedúceho</h2>
       <p class="sub">Zadaj heslo vedúceho.</p>
-      <div class="form"><input id="pin" type="password" autocomplete="current-password" placeholder="Heslo vedúceho"><button class="primary" id="unlock">Otvoriť správu smien</button></div>
+      <!-- (2026-10-26) vlastný <form>: heslo vedúceho patrí len k tomuto prihláseniu, prehliadač ho neponúka v ostatných políčkach -->
+      <form class="form" onsubmit="return false"><input type="text" name="username" autocomplete="username" value="vedouci@chillpoint-smeny.sk" hidden><input id="pin" type="password" autocomplete="current-password" placeholder="Heslo vedúceho"><button type="button" class="primary" id="unlock">Otvoriť správu smien</button></form>
       <div class="msg" id="pinMsg"></div>
     </div>
   </div>
@@ -1213,6 +1214,14 @@
   <div class="toast-host" id="toastHost"></div>
 
 <script>
+  // (2026-10-26) Prehliadač nemá ponúkať uložené heslá v bežných políčkach: každé políčko bez vlastného
+  // autocomplete dostane autocomplete="off" (aj dokreslené neskôr). Heslo len v okne „Režim vedúceho“ (vlastný <form>).
+  (function(){
+    const off=el=>{ if(el.matches && el.matches('input:not([autocomplete]):not([type=password]),textarea:not([autocomplete])')) el.setAttribute('autocomplete','off'); };
+    const fix=root=>{ off(root); if(root.querySelectorAll) root.querySelectorAll('input,textarea').forEach(off); };
+    fix(document.documentElement);
+    new MutationObserver(ms=>ms.forEach(m=>m.addedNodes.forEach(n=>{ if(n.nodeType===1) fix(n); }))).observe(document.documentElement,{childList:true,subtree:true});
+  })();
   const MONTHS=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
   const DAYS=['PO','UT','ST','ŠT','PI','SO','NE'];
   // E-mail účtu vedúceho vo Firebase Authentication (heslo sa nastavuje vo Firebase, nie v kóde).

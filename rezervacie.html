@@ -163,6 +163,13 @@
   //   laser/<env>/slots/<YYYY-MM-DD>/<HHMM> = <id>   ← web podľa toho ukazuje obsadené časy (červené)
   // env = 'test' | 'live' (podľa režimu pluginu). Zmeny tu sa hneď prejavia na webe.
   const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
+  // (2026-10-26) prehliadač nemá ponúkať uložené heslá v políčkach rezervácie (meno, telefón, poznámka…)
+  (function () {
+    const off = el => { if (el.matches && el.matches('input:not([autocomplete]):not([type=password]),textarea:not([autocomplete])')) el.setAttribute('autocomplete', 'off'); };
+    const fix = root => { off(root); if (root.querySelectorAll) root.querySelectorAll('input,textarea').forEach(off); };
+    fix(document.documentElement);
+    new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) fix(n); }))).observe(document.documentElement, { childList: true, subtree: true });
+  })();
   // zdieľané zariadenie (ako na úvode a v Objednávkach) – aby zamestnanci mohli čítať rezervácie
   const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk', DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
   // Nastavenia rezervácií = laser/<env>/config (plugin ich načíta a prepíšu jeho WordPress nastavenia).
@@ -839,7 +846,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-26d</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-26e</footer>`;
     if (f) html += formHtml();
     else if (sel && bookings[sel]) html += detailHtml({ id: sel, ...bookings[sel] });
     app.innerHTML = html;

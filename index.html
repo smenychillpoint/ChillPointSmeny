@@ -96,6 +96,14 @@
   const AREAS = [['smeny', '📅 Smeny'], ['objednavky', '🍹 Objednávky'], ['kupit', '📦 Kúpiť'], ['odovzdavka', '📝 Odovzdávka'], ['rezervacie', '📆 Rezervácie'], ['odpovede', '✉️ Odpovede']];
   const DAY_NAMES = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
 
+  // (2026-10-26) Prehliadač nemá ponúkať uložené heslá v bežných políčkach (odovzdávka, kúpiť, kód…):
+  // každé políčko bez vlastného autocomplete dostane autocomplete="off". Heslo len pri prihlásení vedúceho (#mPass vo <form>).
+  (function () {
+    const off = el => { if (el.matches && el.matches('input:not([autocomplete]):not([type=password]),textarea:not([autocomplete])')) el.setAttribute('autocomplete', 'off'); };
+    const fix = root => { off(root); if (root.querySelectorAll) root.querySelectorAll('input,textarea').forEach(off); };
+    fix(document.documentElement);
+    new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) fix(n); }))).observe(document.documentElement, { childList: true, subtree: true });
+  })();
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const enc = n => encodeURIComponent(n).replace(/\./g, '%2E');
@@ -398,14 +406,14 @@
         : '<button onclick="logout()">odhlásiť</button>'}</div>` : ''}</div>`;
     if (!logged) {
       app.innerHTML = head + `<h1>Prihlás sa</h1><div class="card">
-        ${ui.mgrForm ? `<input type="password" id="mPass" placeholder="Heslo vedúceho" autocomplete="current-password" onkeydown="if(event.key==='Enter')mgrLogin()">
+        ${ui.mgrForm ? `<form onsubmit="return false" style="margin:0"><input type="text" name="username" autocomplete="username" value="${MANAGER_EMAIL}" hidden><input type="password" id="mPass" placeholder="Heslo vedúceho" autocomplete="current-password" onkeydown="if(event.key==='Enter')mgrLogin()"></form>
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="mgrLogin()">Prihlásiť vedúceho</button>
           <button class="link" onclick="ui.mgrForm=false;ui.err='';render()">‹ späť na zamestnanca</button>`
         : `<select id="lName"><option value="">— vyber svoje meno —</option>${emps.map(e => `<option value="${esc(e.name)}" ${ui.lName === e.name ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-26g</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-26h</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -556,7 +564,7 @@
         + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-26g</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-26h</footer>`;
     app.innerHTML = html;
   }
 

@@ -109,6 +109,8 @@ body:has(.login:not(.hide)){overflow:hidden}
 @media(max-height:500px){.bar{height:42px}.tabs{padding-bottom:4px}.tabs button{padding:6px}.login{place-items:start center;padding:8px}.login > .card,.login > form{max-height:calc(100dvh - 16px)}.cart-list{max-height:26dvh}}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:20;max-width:90vw}
 .hide{display:none!important}
+/* PIN / kód: bodky ako pri hesle, ale nie je to políčko na heslo (prehliadač neponúka uložené heslá) */
+.pinmask{-webkit-text-security:disc;text-security:disc}
 @media (max-width:560px){.set-row{grid-template-columns:1fr 70px;}.set-row .cat{grid-column:1}.set-row .del{grid-column:2}}
 </style>
 </head>
@@ -136,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-26b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-26c</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -144,7 +146,7 @@ body:has(.login:not(.hide)){overflow:hidden}
     <h2 style="margin-top:0">Kto si?</h2>
     <p class="muted" style="font-size:13px;margin:0 0 8px">Vyber sa zo zoznamu a zadaj svoj kód (rovnaký, aký máš aj vo Smenách).</p>
     <select id="gateName"></select>
-    <input id="gatePin" type="password" inputmode="numeric" placeholder="Tvoj kód" autocomplete="off" onkeydown="if(event.key==='Enter')confirmGateLogin()">
+    <input id="gatePin" type="text" class="pinmask" name="cp-gate-code" inputmode="numeric" placeholder="Tvoj kód" autocomplete="off" data-lpignore="true" data-1p-ignore data-form-type="other" onkeydown="if(event.key==='Enter')confirmGateLogin()">
     <div id="gateErr" style="color:var(--warn);min-height:20px"></div>
     <button class="btn" onclick="confirmGateLogin()">Pokračovať</button>
     <p style="text-align:center;margin-top:14px"><a href="#" onclick="wantManagerLogin=true;render();return false" style="font-size:13px">Prihlásiť ako vedúci</a></p>
@@ -198,6 +200,15 @@ window.FIREBASE_CONFIG = {
   messagingSenderId: "251580957782",
   appId: "1:251580957782:web:801f838e4cd65abb4027f7"
 };
+// (2026-10-26) Prehliadač nemá ponúkať uložené heslá v bežných políčkach (poznámka, suma, PIN Uzávierky…):
+// každé políčko bez vlastného autocomplete dostane autocomplete="off" (aj tie, čo appka dokreslí neskôr).
+// Heslo sa ponúka len v prihlásení vedúceho (#login – vlastný <form> s username/current-password).
+(function () {
+  const off = el => { if (el.matches && el.matches('input:not([autocomplete]):not([type=password]),textarea:not([autocomplete])')) el.setAttribute('autocomplete', 'off'); };
+  const fix = root => { off(root); if (root.querySelectorAll) root.querySelectorAll('input,textarea').forEach(off); };
+  fix(document.documentElement);
+  new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) fix(n); }))).observe(document.documentElement, { childList: true, subtree: true });
+})();
 </script>
 <script>
 const $ = s => document.querySelector(s);
@@ -3089,7 +3100,7 @@ function renderUzavierka() {
     $('#app').innerHTML = hasPin ? `<div class="card" style="max-width:320px;margin:40px auto">
         <h2 style="margin-top:0">Denná uzávierka</h2>
         <label class="muted">Zadaj PIN pre prístup</label>
-        <input id="uzPin" type="password" inputmode="numeric" placeholder="PIN" style="text-align:center;font-size:20px;letter-spacing:4px" autofocus onkeydown="if(event.key==='Enter')unlockUzavierka()">
+        <input id="uzPin" type="text" class="pinmask" name="cp-uz-pin" autocomplete="off" data-lpignore="true" data-1p-ignore data-form-type="other" inputmode="numeric" placeholder="PIN" style="text-align:center;font-size:20px;letter-spacing:4px" autofocus onkeydown="if(event.key==='Enter')unlockUzavierka()">
         <button class="btn" style="margin-top:10px" onclick="unlockUzavierka()">Odomknúť</button>
         <p id="uzPinErr" class="muted" style="color:#e5484d;min-height:18px;margin-top:6px"></p>
       </div>`
