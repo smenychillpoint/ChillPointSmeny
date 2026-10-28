@@ -186,6 +186,12 @@
   let ui = { mgrForm: false, err: '', shopOpen: false, accOpen: false, handDraft: '' };
 
   const allowed = key => isMgr || !me || ((access.e || {})[enc(me)] || {})[key] !== false;
+  // 🎯 Rezervácie: zoznam konkrétnych ľudí (rezWho); kým nie je uložený, platí staré „Aj zamestnanci“ + Prístupy
+  const rezAllowed = name => {
+    const who = access.rezWho && typeof access.rezWho === 'object' ? access.rezWho : null;
+    if (who) return who[enc(name)] === true;
+    return !!access.rezAll && ((access.e || {})[enc(name)] || {}).rezervacie !== false;
+  };
 
   // ---- 📲 pridať appku do mobilu (PWA) - presunuté zo Smien sem, appka sa inštaluje ako celok ----
   let deferredPrompt = null;
@@ -389,7 +395,18 @@
   // ---- nastavenie prístupov (len vedúci) ----
   async function setAccess(name, key, on) {
     if (!isMgr) return;
-    try { await firebase.database().ref(`settings/hubAccess/e/${enc(name)}/${key}`).set(on ? null : false); }
+    try {
+      if (key === 'rezervacie') {
+        // 🎯 Rezervácie sa povoľujú konkrétnym ľuďom (rovnaký zoznam ako v Rezerváciách → ⚙ Kto vidí)
+        const who = { ...(access.rezWho && typeof access.rezWho === 'object' ? access.rezWho : {}) };
+        if (!access.rezWho && access.rezAll) emps.forEach(e => { if (rezAllowed(e.name)) who[enc(e.name)] = true; });
+        delete who._;
+        if (on) who[enc(name)] = true; else delete who[enc(name)];
+        await firebase.database().ref('settings/hubAccess').update({ rezWho: Object.keys(who).length ? who : { _: false }, rezAll: Object.keys(who).length ? true : null });
+        return;
+      }
+      await firebase.database().ref(`settings/hubAccess/e/${enc(name)}/${key}`).set(on ? null : false);
+    }
     catch (e) { toast('Nepodarilo sa uložiť (len vedúci).'); }
   }
 
@@ -413,7 +430,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-27b</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-28</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -501,7 +518,8 @@
     if (allowed('objednavky')) html += `<a class="tile" href="objednavky.html"><span class="ic">🍹</span><span class="tx"><b>Objednávky</b><span>Stoly, bar, atrakcie, platby a uzávierka</span></span><span class="arr">›</span></a>`;
     // (2026-10-26d) 🎯 Rezervácie laser game – vedúci vždy; zamestnanci až keď vedúci v Rezerváciách → ⚙ zapne
     // „Aj zamestnanci“ (settings/hubAccess/rezAll) a človek nemá v Prístupoch odškrtnuté 📆 Rezervácie
-    if (isMgr || (access.rezAll && me && allowed('rezervacie'))) {
+    // (2026-10-28) prístup po ľuďoch: settings/hubAccess/rezWho/<meno> = true (nastavuje sa v Rezerváciách → ⚙ Kto vidí)
+    if (isMgr || (me && rezAllowed(me))) {
       const r = laserStats();
       html += `<a class="tile" href="rezervacie.html" style="border-left-color:var(--blue)"><span class="ic">🎯</span><span class="tx"><b>Rezervácie laser game${r.fresh ? `<span class="badge">${r.fresh}</span>` : ''}</b><span>${r.ok ? `${r.today ? `Dnes: ${r.today} · ` : ''}Nadchádzajúce: ${r.upcoming}${r.fresh ? ` · 🆕 nové: ${r.fresh}` : ''}${laserEnv === 'test' ? ' · 🧪 test' : ''}` : 'Laser game z webu – pridať, upraviť, zrušiť'}</span></span><span class="arr">›</span></a>`;
     }
@@ -559,13 +577,13 @@
         + row('access', '🔐', 'Prístupy zamestnancov', 'Kto čo vidí na úvode a kam sa dostane',
           `<p class="empty" style="margin:0 0 10px">Odškrtni, kam zamestnanec nemá mať prístup. Platí pre úvodnú stránku aj pre prihlásenie do Smien a Objednávok. Vedúci vidí vždy všetko.</p>
           <table class="acc"><tr><th>Zamestnanec</th>${AREAS.map(a => `<th>${a[1]}</th>`).join('')}</tr>
-          ${emps.map(e => { const a = (access.e || {})[enc(e.name)] || {}; return `<tr><td>${esc(e.name)}</td>${AREAS.map(([k]) => `<td><input type="checkbox" ${a[k] === false ? '' : 'checked'} onchange="setAccess('${esc(e.name).replace(/'/g, "\\'")}','${k}',this.checked)"></td>`).join('')}</tr>`; }).join('')}</table>`)
+          ${emps.map(e => { const a = (access.e || {})[enc(e.name)] || {}; return `<tr><td>${esc(e.name)}</td>${AREAS.map(([k]) => `<td><input type="checkbox" ${(k === 'rezervacie' ? !rezAllowed(e.name) : a[k] === false) ? '' : 'checked'} onchange="setAccess('${esc(e.name).replace(/'/g, "\\'")}','${k}',this.checked)"></td>`).join('')}</tr>`; }).join('')}</table>`)
         + link('smeny.html#nastavenia', '📅', 'Nastavenia Smien', 'Prihlasovanie, Môžem/Nemôžem, limity, checklisty, funkcie')
         + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie')
         + link('rezervacie.html#nastavenia', '🎯', 'Nastavenia rezervácií', 'Balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-27b</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-28</footer>`;
     app.innerHTML = html;
   }
 
