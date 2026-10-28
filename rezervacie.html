@@ -792,7 +792,7 @@
     catch (e) { toast('Nepodarilo sa zmazať.'); }
     busyAct = false; render();
   }
-  // ---- 🔒 uzavretá spoločnosť: zaberie všetky hry od–do; čo už má iná partia, ostane jej (appka upozorní) ----
+  // ---- 🔒 uzavretá spoločnosť: zaberie všetky hry od–do; keď tam už niečo je, nedá sa uložiť (appka napíše čo) ----
   let cf = null;   // rozpísaný formulár {id, date, from, to, name, note, err, warn}
   // začiatky hier, ktoré zasahujú do času od–do (rovnaký krok ako mriežka, napr. každých 20 min)
   function closedTimes(fromM, toM) {
@@ -834,10 +834,10 @@
       <p class="hint" style="margin:6px 0">Čas „do“ 00:00–05:59 = po polnoci.</p>
       ${cf.warn ? `<div class="warn" style="margin:8px 0">${cf.warn}</div>` : ''}
       <div class="err">${esc(cf.err)}</div>
-      <div class="acts"><button class="btn${cf.warn ? ' red' : ''}" onclick="saveClosed(${cf.warn ? 'true' : 'false'})">${cf.warn ? '⚠ Uložiť aj tak' : cf.id ? 'Uložiť zmeny' : '🔒 Vyrezervovať'}</button>${cf.id ? '<button class="btn ghost" style="color:var(--red)" onclick="cancelClosed()">✕ Zrušiť uzavretú</button>' : ''}<button class="btn ghost" onclick="closeOv()">Zavrieť</button></div>
+      <div class="acts"><button class="btn" onclick="saveClosed()">${cf.id ? 'Uložiť zmeny' : '🔒 Vyrezervovať'}</button>${cf.id ? '<button class="btn ghost" style="color:var(--red)" onclick="cancelClosed()">✕ Zrušiť uzavretú</button>' : ''}<button class="btn ghost" onclick="closeOv()">Zavrieť</button></div>
     </div></div>`;
   }
-  async function saveClosed(force) {
+  async function saveClosed() {
     blurNow();
     if (!cf || busyAct) return;
     const name = String(cf.name || '').trim().slice(0, 80), note = String(cf.note || '').trim().slice(0, 400), d = cf.date;
@@ -849,13 +849,12 @@
     if (toM - fromM > 18 * 60) return fail('„Do“ musí byť po „od“.');
     const c = closedConflicts(d, fromM, toM, cf.id);
     if (!c.times.length) return fail('V tomto čase nie je žiadna hra.');
-    // ⚠ pozor: v tom čase už niečo je → najprv upozorniť, uložiť až po druhom ťuknutí
-    if (c.list.length && !force) {
-      cf.err = ''; cf.warn = `<b>⚠ Pozor! V tom čase už je:</b><br>${c.list.map(esc).join('<br>')}<br><span style="font-size:12px">${c.busy.length ? 'Časy, ktoré má iná partia, jej ostanú – uzavretá spoločnosť zaberie len voľné. ' : ''}Ak to tak chceš, ťukni „Uložiť aj tak“, inak tú rezerváciu najprv presuň alebo zruš.</span>`;
+    // ⚠ v tom čase už niečo je (hra, stôl, atrakcia) → uzavretá sa NEULOŽÍ, kým sa to nepresunie alebo nezruší
+    if (c.list.length) {
+      cf.err = ''; cf.warn = `<b>⚠ Pozor! Uzavretú spoločnosť sa nedá vyrezervovať – v tom čase už je:</b><br>${c.list.map(esc).join('<br>')}<br><span style="font-size:12px">Najprv túto rezerváciu presuň alebo zruš, alebo zmeň čas od – do.</span>`;
       return render();
     }
-    const free = c.times.filter(t => !busyBy(d, t, cf.id));
-    if (!free.length) return fail('Všetky hry v tom čase už majú iné partie.');
+    const free = c.times;
     const db = firebase.database(), id = cf.id || db.ref(`${base()}/bookings`).push().key, old = cf.id ? (bookings[cf.id] || {}) : null, u = {};
     const games = {}; free.forEach(t => { games[rawKey(d, t)] = true; });
     u[`${base()}/bookings/${id}`] = { name, players: 1, games, consent: true, createdAt: old && old.createdAt ? old.createdAt : firebase.database.ServerValue.TIMESTAMP,
@@ -1464,7 +1463,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-29b</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-29c</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
