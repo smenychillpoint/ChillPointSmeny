@@ -68,6 +68,10 @@
     .nb{display:inline-block;background:var(--yellow);color:#111;font-size:10px;font-weight:900;padding:1px 4px;margin-right:4px;vertical-align:middle}
     .ar{color:var(--blue);font-size:11px;font-weight:700}
     .attr{border-left:5px solid var(--purple)}
+    .attr2{border-left:5px solid #22b8cf}
+    .attr2 .ln{padding:7px 0;border-top:1px solid var(--line,#333);cursor:pointer}
+    .attr2 .aw{color:#22b8cf;font-weight:800}
+    .cd .acnt{display:block;font-size:10px;color:#22b8cf}
     .attr .ln{padding:8px 0;border-top:1px solid #2b2e33;font-size:14px;line-height:1.45;cursor:pointer}
     .attr .ln:first-of-type{border-top:0}
     /* zoznam a detail */
@@ -467,7 +471,75 @@
     busyAct = false;
   }
   function openDetail(id) { sel = id; render(); }
-  function closeOv() { sel = ''; f = null; render(); }
+  function closeOv() { sel = ''; f = null; af = null; render(); }
+
+  // ---- 🎮 ostatné atrakcie (VR, PS5, ping pong…) – vlastná rezervácia mimo laser game (2026-10-28) ----
+  // laser/<env>/attr/<id> = {date, time 'HH:MM', what, name, people, dur (min), note?, createdAt}; web ich nevidí
+  let attrs = {}, af = null;   // af = rozpísaný formulár atrakcie (af.id = úprava)
+  const ATTR_DEF = ['VR', 'PS5', 'Xbox', 'Ping pong', 'Air hockey', 'Šípky'];
+  const attrList = d => Object.entries(attrs || {}).map(([id, a]) => ({ id, ...a })).filter(a => a && a.date === d && a.time)
+    .sort((x, y) => x.time.localeCompare(y.time) || String(x.what).localeCompare(String(y.what), 'sk'));
+  const attrEnd = a => toTime(toMin(a.time) + (+a.dur || 0));
+  function attrBoxHtml(d) {
+    const list = attrList(d);
+    const clash = (a, i) => list.some((b, j) => j !== i && b.what.toLowerCase() === a.what.toLowerCase() && toMin(a.time) < toMin(attrEnd(b)) && toMin(b.time) < toMin(attrEnd(a)));
+    return `<div class="card attr2"><div style="display:flex;align-items:center;gap:8px;margin-bottom:${list.length ? 8 : 0}px">
+        <b style="flex:1">🎮 Ostatné atrakcie</b><button class="btn sm" onclick="openAttr('',{date:'${d}'})">➕ Atrakcia</button></div>
+      ${list.length ? list.map((a, i) => `<div class="ln" onclick="openAttr('${a.id}')"><b>${esc(a.time)}–${esc(attrEnd(a))}</b> · <span class="aw">${esc(a.what)}</span> · <b>${esc(a.name)}</b>${a.people ? ` (${esc(a.people)})` : ''}${a.note ? `<br><small>📝 ${esc(a.note)}</small>` : ''}${clash(a, i) ? '<div class="err" style="margin:4px 0 0">⚠ V tom čase je ' + esc(a.what) + ' už rezervované</div>' : ''}</div>`).join('')
+        : '<div class="hint" style="margin-top:4px">Zatiaľ nič – VR, PS5, ping pong… mimo laser game.</div>'}</div>`;
+  }
+  function openAttr(id, preset) {
+    const a = id && attrs[id];
+    af = a ? { id, date: a.date, time: a.time, what: a.what || '', name: a.name || '', people: a.people || '', dur: a.dur || 60, note: a.note || '', err: '' }
+      : { id: '', date: (preset && preset.date) || sheetDay, time: (preset && preset.time) || '15:00', what: 'VR', name: '', people: '', dur: 60, note: '', err: '' };
+    sel = ''; f = null; render();
+  }
+  function afSet(k, v) { if (af) af[k] = v; }
+  function attrFormHtml() {
+    const used = [...new Set(ATTR_DEF.concat(Object.values(attrs || {}).map(a => a && a.what).filter(Boolean)))];
+    return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box">
+      <button class="x" onclick="closeOv()">✕</button>
+      <h3>${af.id ? '✎ Upraviť atrakciu' : '🎮 Rezervovať atrakciu'}</h3>
+      <div class="row2"><div><label class="f">Deň</label><input id="aDate" type="date" value="${esc(af.date)}" oninput="afSet('date',this.value)"></div>
+        <div><label class="f">Od</label><input id="aTime" type="time" step="300" value="${esc(af.time)}" oninput="afSet('time',this.value)"></div></div>
+      <label class="f">Atrakcia</label>
+      <div class="chips">${used.map(w => `<button class="chip${af.what === w ? ' on' : ''}" onclick="afSet('what',this.textContent);render()">${esc(w)}</button>`).join('')}</div>
+      <input id="aWhat" maxlength="40" value="${esc(af.what)}" placeholder="alebo napíš inú" oninput="afSet('what',this.value)">
+      <label class="f">Meno (kto)</label><input id="aName" maxlength="80" value="${esc(af.name)}" placeholder="Meno a priezvisko" oninput="afSet('name',this.value)">
+      <div class="row2"><div><label class="f">Koľko osôb</label><input id="aPeople" type="number" inputmode="numeric" min="1" max="50" value="${esc(af.people)}" oninput="afSet('people',this.value)"></div>
+        <div><label class="f">Ako dlho (min)</label><input id="aDur" type="number" inputmode="numeric" min="5" max="600" step="5" value="${esc(af.dur)}" oninput="afSet('dur',this.value)"></div></div>
+      <label class="f">Poznámka</label><textarea id="aNote" maxlength="400" oninput="afSet('note',this.value)">${esc(af.note)}</textarea>
+      <div class="err">${esc(af.err)}</div>
+      <div class="acts"><button class="btn" onclick="saveAttr()">${af.id ? 'Uložiť zmeny' : 'Rezervovať'}</button>${af.id ? '<button class="btn ghost" style="color:var(--red)" onclick="delAttr()">🗑 Zmazať</button>' : ''}<button class="btn ghost" onclick="closeOv()">Zrušiť</button></div>
+    </div></div>`;
+  }
+  async function saveAttr() {
+    blurNow();
+    if (!af || busyAct) return;
+    const what = String(af.what || '').trim().slice(0, 40), name = String(af.name || '').trim().slice(0, 80);
+    const people = af.people === '' ? 0 : Math.round(+af.people), dur = Math.round(+af.dur);
+    const fail = m => { af.err = m; render(); };
+    if (!/^20\d\d-\d\d-\d\d$/.test(af.date)) return fail('Vyber deň.');
+    if (!/^[0-2]\d:[0-5]\d$/.test(af.time)) return fail('Zadaj čas.');
+    if (!what) return fail('Vyber alebo napíš atrakciu.');
+    if (name.length < 2) return fail('Zadaj meno.');
+    if (!(dur >= 5 && dur <= 600)) return fail('Dĺžka 5–600 min.');
+    if (people && !(people >= 1 && people <= 50)) return fail('Počet osôb 1–50.');
+    const id = af.id || firebase.database().ref(`${base()}/attr`).push().key, old = af.id ? attrs[af.id] : null;
+    const v = { date: af.date, time: af.time, what, name, dur, createdAt: old && old.createdAt ? old.createdAt : firebase.database.ServerValue.TIMESTAMP };
+    if (people) v.people = people;
+    const note = String(af.note || '').trim().slice(0, 400); if (note) v.note = note;
+    busyAct = true;
+    try { await firebase.database().ref(`${base()}/attr/${id}`).set(v); busyAct = false; toast(af.id ? 'Atrakcia upravená ✓' : '🎮 Atrakcia rezervovaná ✓'); sheetDay = v.date; calMonth = v.date.slice(0, 7); af = null; render(); }
+    catch (e) { busyAct = false; console.error('[atrakcie]', e); fail('Nepodarilo sa uložiť. Sú vo Firebase vložené nové pravidlá (attr)?'); }
+  }
+  async function delAttr() {
+    if (!af || !af.id || busyAct || !confirm(`Zmazať atrakciu ${af.what} – ${af.name}?`)) return;
+    busyAct = true;
+    try { await firebase.database().ref(`${base()}/attr/${af.id}`).remove(); toast('Atrakcia zmazaná'); af = null; }
+    catch (e) { toast('Nepodarilo sa zmazať.'); }
+    busyAct = false; render();
+  }
   async function setStatus(id, st) {
     if (busyAct) return; busyAct = true;
     try { await firebase.database().ref(`${base()}/bookings/${id}/status`).set(st); toast(STATUS[st]); }
@@ -678,6 +750,7 @@
       ${attrs.length ? `<div class="card attr"><b>🎁 Balíčky – atrakcie</b>${overlap ? '<div class="err" style="margin-top:6px">⚠ Atrakcie dvoch skupín sa prekrývajú – budú obsadené naraz.</div>' : ''}
         ${attrs.map(({ b, a }) => `<div class="ln" onclick="openDetail('${b.id}')"><b>${esc(b.name)}</b> (${esc(b.players)}) · ${esc(pkgOf(b).name)} · začiatok ${esc(b.mStart || firstGame(b).time)} · ${b.mOrder === 'attr' ? 'najprv atrakcie' : 'najprv laser game'}<br>
           <span style="color:var(--purple)">🎮 ${esc(pkgOf(b).attrText || 'atrakcie')} cca ${toTime(a.from)}–${toTime(a.to)}${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}</span>${b.seat ? ` · 📍 ${esc(b.seat)}` : ''}</div>`).join('')}</div>` : ''}
+      ${attrBoxHtml(d)}
       <div class="sheet">
         <div class="col">${head}${times.slice(0, half).map(row).join('')}</div>
         <div class="col">${head}${times.slice(half).map(row).join('')}</div>
@@ -709,9 +782,9 @@
     let cells = '';
     for (let i = 0; i < lead; i++) cells += '<span class="cd blank"></span>';
     for (let n = 1; n <= dim; n++) {
-      const k = `${y}-${pad(mo)}-${pad(n)}`, s = st[k], closed = !hoursFor(k);
+      const k = `${y}-${pad(mo)}-${pad(n)}`, s = st[k], closed = !hoursFor(k), an = attrList(k).length;
       cells += `<button class="cd${k === tk ? ' today' : ''}${k === sheetDay ? ' on' : ''}${closed ? ' closed' : ''}${k < tk ? ' past' : ''}" onclick="goDay('${k}')">
-        <span class="dn">${n}</span>${s ? `<span class="cnt">${s.n}${s.fresh ? ' 🆕' : ''}</span>` : closed ? '<span class="cl">zatv.</span>' : ''}</button>`;
+        <span class="dn">${n}</span>${s ? `<span class="cnt">${s.n}${s.fresh ? ' 🆕' : ''}</span>` : closed && !an ? '<span class="cl">zatv.</span>' : ''}${an ? `<span class="acnt">🎮${an}</span>` : ''}</button>`;
     }
     return `<div class="cal">${['Po', 'Ut', 'St', 'Št', 'Pi', 'So', 'Ne'].map(x => `<span class="cw">${x}</span>`).join('')}${cells}</div>`;
   }
@@ -724,7 +797,8 @@
         <button class="btn ghost sm" onclick="calShift(1)">›</button></div>
       ${calGridHtml()}
       ${calMonth !== tk.slice(0, 7) || sheetDay !== tk ? '<button class="btn ghost sm" style="margin-bottom:6px" onclick="goDay(todayKey())">Dnes</button>' : ''}
-      ${dayTableHtml(sheetDay)}`;
+      ${dayTableHtml(sheetDay)}
+      ${attrBoxHtml(sheetDay)}`;
   }
   function dayTableHtml(d) {
     const tk = todayKey(), now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes(), contact = canSeeContact();
@@ -1071,8 +1145,9 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-28</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-28b</footer>`;
     if (f) html += formHtml();
+    else if (af) html += attrFormHtml();
     else if (sel && bookings[sel]) html += detailHtml({ id: sel, ...bookings[sel] });
     app.innerHTML = html;
     const ov = document.querySelector('.ov'); if (ov && ovScroll) ov.scrollTop = ovScroll;
@@ -1094,6 +1169,11 @@
     const cCb = cRef.on('value', s => { cfgRaw = s.val(); applyCfg(cfgRaw); cfgLoaded = true; if (!cfgDirty) cfgF = null; render(); },
       e => { console.error('[rezervácie config]', e); cfgLoaded = true; render(); });
     offFns.push(() => bRef.off('value', bCb), () => sRef.off('value', sCb), () => cRef.off('value', cCb));
+    // 🎮 ostatné atrakcie (bez nových pravidiel sa len nenačítajú – laser game ide ďalej)
+    attrs = {}; af = null;
+    const aRef = db.ref(`${base()}/attr`);
+    const aCb = aRef.on('value', s => { attrs = s.val() || {}; render(); }, e => console.warn('[atrakcie] treba nové pravidlá (laser/attr)', e));
+    offFns.push(() => aRef.off('value', aCb));
     // 📞 kontakty zákazníkov – len vedúci (zdieľané zariadenie ich čítať nesmie)
     contacts = {}; contactsLoaded = false;
     if (canSeeContact()) {
@@ -1163,7 +1243,7 @@
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
   render();
   window.addEventListener('focusout', () => setTimeout(render, 50));
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && (f || sel)) closeOv(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && (f || sel || af)) closeOv(); });
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
   }
