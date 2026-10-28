@@ -70,6 +70,10 @@
     .pk{display:inline-block;font-size:11px;font-weight:800;border-radius:6px;padding:2px 5px;line-height:1.25;white-space:normal;max-width:100%}
     .pk.mc{background:var(--purple);color:#fff}
     .pk.of{background:#3a2f0b;color:var(--yellow)}
+    .pk.cl{background:#e03131;color:#fff}
+    .addrow{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+    .addrow .btn{flex:1 1 200px}
+    .cd .ccl{display:block;font-size:10px;color:#ff6b6b;font-weight:800}
     .sr .t.late,.slot.late{color:#5cc8ff}
     .side2{display:grid;grid-template-columns:minmax(0,1fr);gap:0 14px}
     @media(min-width:760px){.side2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
@@ -243,7 +247,10 @@
   }
   function pkgs() { const src = pkgRaw && Object.keys(pkgRaw).length ? pkgRaw : PKG_DEF; const out = {}; Object.keys(src).forEach(id => { if (src[id]) out[id] = pkgNorm(src[id]); }); return out; }
   // balíček rezervácie (null = len laser game); neznámy balíček (zmazaný v nastaveniach) → predvolené hodnoty s jeho id
-  const pkgOf = b => (b && b.pkg && b.pkg !== 'laser') ? (pkgs()[b.pkg] || pkgNorm({ name: b.pkg === 'monster' ? 'Monster Chill' : b.pkg })) : null;
+  const pkgOf = b => (b && b.pkg && b.pkg !== 'laser' && b.pkg !== CLOSED_PKG) ? (pkgs()[b.pkg] || pkgNorm({ name: b.pkg === 'monster' ? 'Monster Chill' : b.pkg })) : null;
+  // 🔒 uzavretá spoločnosť (2026-10-29) = rezervácia s pkg 'uzavreta', ktorá zaberie všetky hry od–do (na webe sú obsadené)
+  const CLOSED_PKG = 'uzavreta';
+  const isClosed = b => !!b && b.pkg === CLOSED_PKG;
   const pkgShort = p => p.name.split(/\s+/).filter(Boolean).map(w => w[0]).join('').toUpperCase().slice(0, 4) || 'B';
   const STATUS = { new: '🆕 nová', confirmed: '✓ potvrdená', arrived: '🚶 prišli', cancelled: '✕ zrušená' };
   const DAY_NAMES = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
@@ -306,7 +313,7 @@
     return list.filter(o => n >= o.minPlayers).sort((a, c) => oRate(c) - oRate(a) || a.paid - c.paid)[0] || null;
   }
   function offerInfo(b, date) {
-    const o = offerOn() && !isMc(b) ? offerFor(b) : null;
+    const o = offerOn() && !isMc(b) && !isClosed(b) ? offerFor(b) : null;
     if (!o) return null;
     const bundle = o.paid + o.free, day = gamesOf(b).filter(g => g.date === date);
     const free = day.filter((g, i) => i % bundle >= o.paid).map(g => g.time);
@@ -503,7 +510,7 @@
     busyAct = false;
   }
   function openDetail(id) { sel = id; render(); }
-  function closeOv() { sel = ''; f = null; af = null; tf = null; render(); }
+  function closeOv() { sel = ''; f = null; af = null; tf = null; cf = null; render(); }
 
   // ---- 🍽 stoly a 🎮 atrakcie v hárku dňa – prepojené s Objednávkami (2026-10-28) ----
   // Stôl = priamo záznam v Objednávkach (queue/<id> = {name, note, tableId, people, reserveAt, type:'', createdAt}).
@@ -785,9 +792,88 @@
     catch (e) { toast('Nepodarilo sa zmazať.'); }
     busyAct = false; render();
   }
+  // ---- 🔒 uzavretá spoločnosť: zaberie všetky hry od–do; čo už má iná partia, ostane jej (appka upozorní) ----
+  let cf = null;   // rozpísaný formulár {id, date, from, to, name, note, err, warn}
+  // začiatky hier, ktoré zasahujú do času od–do (rovnaký krok ako mriežka, napr. každých 20 min)
+  function closedTimes(fromM, toM) {
+    const st = Math.max(5, +B.step || 20), g = +B.game || 15, out = [];
+    for (let m = Math.ceil((fromM - g + 1) / st) * st; m < toM; m += st) out.push(toTime(m));
+    return out;
+  }
+  const closedRange = b => { const g = gamesOf(b); return g.length ? [showT(g[0].time), showM(toMin(g[g.length - 1].time) + BLOCK)] : ['', '']; };
+  function openClosed(id, preset) {
+    const b = id && bookings[id];
+    if (b) { const [from, to] = closedRange(b); cf = { id, date: (firstGame(b) || {}).date || sheetDay, from, to, name: b.name || '', note: b.note || '', err: '', warn: '' }; }
+    else {
+      const d = (preset && preset.day) || sheetDay, h = hoursFor(d);
+      cf = { id: '', date: d, from: h ? showM(h[0]) : '18:00', to: h ? showM(h[1]) : '22:00', name: 'Uzavretá spoločnosť', note: '', err: '', warn: '' };
+    }
+    sel = ''; f = null; af = null; tf = null; render();
+  }
+  function cfSet(k, v) { if (cf) { cf[k] = v; cf.warn = ''; } }
+  // čo už v tom čase je: iné partie (ich časy ostanú im), stoly a atrakcie
+  function closedConflicts(d, fromM, toM, selfId) {
+    const times = closedTimes(fromM, toM), byB = {};
+    times.forEach(t => { const o = busyBy(d, t, selfId); if (o) (byB[o] = byB[o] || []).push(t); });
+    const parties = Object.keys(byB).map(id => { const b = bookings[id] || {}, g = gamesOf({ id, ...b }).filter(x => x.date === d && toMin(x.time) < toM && toMin(x.time) + BLOCK > fromM).map(x => showT(x.time));
+      return `🔫 ${b.name || 'iná partia'} (${g.join(', ') || byB[id].map(showT).join(', ')})`; });
+    const tbl = qList().filter(q => q.tableId && qDay(q, d) && toMin(qTime(q)) >= fromM && toMin(qTime(q)) < toM).map(q => `🍽 ${tableName(q.tableId) || 'stôl'} ${q.name} (${showT(qTime(q))})`);
+    const at = attrList(d).filter(a => toMin(a.time) < toM && toMin(attrEnd(a)) > fromM).map(a => `🎮 ${attrLabel(a)} ${a.name} (${showT(a.time)})`);
+    return { times, busy: Object.values(byB).flat(), list: parties.concat(tbl, at) };
+  }
+  function closedFormHtml() {
+    return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box">
+      <button class="x" onclick="closeOv()">✕</button>
+      <h3>${cf.id ? '✎ Upraviť uzavretú spoločnosť' : '🔒 Uzavretá spoločnosť'}</h3>
+      <p class="hint" style="margin:0 0 8px">Zaberie všetky hry laser game od – do, na webe budú tieto časy obsadené.</p>
+      <label class="f">Deň</label><input id="cDate" type="date" value="${esc(cf.date)}" oninput="cfSet('date',this.value)">
+      <div class="row2"><div><label class="f">Od</label><input id="cFrom" type="time" step="300" value="${esc(cf.from)}" oninput="cfSet('from',this.value)"></div>
+        <div><label class="f">Do</label><input id="cTo" type="time" step="300" value="${esc(cf.to)}" oninput="cfSet('to',this.value)"></div></div>
+      <label class="f">Kto / názov</label><input id="cName" maxlength="80" value="${esc(cf.name)}" placeholder="napr. Firma XY – teambuilding" oninput="cfSet('name',this.value)">
+      <label class="f">Poznámka</label><textarea id="cNote" maxlength="400" oninput="cfSet('note',this.value)" placeholder="napr. počet ľudí, kontakt, záloha…">${esc(cf.note)}</textarea>
+      <p class="hint" style="margin:6px 0">Čas „do“ 00:00–05:59 = po polnoci.</p>
+      ${cf.warn ? `<div class="warn" style="margin:8px 0">${cf.warn}</div>` : ''}
+      <div class="err">${esc(cf.err)}</div>
+      <div class="acts"><button class="btn${cf.warn ? ' red' : ''}" onclick="saveClosed(${cf.warn ? 'true' : 'false'})">${cf.warn ? '⚠ Uložiť aj tak' : cf.id ? 'Uložiť zmeny' : '🔒 Vyrezervovať'}</button>${cf.id ? '<button class="btn ghost" style="color:var(--red)" onclick="cancelClosed()">✕ Zrušiť uzavretú</button>' : ''}<button class="btn ghost" onclick="closeOv()">Zavrieť</button></div>
+    </div></div>`;
+  }
+  async function saveClosed(force) {
+    blurNow();
+    if (!cf || busyAct) return;
+    const name = String(cf.name || '').trim().slice(0, 80), note = String(cf.note || '').trim().slice(0, 400), d = cf.date;
+    const fail = m => { cf.err = m; cf.warn = ''; render(); };
+    if (!/^20\d\d-\d\d-\d\d$/.test(d)) return fail('Vyber deň.');
+    if (!/^[0-2]\d:[0-5]\d$/.test(cf.from || '') || !/^[0-2]\d:[0-5]\d$/.test(cf.to || '')) return fail('Zadaj čas od – do.');
+    if (name.length < 3) return fail('Napíš, kto to je (aspoň 3 znaky).');
+    const fromM = toMin(bizTime(cf.from)); let toM = toMin(bizTime(cf.to)); if (toM <= fromM) toM += 1440;
+    if (toM - fromM > 18 * 60) return fail('„Do“ musí byť po „od“.');
+    const c = closedConflicts(d, fromM, toM, cf.id);
+    if (!c.times.length) return fail('V tomto čase nie je žiadna hra.');
+    // ⚠ pozor: v tom čase už niečo je → najprv upozorniť, uložiť až po druhom ťuknutí
+    if (c.list.length && !force) {
+      cf.err = ''; cf.warn = `<b>⚠ Pozor! V tom čase už je:</b><br>${c.list.map(esc).join('<br>')}<br><span style="font-size:12px">${c.busy.length ? 'Časy, ktoré má iná partia, jej ostanú – uzavretá spoločnosť zaberie len voľné. ' : ''}Ak to tak chceš, ťukni „Uložiť aj tak“, inak tú rezerváciu najprv presuň alebo zruš.</span>`;
+      return render();
+    }
+    const free = c.times.filter(t => !busyBy(d, t, cf.id));
+    if (!free.length) return fail('Všetky hry v tom čase už majú iné partie.');
+    const db = firebase.database(), id = cf.id || db.ref(`${base()}/bookings`).push().key, old = cf.id ? (bookings[cf.id] || {}) : null, u = {};
+    const games = {}; free.forEach(t => { games[rawKey(d, t)] = true; });
+    u[`${base()}/bookings/${id}`] = { name, players: 1, games, consent: true, createdAt: old && old.createdAt ? old.createdAt : firebase.database.ServerValue.TIMESTAMP,
+      status: 'confirmed', source: 'admin', pkg: CLOSED_PKG, ...(note ? { note } : {}) };
+    if (old) gamesOf(old).forEach(g => { if (!games[g.key]) { const rd = g.key.slice(0, 10), hm = g.key.slice(11); if ((slots[rd] || {})[hm] === id) u[`${base()}/slots/${rd}/${hm}`] = null; } });
+    Object.keys(games).forEach(k => { u[`${base()}/slots/${k.slice(0, 10)}/${k.slice(11)}`] = id; });
+    busyAct = true;
+    try { await db.ref().update(u); busyAct = false; toast(`🔒 Vyrezervované ${showT(free[0])}–${showM(toMin(free[free.length - 1]) + BLOCK)} ✓`); sheetDay = d; calMonth = d.slice(0, 7); cf = null; render(); }
+    catch (e) { busyAct = false; console.error('[uzavretá]', e); fail('Nepodarilo sa uložiť, skús znova.'); }
+  }
+  async function cancelClosed() {
+    const id = cf && cf.id; if (!id) return;
+    cf = null; await cancelBooking(id); render();
+  }
   // preset = {day, time} pri ťuknutí na prázdny riadok hárku
   function openForm(id, preset) {
     const b = id ? bookings[id] : null;
+    if (b && isClosed(b)) return openClosed(id);
     sel = '';
     if (b) {
       const fg = firstGame(b) || {}, c = contactOf({ id, ...b }), q = tableQOf(b), qd = q && q.reserveAt ? new Date(q.reserveAt) : null;
@@ -914,11 +1000,12 @@
   const closedNote = d => hoursFor(d) ? '' : `<div class="warn">🚫 Podľa nastavení je ${esc(dayTitle(d))} zatvorené${(B.daysOff || []).includes(d) ? ' (deň voľna)' : ''} – web v tento deň rezervácie neprijíma. Vedúci môže zapísať výnimku.</div>`;
   // (2026-10-29) každá partia v dni má vlastnú farbu (hárok aj tabuľka dňa), nech sa riadky dvoch partií nepletú;
   // farby idú po poradí prvej hry v ten deň, takže susedné partie majú vždy inú farbu
-  const PARTY_COLORS = ['#f5c518', '#4dabf7', '#51cf66', '#ff8787', '#cc5de8', '#ff922b', '#22b8cf', '#f06595', '#94d82d', '#9775fa'];
+  const PARTY_COLORS = ['#f5c518', '#4dabf7', '#51cf66', '#ff8787', '#cc5de8', '#ff922b', '#22b8cf', '#f06595', '#94d82d', '#9775fa'], CLOSED_COLOR = '#e03131';
   function partyColors(d) {
     const m = {};
     live().filter(b => b.status !== 'cancelled').map(b => ({ b, g: gamesOf(b).filter(x => x.date === d) })).filter(x => x.g.length)
       .sort((x, y) => x.g[0].time.localeCompare(y.g[0].time) || x.b.id.localeCompare(y.b.id))
+      .filter(x => { if (isClosed(x.b)) { m[x.b.id] = CLOSED_COLOR; return false; } return true; })   // uzavretá má vždy svoju farbu
       .forEach((x, i) => { m[x.b.id] = PARTY_COLORS[i % PARTY_COLORS.length]; });
     return m;
   }
@@ -927,7 +1014,7 @@
     const dayG = live().filter(b => b.status !== 'cancelled').flatMap(b => gamesOf(b).filter(g => g.date === d).map(g => g.time));
     const times = [...new Set(gridTimes(d).concat(dayG.filter(t => toMin(t) >= 1440)))].sort(), rows = sheetRows(d, times);   // hra po polnoci aj mimo mriežky
     const dayBk = live().filter(b => b.status !== 'cancelled' && gamesOf(b).some(g => g.date === d));
-    const ppl = dayBk.reduce((s, b) => s + (+b.players || 0), 0), nNew = dayBk.filter(b => (b.status || 'new') === 'new').length;
+    const ppl = dayBk.reduce((s, b) => s + (isClosed(b) ? 0 : +b.players || 0), 0), nNew = dayBk.filter(b => (b.status || 'new') === 'new').length;
     const quick = [0, 1, 2, 3, 4, 5, 6].map(n => { const k = addDays(tk, n), x = new Date(k + 'T12:00:00');
       return `<button class="chip${k === d ? ' on' : ''}" onclick="goDay('${k}')">${n === 0 ? 'Dnes' : n === 1 ? 'Zajtra' : DAY_NAMES[x.getDay()].slice(0, 2) + ' ' + x.getDate() + '.'}</button>`; }).join('');
     const row = t => {
@@ -938,8 +1025,8 @@
       const c = its.length ? pc[its[0].b.id] : '';
       return `<div class="sr${t.endsWith(':00') ? ' hour' : ''}${its.length ? ' has' : ''}${mc ? ' mc' : ''}${past ? ' past' : ''}"${c ? ` style="--pc:${c};--pcb:${c}24"` : ''}${click ? ` onclick="${click}"` : ''}>
         <span class="t${toMin(t) >= 1440 ? ' late' : ''}">${showT(t)}</span>
-        <span>${cell(x => `${(x.b.status || 'new') === 'new' ? '<span class="nb">NOVÁ</span>' : ''}<b style="color:${pc[x.b.id] || 'inherit'}">${esc(x.b.name)}</b>${x.time !== t ? ` <small>${showT(x.time)}</small>` : ''}${isPlayed(x.b, rawKey(d, x.time)) ? ' <span class="ar">🏁</span>' : x.b.status === 'arrived' ? ' <span class="ar">🚶</span>' : ''}${x.of > 1 ? ` <small>${x.n}/${x.of}</small>` : ''}`)}</span>
-        <span>${cell(x => `<b>${esc(x.b.players)}</b>`)}</span>
+        <span>${cell(x => `${(x.b.status || 'new') === 'new' ? '<span class="nb">NOVÁ</span>' : ''}<b style="color:${pc[x.b.id] || 'inherit'}">${isClosed(x.b) ? '🔒 ' : ''}${esc(x.b.name)}</b>${x.time !== t ? ` <small>${showT(x.time)}</small>` : ''}${isPlayed(x.b, rawKey(d, x.time)) ? ' <span class="ar">🏁</span>' : x.b.status === 'arrived' ? ' <span class="ar">🚶</span>' : ''}${x.of > 1 && !isClosed(x.b) ? ` <small>${x.n}/${x.of}</small>` : ''}`)}</span>
+        <span>${cell(x => isClosed(x.b) ? '—' : `<b>${esc(x.b.players)}</b>`)}</span>
         <span>${cell(x => esc(x.b.seat || ''))}</span>
         <span>${cell(x => pkgCellHtml(x.b, d, x.time))}</span></div>`;
     };
@@ -955,7 +1042,7 @@
           <button class="btn ghost sm" onclick="calShift(1)">›</button></div>
         ${calGridHtml()}
         ${d !== tk ? '<button class="btn ghost sm" onclick="goDay(todayKey())">Dnes</button>' : ''}</div>
-      <button class="btn" style="width:100%;margin-bottom:10px" onclick="openForm('',{day:sheetDay})">➕ Rezervovať na ${esc(dayTitle(d))}</button>
+      <div class="addrow"><button class="btn" onclick="openForm('',{day:sheetDay})">➕ Rezervovať na ${esc(dayTitle(d))}</button><button class="btn ghost" onclick="openClosed('',{day:sheetDay})">🔒 Uzavretá spoločnosť</button></div>
       ${closedNote(d)}
       ${dayExtrasHtml(d)}
       <div class="sheet">
@@ -977,6 +1064,7 @@
   }
   // stĺpec „Balík“ v hárku: Monster Chill / ponuka 3+1 (a ktorá hra je zadarmo)
   function pkgCellHtml(b, d, time) {
+    if (isClosed(b)) return '<span class="pk cl">🔒 Uzavretá</span>';
     if (isMc(b)) return `<span class="pk mc" title="${esc(pkgOf(b).name)}">${esc(pkgOf(b).name)}</span>`;
     const oi = offerInfo(b, d);
     return oi ? `<span class="pk of">${esc(oi.name)}${oi.free.includes(time) ? ' · zadarmo' : ''}</span>` : '';
@@ -1007,6 +1095,7 @@
       const k = bizOfTs(q.reserveAt).date, e = extraCnt[k] = extraCnt[k] || { a: 0, t: 0 };
       if (q.tableId) e.t++; else e.a++;
     });
+    const closedDays = new Set(live().filter(b => isClosed(b) && b.status !== 'cancelled').flatMap(b => gamesOf(b).map(g => g.date)));
     let cells = '';
     for (let i = 0; i < lead; i++) cells += '<span class="cd blank"></span>';
     for (let n = 1; n <= dim; n++) {
@@ -1014,7 +1103,7 @@
       // atrakcie aj z Objednávok (🎮) a rezervované stoly (🍽) – aby bolo v kalendári vidno všetko, čo je v ten deň
       const an = attrList(k).length + ex.a, tn = ex.t;
       cells += `<button class="cd${k === tk ? ' today' : ''}${k === sheetDay ? ' on' : ''}${closed ? ' closed' : ''}${k < tk ? ' past' : ''}" onclick="goDay('${k}')">
-        <span class="dn">${n}</span>${s ? `<span class="cnt">${s.n}${s.fresh ? ' 🆕' : ''}</span>` : closed && !an && !tn ? '<span class="cl">zatv.</span>' : ''}${an || tn ? `<span class="acnt">${an ? `🎮${an}` : ''}${an && tn ? ' ' : ''}${tn ? `🍽${tn}` : ''}</span>` : ''}</button>`;
+        <span class="dn">${n}</span>${s ? `<span class="cnt">${s.n}${s.fresh ? ' 🆕' : ''}</span>` : closed && !an && !tn ? '<span class="cl">zatv.</span>' : ''}${an || tn ? `<span class="acnt">${an ? `🎮${an}` : ''}${an && tn ? ' ' : ''}${tn ? `🍽${tn}` : ''}</span>` : ''}${closedDays.has(k) ? '<span class="ccl">🔒 uzavr.</span>' : ''}</button>`;
     }
     return `<div class="cal">${['Po', 'Ut', 'St', 'Št', 'Pi', 'So', 'Ne'].map(x => `<span class="cw">${x}</span>`).join('')}${cells}</div>`;
   }
@@ -1036,7 +1125,7 @@
     const starts = {};
     act.forEach(b => gamesOf(b).filter(g => g.date === d).forEach(g => { (starts[g.time] = starts[g.time] || []).push(b); }));
     const times = [...new Set(gridTimes(d).concat(Object.keys(starts)))].sort();
-    const ppl = act.reduce((s, b) => s + (+b.players || 0), 0), hrs = hoursFor(d);
+    const ppl = act.reduce((s, b) => s + (isClosed(b) ? 0 : +b.players || 0), 0), hrs = hoursFor(d);
     const isPast = t => d < tk || (d === tk && toMin(t) + (+B.step || 20) <= nowMin);
     const row = t => {
       const bs = starts[t] || [], past = isPast(t) ? ' past' : '';
@@ -1049,7 +1138,7 @@
         const st = STATUS[b.status] ? b.status : 'new', g = gamesOf(b), n = g.findIndex(x => x.date === d && x.time === t) + 1;
         const key = rawKey(d, t), pl = isPlayed(b, key), c = contactOf(b), tq = tableQOf(b);
         return `<tr class="bkr st-${st}${isMc(b) ? ' mc' : ''}${pl ? ' played' : ''}${past}"${pc[b.id] ? ` style="box-shadow:inset 6px 0 0 ${pc[b.id]}"` : ''}><td class="t">${showT(t)}${pl ? '<br><small>🏁</small>' : ''}</td>
-          <td><a class="nm" onclick="openDetail('${b.id}')"${pc[b.id] ? ` style="color:${pc[b.id]}"` : ''}>${esc(b.name)}</a>${g.length > 1 ? ` <small class="mut">${n}/${g.length}</small>` : ''}${isMc(b) ? ` <span class="tag mc">🎁 ${esc(pkgOf(b).name)}</span>` : ''}${offerTagHtml(b, d, t)}
+          <td><a class="nm" onclick="openDetail('${b.id}')"${pc[b.id] ? ` style="color:${pc[b.id]}"` : ''}>${isClosed(b) ? '🔒 ' : ''}${esc(b.name)}</a>${isClosed(b) ? ' <span class="pk cl">Uzavretá spoločnosť</span>' : ''}${g.length > 1 ? ` <small class="mut">${n}/${g.length}</small>` : ''}${isMc(b) ? ` <span class="tag mc">🎁 ${esc(pkgOf(b).name)}</span>` : ''}${offerTagHtml(b, d, t)}
             ${b.seat ? `<br><small>📍 ${esc(b.seat)}</small>` : ''}${tq ? `<br><small>🍽 stôl ${esc(tableName(tq.tableId))}${tq.reserveAt ? ' od ' + new Date(tq.reserveAt).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' }) : ''}</small>` : ''}${b.note ? `<br><small class="nt">📝 ${esc(b.note)}</small>` : ''}</td>
           <td><b>${esc(b.players)}</b></td>
           <td>${contact && c.phone ? `<a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '<span class="mut">—</span>'}</td>
@@ -1067,7 +1156,7 @@
         <button class="btn ghost sm" onclick="goDay(addDays(sheetDay,-1))">‹</button>
         <div class="ttl">${d === tk ? 'Dnes · ' : ''}${esc(dayTitle(d))}<small>${hrs ? `otvorené ${showM(hrs[0])}–${showM(hrs[1])} · ` : ''}${act.length ? `${act.length} ${plural(act.length, 'rezervácia', 'rezervácie', 'rezervácií')} · ${ppl} ${plural(ppl, 'hráč', 'hráči', 'hráčov')}` : 'zatiaľ bez rezervácií'}</small></div>
         <button class="btn ghost sm" onclick="goDay(addDays(sheetDay,1))">›</button></div>
-      <button class="btn" style="width:100%;margin-bottom:10px" onclick="openForm('',{day:sheetDay})">➕ Pridať rezerváciu (z telefónu)</button>
+      <div class="addrow"><button class="btn" onclick="openForm('',{day:sheetDay})">➕ Pridať rezerváciu (z telefónu)</button><button class="btn ghost" onclick="openClosed('',{day:sheetDay})">🔒 Uzavretá spoločnosť</button></div>
       ${closedNote(d)}
       ${dayExtrasHtml(d)}
       <div class="tblwrap"><table class="dt"><thead><tr><th>Čas</th><th>Meno</th><th>Hráči</th><th>Telefón</th><th>E-mail</th><th>Stav</th><th>Akcie</th></tr></thead>
@@ -1259,9 +1348,9 @@
     return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box${mc ? ' mc' : ''}">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${esc(b.name)}</h3>
-      <div><span class="tag ${st}" style="margin-left:0">${STATUS[st]}</span>${allPlayed(b) ? '<span class="tag played">🏁 všetko odohraté</span>' : ''}${mc ? `<span class="tag mc">🎁 ${esc(pkgOf(b).name)}</span>` : '<span class="tag src">🔫 Laser game</span>'}${b.source === 'admin' ? '<span class="tag src">zapísali sme my</span>' : '<span class="tag src">z webu</span>'}</div>
+      <div><span class="tag ${st}" style="margin-left:0">${STATUS[st]}</span>${allPlayed(b) ? '<span class="tag played">🏁 všetko odohraté</span>' : ''}${mc ? `<span class="tag mc">🎁 ${esc(pkgOf(b).name)}</span>` : isClosed(b) ? `<span class="tag" style="background:${CLOSED_COLOR};color:#fff">🔒 Uzavretá spoločnosť ${closedRange(b).join('–')}</span>` : '<span class="tag src">🔫 Laser game</span>'}${b.source === 'admin' ? '<span class="tag src">zapísali sme my</span>' : '<span class="tag src">z webu</span>'}</div>
       <div class="info" style="margin-top:10px">
-        👥 <b>${esc(b.players)}</b> ${plural(+b.players || 0, 'osoba', 'osoby', 'osôb')}${b.seat ? ` · 📍 <b>${esc(b.seat)}</b>` : ''}<br>
+        ${isClosed(b) ? '🔒 celý laser game je v tom čase len pre nich<br>' : `👥 <b>${esc(b.players)}</b> ${plural(+b.players || 0, 'osoba', 'osoby', 'osôb')}${b.seat ? ` · 📍 <b>${esc(b.seat)}</b>` : ''}<br>`}
         🕹 ${[...new Set(g.map(x => x.date))].map(dd => `${esc(dayTitle(dd))}: <b>${g.filter(x => x.date === dd).map(x => showT(x.time)).join(' · ')}</b>`).join('; ')} <span style="color:var(--muted)">(${g.length} ${plural(g.length, 'hra', 'hry', 'hier')}${g.some(x => isPlayed(b, x.key)) ? `, odohraté ${g.filter(x => isPlayed(b, x.key)).length}` : ''})</span>
         ${st !== 'cancelled' ? `<div class="games">${g.map(x => `<button class="gm${isPlayed(b, x.key) ? ' on' : ''}" onclick="togglePlayed('${b.id}','${x.key}')">${g.some(y => y.date !== x.date) ? esc(dayTitle(x.date)) + ' ' : ''}${showT(x.time)} ${isPlayed(b, x.key) ? '🏁 odohratá' : '· ťukni = odohratá'}</button>`).join('')}</div>` : ''}
         ${tableQOf(b) ? `🍽 Stôl <b>${esc(tableName(tableQOf(b).tableId))}</b>${tableQOf(b).reserveAt ? ' od <b>' + new Date(tableQOf(b).reserveAt).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' }) + '</b>' : ''} <span style="color:var(--muted)">(rezervovaný v Objednávkach)</span><br>` : b.tableQ ? '<span style="color:var(--muted)">🍽 stôl už bol v Objednávkach odbavený</span><br>' : ''}
@@ -1375,10 +1464,11 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-29</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-29b</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
+    else if (cf) html += closedFormHtml();
     else if (sel && bookings[sel]) html += detailHtml({ id: sel, ...bookings[sel] });
     app.innerHTML = html;
     const ov = document.querySelector('.ov'); if (ov && ovScroll) ov.scrollTop = ovScroll;
@@ -1477,7 +1567,7 @@
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
   render();
   window.addEventListener('focusout', () => setTimeout(render, 50));
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && (f || sel || af || tf)) closeOv(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && (f || sel || af || tf || cf)) closeOv(); });
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
   }
