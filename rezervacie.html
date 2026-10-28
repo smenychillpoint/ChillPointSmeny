@@ -521,7 +521,9 @@
   const stations = () => Object.entries(attrTypesRaw || {}).map(([id, a]) => ({ id, name: String((a && a.name) || ''), type: String((a && a.type) || '').trim(), order: +(a && a.order) || 0 }))
     .filter(s => s.type && s.name).sort((a, b) => a.order - b.order);
   const stationOf = id => stations().find(s => s.id === id) || null;
-  const attrLabel = a => { const s = a.st ? stationOf(a.st) : null; return a.what + (s ? ' ' + s.name : ''); };
+  // názov atrakcie býva už s typom („Biliard 8“) – typ sa pridá len keď v ňom chýba („8“ → „Biliard 8“)
+  const stLabel = s => s ? (s.name.toLowerCase().startsWith(s.type.toLowerCase()) ? s.name : s.type + ' ' + s.name) : '';
+  const attrLabel = a => { const s = a.st ? stationOf(a.st) : null; return s ? stLabel(s) : a.what; };
   const qList =() => Object.entries(queueMap || {}).map(([id, q]) => ({ id, ...q })).filter(q => q && q.name);
   const qOfAttr = id => qList().find(q => q.rezAttr === id) || null;
   const qDay = (q, d) => q.reserveAt && bizOfTs(q.reserveAt).date === d;
@@ -549,7 +551,7 @@
     const ext = qList().filter(q => !q.tableId && q.type && !q.rezAttr && qDay(q, d)).sort((a, b) => a.reserveAt - b.reserveAt);
     return `<div class="card attr2">${lnHead('🎮 Ostatné atrakcie', '', `<button class="btn sm" onclick="openAttr('',{date:'${d}'})">➕ Atrakcia</button>`)}
       ${list.map((a, i) => `<div class="ln" onclick="openAttr('${a.id}')"><b>${esc(showT(a.time))}–${esc(showT(attrEnd(a)))}</b> · <span class="aw">${esc(attrLabel(a))}</span> · <b>${esc(a.name)}</b>${a.people ? ` (${esc(a.people)})` : ''}${env === 'live' && qOfAttr(a.id) ? ' <small>📌 v Objednávkach</small>' : ''}${a.note ? `<br><small>📝 ${esc(a.note)}</small>` : ''}${clash(a, i) ? `<div class="err" style="margin:4px 0 0">⚠ ${esc(clash(a, i))}</div>` : ''}</div>`).join('')}
-      ${ext.map(q => `<div class="ln ext"><b>${esc(showT(qTime(q)))}</b> · <span class="aw">${esc(q.type)}${q.stationId && stationOf(q.stationId) ? ' ' + esc(stationOf(q.stationId).name) : ''}</span> · <b>${esc(q.name)}</b>${q.people ? ` (${esc(q.people)})` : ''} <small>📌 zapísané v Objednávkach</small></div>`).join('')}
+      ${ext.map(q => `<div class="ln ext"><b>${esc(showT(qTime(q)))}</b> · <span class="aw">${esc(q.stationId && stationOf(q.stationId) ? stLabel(stationOf(q.stationId)) : q.type)}</span> · <b>${esc(q.name)}</b>${q.people ? ` (${esc(q.people)})` : ''} <small>📌 zapísané v Objednávkach</small></div>`).join('')}
       ${list.length || ext.length ? '' : '<div class="hint" style="margin-top:6px">Zatiaľ nič – VR, biliard, PS5… mimo laser game.</div>'}</div>`;
   }
 
@@ -653,7 +655,7 @@
             <option value="" ${!r.what && !r.custom ? 'selected' : ''}>— vyber —</option>
             ${types.map(t => `<option value="${esc(t)}" ${!r.custom && r.what === t ? 'selected' : ''}>${esc(t)}</option>`).join('')}
             <option value="__other" ${r.custom ? 'selected' : ''}>✎ iná…</option></select></div>
-          <div><label class="f">Ktorá</label>${own.length ? `<select id="aSt${i}" onchange="blurNow();afRow(${i},'st',this.value)"><option value="">ktorákoľvek</option>${own.map(s => `<option value="${esc(s.id)}" ${r.st === s.id ? 'selected' : ''}>${esc(s.type)} ${esc(s.name)}</option>`).join('')}</select>` : '<div class="hint" style="padding:10px 0">—</div>'}</div></div>
+          <div><label class="f">Ktorá</label>${own.length ? `<select id="aSt${i}" onchange="blurNow();afRow(${i},'st',this.value)"><option value="">ktorákoľvek</option>${own.map(s => `<option value="${esc(s.id)}" ${r.st === s.id ? 'selected' : ''}>${esc(stLabel(s))}</option>`).join('')}</select>` : '<div class="hint" style="padding:10px 0">—</div>'}</div></div>
         ${r.custom ? `<input id="aWhatT${i}" maxlength="40" value="${esc(r.what)}" placeholder="napíš atrakciu" oninput="af.rows[${i}].what=this.value">` : ''}
         <div class="row2"><div><label class="f">Od</label><input id="aFrom${i}" type="time" step="300" value="${esc(r.from)}" oninput="afRow(${i},'from',this.value)"></div>
           <div><label class="f">Do</label><input id="aTo${i}" type="time" step="300" value="${esc(r.to)}" oninput="afRow(${i},'to',this.value)"></div></div>
@@ -708,7 +710,7 @@
       u[`${base()}/attr/${id}`] = v;
       if (env === 'live') {
         const q = qOfAttr(id), s = x.st ? stationOf(x.st) : null;
-        const qn = (`🎮 ${s ? s.type + ' ' + s.name + ' · ' : ''}${showT(x.time)}–${showT(attrEnd(v))}` + (note ? ' · ' + note : '')).slice(0, 60);
+        const qn = (`🎮 ${s ? stLabel(s) + ' · ' : ''}${showT(x.time)}–${showT(attrEnd(v))}` + (note ? ' · ' + note : '')).slice(0, 60);
         const qd = { name: name.slice(0, 40), note: qn, type: x.what.slice(0, 30), people: people || null, reserveAt: dateAt(af.date, x.time), stationId: x.st || null };
         if (q) Object.keys(qd).forEach(k => { u[`queue/${q.id}/${k}`] = qd[k]; });
         else { Object.keys(qd).forEach(k => { if (qd[k] === null) delete qd[k]; }); u[`queue/${db.ref('queue').push().key}`] = { ...qd, createdAt: Date.now(), rezAttr: id }; }
@@ -1352,7 +1354,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-28d</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-28e</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();

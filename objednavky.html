@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-28b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-28c</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1710,7 +1710,7 @@ const SEAT_LABEL = { gauc: '🛋 Gauč', stolik: '🪑 Stolík', any: '📍 Mies
 // (2026-10-28) rezervácia z Rezervácií môže mať aj konkrétnu atrakciu (stationId, napr. Biliard 8)
 const queueStation = q => q.stationId ? S.attractions.find(a => a.id === q.stationId) || null : null;
 const queueTargetLabel = q => [
-  q.tableId ? (S.tables.find(t => t.id === q.tableId)?.name || '') : (q.seat ? SEAT_LABEL[q.seat] || '' : (q.type ? q.type + (queueStation(q) ? ' ' + queueStation(q).name : '') : '')),
+  q.tableId ? (S.tables.find(t => t.id === q.tableId)?.name || '') : (q.seat ? SEAT_LABEL[q.seat] || '' : (queueStation(q) ? (queueStation(q).name.toLowerCase().startsWith(String(q.type || '').toLowerCase()) ? queueStation(q).name : q.type + ' ' + queueStation(q).name) : (q.type || ''))),
   q.people ? `👥 ${q.people} os.` : ''
 ].filter(Boolean).join(' · ');
 // rozpísaná nová rezervácia - drží sa mimo DOM, nech ju živá zmena z iného zariadenia (prekreslenie) nevymaže
@@ -1804,7 +1804,7 @@ async function queueArrived(id) {
     // rezervovaná konkrétna atrakcia (napr. Biliard 8) má prednosť, ak je voľná
     const want = queueStation(q);
     if (want && free.some(a => a.id === want.id)) free.unshift(free.splice(free.findIndex(a => a.id === want.id), 1)[0]);
-    else if (want && !confirm(`${q.type} ${want.name} je obsadený. Spustiť na ${free[0].name}?`)) return;
+    else if (want && !confirm(`${want.name} je obsadený. Spustiť na ${free[0].name}?`)) return;
     if (!confirm(`${q.name} prišli? Otvorí sa spustenie hry: ${free[0].name}.`)) return;
     try { await call('DELETE', '/api/queue/' + id, { action: 'served' }); } catch (e) { return; }
     showQueue = false; tableId = null; tblModal = null; role = 'atrakcie'; store.set('role', role); startFormStation = free[0].id;
