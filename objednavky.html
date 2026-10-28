@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-28</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-28b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1707,8 +1707,10 @@ async function delBoardItem(id) {
 // ping-pong a pod.). Dostupné pre všetkých čašníkov. Keď je vybraná atrakcia, zápis sa zároveň ukáže aj
 // v poradovníku danej atrakcie na obrazovke Atrakcie (rovnaký záznam, len iný pohľad naň).
 const SEAT_LABEL = { gauc: '🛋 Gauč', stolik: '🪑 Stolík', any: '📍 Miesto' };
+// (2026-10-28) rezervácia z Rezervácií môže mať aj konkrétnu atrakciu (stationId, napr. Biliard 8)
+const queueStation = q => q.stationId ? S.attractions.find(a => a.id === q.stationId) || null : null;
 const queueTargetLabel = q => [
-  q.tableId ? (S.tables.find(t => t.id === q.tableId)?.name || '') : (q.seat ? SEAT_LABEL[q.seat] || '' : (q.type || '')),
+  q.tableId ? (S.tables.find(t => t.id === q.tableId)?.name || '') : (q.seat ? SEAT_LABEL[q.seat] || '' : (q.type ? q.type + (queueStation(q) ? ' ' + queueStation(q).name : '') : '')),
   q.people ? `👥 ${q.people} os.` : ''
 ].filter(Boolean).join(' · ');
 // rozpísaná nová rezervácia - drží sa mimo DOM, nech ju živá zmena z iného zariadenia (prekreslenie) nevymaže
@@ -1799,6 +1801,10 @@ async function queueArrived(id) {
   if (q.type) {
     const free = S.attractions.filter(a => (a.type || 'Ostatné') === q.type && !S.sessions.some(s => s.stationId === a.id));
     if (!free.length) return toast(`Žiadna voľná atrakcia (${q.type}) – počkajte, kým sa uvoľní`);
+    // rezervovaná konkrétna atrakcia (napr. Biliard 8) má prednosť, ak je voľná
+    const want = queueStation(q);
+    if (want && free.some(a => a.id === want.id)) free.unshift(free.splice(free.findIndex(a => a.id === want.id), 1)[0]);
+    else if (want && !confirm(`${q.type} ${want.name} je obsadený. Spustiť na ${free[0].name}?`)) return;
     if (!confirm(`${q.name} prišli? Otvorí sa spustenie hry: ${free[0].name}.`)) return;
     try { await call('DELETE', '/api/queue/' + id, { action: 'served' }); } catch (e) { return; }
     showQueue = false; tableId = null; tblModal = null; role = 'atrakcie'; store.set('role', role); startFormStation = free[0].id;
@@ -1942,7 +1948,7 @@ function stationQueueBlock(type) {
   if (!rows.length) return '';
   const nowT = now();
   return `<div class="card" style="padding:0;margin-top:8px">${rows.map((q, i) => `<div class="line" style="align-items:center">
-    <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${q.people ? `<small> · 👥 ${q.people} os.</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
+    <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${queueStation(q) ? ` <b>· ${esc(queueStation(q).name)}</b>` : ''}${q.people ? `<small> · 👥 ${q.people} os.</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
     ${i === 0 ? (uiOn('arrived') ? `<div class="row" style="gap:4px"><button class="btn ok" style="width:auto" onclick="queueArrived('${q.id}')">✓ Prišli</button><button class="btn ghost" style="width:auto;padding:6px 10px" onclick="serveQueue('${q.id}')">Odbaviť</button></div>`
                  : `<button class="btn ok" style="width:auto" onclick="serveQueue('${q.id}')">Odbaviť ✓</button>`)
                : `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="delQueue('${q.id}')">✕</button>`}
