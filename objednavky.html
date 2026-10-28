@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-26c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-28</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -777,6 +777,12 @@ async function callInner(m, [col, id, action], body) {
       // zamestnanecké zľavy podľa kategórie menu: [{n: kategória, p: % (100 = zadarmo)}]
       if (body.staffDisc !== undefined) u.staffDisc = (Array.isArray(body.staffDisc) ? body.staffDisc : [])
         .map(x => ({ n: str(x && x.n, 40), p: Math.max(0, Math.min(100, Math.round(num(x && x.p)))) })).filter(x => x.n && x.p > 0).slice(0, 100);
+      // (2026-10-28) 📍 sektory pre Uzávierku (napr. „Quiz“ = skupiny L, P + jednotlivé stoly): [{n, g: [skupiny], t: [id stolov]}]
+      if (body.uzSectors !== undefined) u.uzSectors = (Array.isArray(body.uzSectors) ? body.uzSectors : []).map(x => ({
+        n: str(x && x.n, 30),
+        g: [...new Set((Array.isArray(x && x.g) ? x.g : []).map(v => str(v, 20)).filter(Boolean))].slice(0, 50),
+        t: [...new Set((Array.isArray(x && x.t) ? x.t : []).map(v => str(v, 40)).filter(Boolean))].slice(0, 200)
+      })).filter(x => x.n && (x.g.length || x.t.length)).slice(0, 30);
       ['tableGroups', 'hiddenGroups', 'groupOrder', 'uiOff'].forEach(k => {
         if (body[k] !== undefined) u[k] = [...new Set((Array.isArray(body[k]) ? body[k] : []).map(x => str(x, 20)).filter(Boolean))].slice(0, 100);
       });
@@ -3183,6 +3189,7 @@ function renderUzavierka() {
           <div class="row" style="justify-content:space-between"><b>${esc(n)}</b><span>${eur(r.paid)} <small class="muted">(z ${eur(r.full)})</small></span></div>
           <small class="muted">${esc(r.items.join(', '))}</small></div>`).join('')}</div>`;
     })() : ''}
+    ${uzSectorBlock(paid, total)}
 
     <h2 style="margin-top:18px">Výplatná kalkulačka – ${fmtDay(uzavDate)}</h2>
     <div class="card">
@@ -3237,6 +3244,105 @@ let uzOpen = new Set();
 function uzToggle(key, open) { if (open) uzOpen.add(key); else uzOpen.delete(key); }
 const uzDetails = (key, summary, inner) => `<details class="card" style="margin-top:12px;padding:12px 14px" ${uzOpen.has(key) ? 'open' : ''} ontoggle="uzToggle('${key}',this.open)">
   <summary style="cursor:pointer;font-weight:700">${summary}</summary><div style="margin-top:8px">${inner}</div></details>`;
+// ---------- 📍 tržba podľa stolov / sektorov (2026-10-28) ----------
+// Sektor = pomenovaný výber celých skupín stolov a/alebo jednotlivých stolov (napr. „Quiz“ = L + P), uložený v
+// access.uzSectors (mení len vedúci). Len na zobrazenie a CSV – výplaty a % pre personál sa rátajú ďalej z celej tržby.
+let uzSector = store.get('uzSector', '');   // názov vybraného sektora ('' = žiadny)
+let uzSecEdit = null;                        // rozpísané sektory pri úprave (kópia), null = neupravuje sa
+const uzSectors = () => ((S.access && S.access.uzSectors) || []).filter(x => x && x.n).map(x => ({ n: x.n, g: x.g || [], t: x.t || [] }));
+// stôl objednávky (aj keď sa medzičasom premenoval/zmazal – podľa názvu)
+const orderTable = o => (o.tableId && S.tables.find(t => t.id === o.tableId)) || S.tables.find(t => t.name === o.tableName) || null;
+function inSector(o, sec) {
+  const t = orderTable(o);
+  return !!t && (sec.t.includes(t.id) || sec.g.includes(t.group));
+}
+function sectorStats(paid, sec) {
+  const orders = paid.filter(o => inSector(o, sec)), total = sumOrders(orders), byCat = {};
+  orders.forEach(o => o.items.forEach(i => {
+    const mi = S.menu.find(m => m.id === i.menuId), cat = i.cat || (mi && mi.category) || 'Ostatné', k = i.name + '|' + i.price;
+    const c = byCat[cat] = byCat[cat] || {};
+    (c[k] = c[k] || { name: i.name, price: i.price, qty: 0 }).qty += i.qty;
+  }));
+  return { orders: orders.sort((a, b) => a.paidAt - b.paidAt), total, byCat };
+}
+const sectorLabel = sec => [...sec.g.map(g => 'skupina ' + g), ...sec.t.map(id => { const t = S.tables.find(x => x.id === id); return t ? t.name : null; }).filter(Boolean)].join(', ');
+function pickUzSector(n) { uzSector = uzSector === n ? '' : n; store.set('uzSector', uzSector); render(); }
+function uzSectorBlock(paid, total) {
+  const secs = uzSectors(), cur = secs.find(s => s.n === uzSector);
+  if (uzSecEdit) return uzSectorEditor();
+  if (!secs.length && !isManager) return '';
+  let inner = `<div class="row" style="flex-wrap:wrap;gap:6px">${secs.map(s => `<button class="btn ${s.n === uzSector ? '' : 'ghost'}" style="width:auto;padding:6px 12px" onclick="pickUzSector(decodeURIComponent('${encodeURIComponent(s.n)}'))">📍 ${esc(s.n)}</button>`).join('')}
+    ${isManager ? `<button class="btn ghost" style="width:auto;padding:6px 12px" onclick="uzSecEdit=uzSectors();if(!uzSecEdit.length)uzSecEdit.push({n:'',g:[],t:[]});render()">✎ ${secs.length ? 'Upraviť sektory' : 'Vytvoriť sektor (napr. Quiz)'}</button>` : ''}</div>`;
+  if (cur) {
+    const st = sectorStats(paid, cur), cats = Object.keys(st.byCat).sort();
+    inner += `<div class="total" style="margin-top:10px"><span>📍 ${esc(cur.n)}</span><span>${eur(st.total)}</span></div>
+      <p class="muted" style="margin:2px 0 8px;font-size:12px">${esc(sectorLabel(cur))} · ${st.orders.length} ${st.orders.length === 1 ? 'platba' : (st.orders.length >= 2 && st.orders.length <= 4 ? 'platby' : 'platieb')}${total > 0 ? ` · ${Math.round(st.total / total * 100)} % z celej tržby (${eur(total)})` : ''}</p>
+      ${cats.map(c => { const rows = Object.values(st.byCat[c]).sort((a, b) => b.qty - a.qty); return `<h3 style="margin:10px 0 4px;font-size:14px">${esc(c)} <span class="muted" style="font-weight:400">· ${eur(rows.reduce((s, r) => s + r.price * r.qty, 0))}</span></h3>
+        ${rows.map(r => `<div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span></div>`).join('')}`; }).join('') || '<p class="muted" style="font-size:13px">Na týchto stoloch v tento deň zatiaľ nič nebolo zaplatené.</p>'}
+      <button class="btn ghost" style="margin-top:10px" onclick="downloadSectorCsv()">⬇️ Stiahnuť / zdieľať ${esc(cur.n)} (CSV pre Excel)</button>`;
+  } else if (secs.length) inner += '<p class="muted" style="font-size:12px;margin:8px 0 0">Vyber sektor a uvidíš, koľko zarobili len jeho stoly.</p>';
+  return `<div class="card" style="margin-top:10px"><h3 style="margin:0 0 8px;font-size:15px">📍 Tržba podľa stolov</h3>${inner}</div>`;
+}
+function uzSectorEditor() {
+  const groups = allTableGroups(), byG = {};
+  S.tables.forEach(t => { (byG[t.group || 'Bez skupiny'] = byG[t.group || 'Bez skupiny'] || []).push(t); });
+  const chip = (on, label, fn) => `<button class="btn ${on ? '' : 'ghost'}" style="width:auto;padding:5px 10px;font-size:13px" onclick="${fn}">${on ? '✓ ' : ''}${label}</button>`;
+  return `<div class="card" style="margin-top:10px"><h3 style="margin:0 0 4px;font-size:15px">✎ Sektory pre Uzávierku</h3>
+    <p class="muted" style="font-size:12px;margin:0 0 10px">Vyber celé skupiny (napr. L, P) a/alebo jednotlivé stoly. Uloží sa pre všetky zariadenia.</p>
+    ${uzSecEdit.map((s, i) => `<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px">
+      <div class="row" style="gap:8px;align-items:center"><input id="uzSecN${i}" maxlength="30" placeholder="Názov, napr. Quiz" value="${esc(s.n)}" oninput="uzSecEdit[${i}].n=this.value" style="flex:1">
+        <button class="btn ghost" style="width:auto;padding:6px 10px" onclick="uzSecEdit.splice(${i},1);render()">🗑</button></div>
+      <p class="muted" style="font-size:12px;margin:8px 0 4px">Celé skupiny:</p>
+      <div class="row" style="flex-wrap:wrap;gap:6px">${groups.map(g => chip(s.g.includes(g), 'Skupina ' + esc(g), `uzSecToggle(${i},'g',decodeURIComponent('${encodeURIComponent(g)}'))`)).join('') || '<span class="muted" style="font-size:13px">žiadne skupiny</span>'}</div>
+      <p class="muted" style="font-size:12px;margin:8px 0 4px">Alebo jednotlivé stoly:</p>
+      ${sortGroups(Object.keys(byG)).map(g => `<div class="row" style="flex-wrap:wrap;gap:6px;margin-bottom:4px"><small class="muted" style="min-width:60px">${esc(g)}</small>${byG[g].map(t => chip(s.t.includes(t.id) || s.g.includes(t.group), esc(t.name), `uzSecToggle(${i},'t','${t.id}')`)).join('')}</div>`).join('')}
+    </div>`).join('')}
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button class="btn ghost" style="width:auto" onclick="uzSecEdit.push({n:'',g:[],t:[]});render()">➕ Ďalší sektor</button>
+      <button class="btn" style="width:auto" onclick="saveUzSectors()">💾 Uložiť</button>
+      <button class="btn ghost" style="width:auto" onclick="uzSecEdit=null;render()">Zrušiť</button></div></div>`;
+}
+function uzSecToggle(i, k, v) {
+  const s = uzSecEdit[i]; if (!s) return;
+  const n = document.getElementById('uzSecN' + i); if (n) s.n = n.value;   // rozpísaný názov neprísť
+  // stôl, ktorý je už v označenej skupine, sa jednotlivo neoznačuje
+  if (k === 't') { const t = S.tables.find(x => x.id === v); if (t && s.g.includes(t.group)) return toast('Tento stôl je už v označenej skupine ' + t.group); }
+  s[k] = s[k].includes(v) ? s[k].filter(x => x !== v) : s[k].concat(v);
+  render();
+}
+let savingUzSec = false;
+async function saveUzSectors() {
+  if (savingUzSec || !uzSecEdit) return;
+  uzSecEdit.forEach((s, i) => { const n = document.getElementById('uzSecN' + i); if (n) s.n = n.value; });
+  const list = uzSecEdit.map(s => ({ n: s.n.trim(), g: s.g, t: s.t.filter(id => { const t = S.tables.find(x => x.id === id); return !(t && s.g.includes(t.group)); }) }));
+  if (list.some(s => !s.n)) return toast('Každý sektor musí mať názov');
+  if (list.some(s => !s.g.length && !s.t.length)) return toast('Sektor „' + list.find(s => !s.g.length && !s.t.length).n + '“ nemá žiadne stoly');
+  if (new Set(list.map(s => s.n.toLowerCase())).size !== list.length) return toast('Dva sektory majú rovnaký názov');
+  savingUzSec = true;
+  try { await call('PUT', '/api/access', { uzSectors: list }); uzSecEdit = null; if (!list.some(s => s.n === uzSector)) { uzSector = list.length === 1 ? list[0].n : ''; store.set('uzSector', uzSector); } toast('📍 Sektory uložené ✓'); }
+  finally { savingUzSec = false; render(); }
+}
+async function downloadSectorCsv() {
+  const sec = uzSectors().find(s => s.n === uzSector); if (!sec) return;
+  const st = sectorStats(dayPaidOrders(uzavDate), sec), all = sumOrders(dayPaidOrders(uzavDate));
+  const n2 = v => Number(v || 0).toFixed(2).replace('.', ',');   // slovenský Excel: desatinná čiarka
+  const t2 = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+  const rows = [['Sektor', sec.n], ['Deň', fmtDay(uzavDate)], ['Stoly', sectorLabel(sec)], ['Tržba sektora €', n2(st.total)], ['Celá tržba dňa €', n2(all)], ['Počet platieb', st.orders.length], [],
+    ['Kategória', 'Položka', 'Cena/ks €', 'Kusov', 'Spolu €']];
+  Object.keys(st.byCat).sort().forEach(c => Object.values(st.byCat[c]).sort((a, b) => b.qty - a.qty).forEach(r => rows.push([c, r.name, n2(r.price), r.qty, n2(r.price * r.qty)])));
+  rows.push([], ['Čas', 'Stôl', 'Č. objednávky', 'Položky', 'Suma €']);
+  st.orders.forEach(o => rows.push([t2(o.paidAt), o.tableName + (o.guest ? ' · ' + o.guest : ''), o.no, o.items.map(i => `${i.qty}× ${i.name}`).join(', '), n2(sumOrders([o]))]));
+  const esc2 = v => { const s = String(v ?? ''); return /[;"\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const csv = '﻿' + rows.map(r => r.map(esc2).join(';')).join('\r\n');
+  const slugN = sec.n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'sektor';
+  const fname = `trzba_${slugN}_${payDayKey()}.csv`, blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  try {
+    const file = new File([blob], fname, { type: 'text/csv' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: `${sec.n} ${payDayKey()}`, text: `Tržba ${sec.n} za ${fmtDay(uzavDate)}` }); return; }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+}
 // Uzávierka (len vedúci): čo sa v daný deň zmazalo - zaplatené platby aj nezaplatené objednávky, kto a kedy
 function deletedLogBlock(day) {
   if (delLog === null) { loadDelLog(); return '<p class="muted" style="font-size:12px;margin-top:22px">Načítavam históriu zmazaných…</p>'; }
