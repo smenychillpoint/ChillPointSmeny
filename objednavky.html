@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-28c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-29</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -3180,6 +3180,7 @@ function renderUzavierka() {
     </div>
     ${isManager && !isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="uzavManual=false;uzavDate=bizTodayDate();render()">Dnes</button></div>` : ''}
     <div class="card"><div class="total"><span>Tržba za deň</span><span>${eur(total)}</span></div>
+      ${uzSectors().map(sec => `<div class="row" style="justify-content:space-between;font-size:14px;margin-top:4px"><span class="muted">z toho 📍 ${esc(sec.n)}</span><b>${eur(sectorStats(paid, sec).total)}</b></div>`).join('')}
       <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p></div>
     ${staffPaid.length ? (() => {
       // zamestnanci: zaplatené (so zľavou) aj pôvodná hodnota, zoskupené podľa mena
@@ -3607,6 +3608,8 @@ async function downloadPayrollCsv() {
   });
   rows.push([]);
   rows.push(['Tržba za deň €', total.toFixed(2)]);
+  // (2026-10-29) 📍 sektory (napr. Quiz) – v uzávierke pre vedúceho len „z toho Quiz“ a suma
+  uzSectors().forEach(sec => rows.push(['z toho ' + sec.n + ' €', sectorStats(paidToday, sec).total.toFixed(2)]));
   if (isHoliday(payDayKey())) rows.push(['Sviatok – dvojnásobná hodinovka', skHolidayName(payDayKey()) || 'áno']);
   if (num(schoolOf(payDayKey())) > 0) rows.push(['z toho škola / uzavretá spoločnosť €', (num(schoolOf(payDayKey())) || 0).toFixed(2), schoolPct() !== null ? schoolPct() + ' %' : '']);
   if (excludedRevenue > 0) rows.push(['z toho bez percent (' + ((S.access && S.access.noPctItems) || []).join(', ') + ') €', excludedRevenue.toFixed(2)]);
