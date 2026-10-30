@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-30b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-30c</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -3205,12 +3205,12 @@ function renderUzavierka() {
   // Z niektorých konkrétnych položiek (napr. len Pixel, nie celá kategória Hry) sa personálu neráta percentuálny
   // podiel - základ pre % je tržba bez nich. Zoznam je spoločné nastavenie pre všetky dni (Nastavenia >
   // Zamestnanci, mení len vedúci) - tu sa už len zobrazuje, nedá sa to priamo odškrtnúť.
-  const { pctBase, excludedRevenue } = pctBaseFor(paid, total);
-  const pctAmount = pctAmountFor(paid, pctBase, pct);
+  // (2026-10-30) do % sa ráta všetko nahodené – zaplatené aj ešte nezaplatené na stoloch (payBasis)
+  const { orders: pctOrders, openTotal, pctBase, excludedRevenue, pctAmount } = payBasis(uzavDate, paid);
   // Trinkgeľ za deň - ručne zadaná suma, rozdelí sa rovným dielom medzi všetkých s hodinami; o % z tržby sa delia
   // len tí, ktorým to vedúci v Nastaveniach nevypol (payShares).
   const tip = num(tipOf(dayKey)) || 0;
-  const { names: checkedNames, sharers, tipShare, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, paid, dayKey);
+  const { names: checkedNames, sharers, tipShare, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, dayKey);
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), 0);
   // (2026-10-22) kto má v tento deň smenu (zo Smien) – je hore a označený "📅 na smene"; ostatní pod ním
   const onShift = shiftNamesFor(dayKey);
@@ -3248,7 +3248,9 @@ function renderUzavierka() {
     ${isManager && !isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="uzavManual=false;uzavDate=bizTodayDate();render()">Dnes</button></div>` : ''}
     <div class="card"><div class="total"><span>Tržba za deň</span><span>${eur(total)}</span></div>
       ${uzSectors().map(sec => `<div class="row" style="justify-content:space-between;font-size:14px;margin-top:4px"><span class="muted">z toho 📍 ${esc(sec.n)}</span><b>${eur(sectorStats(paid, sec).total)}</b></div>`).join('')}
-      <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p></div>
+      <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p>
+      ${openTotal > 0 ? `<div class="row" style="justify-content:space-between;font-size:14px;margin-top:6px"><span class="muted">🕒 ešte nezaplatené na stoloch</span><b>${eur(openTotal)}</b></div>
+        <p class="muted" style="margin:2px 0 0;font-size:12px">Do tržby sa zaráta až po zaplatení, do % pre personál sa ráta už teraz.</p>` : ''}</div>
     ${staffPaid.length ? (() => {
       // zamestnanci: zaplatené (so zľavou) aj pôvodná hodnota, zoskupené podľa mena
       const full = o => o.items.reduce((s, i) => s + (i.origPrice != null ? i.origPrice : i.price) * i.qty, 0);
@@ -3293,7 +3295,7 @@ function renderUzavierka() {
         <span class="muted">€</span>
       </div>
       <div class="total" style="margin-top:10px"><span>Hodinovky spolu</span><span id="payHourly">${eur(hourlyTotal)}</span></div>
-      <div class="total"><span id="payPctLabel">${payPctLabel(pct, excludedRevenue, pctBase, sharers, timed)}</span><span id="payPct">${eur(sharers.length ? pctAmount : 0)}</span></div>
+      <div class="total"><span id="payPctLabel">${payPctLabel(pct, excludedRevenue, pctBase, sharers, timed, openTotal)}</span><span id="payPct">${eur(sharers.length ? pctAmount : 0)}</span></div>
       <div class="total"><span id="payTipLabel">Trinkgeľ${checkedNames.length ? ' (rozdelené medzi ' + checkedNames.length + ')' : ''}</span><span id="payTip">${eur(tip)}</span></div>
       <div class="total" style="border-top:2px solid var(--ink);padding-top:8px;margin-top:6px"><b>Výplaty spolu</b><b id="payGrand">${eur(hourlyTotal + (sharers.length ? pctAmount : 0) + (checkedNames.length ? tip : 0))}</b></div>
       <button class="btn ghost" style="margin-top:10px" onclick="downloadPayrollCsv()">⬇️ Stiahnuť / zdieľať výplaty (CSV pre Excel)</button>
@@ -3491,14 +3493,13 @@ function recomputePayroll() {
   const total = sumOrders(paidToday);
   const dayHours = dayHoursOf(payDayKey());
   const pct = payPct();
-  const { pctBase, excludedRevenue } = pctBaseFor(paidToday, total);
-  const pctAmount = pctAmountFor(paidToday, pctBase, pct);
+  const { orders: pctOrders, openTotal, pctBase, excludedRevenue, pctAmount } = payBasis(uzavDate, paidToday);
   const tip = num(tipOf(payDayKey())) || 0;
-  const { names: checkedNames, sharers, tipShare, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, paidToday, payDayKey());
+  const { names: checkedNames, sharers, tipShare, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, payDayKey());
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), 0);
   if ($('#payHourly')) $('#payHourly').textContent = eur(hourlyTotal);
   if ($('#payPct')) $('#payPct').textContent = eur(sharers.length ? pctAmount : 0);
-  if ($('#payPctLabel')) $('#payPctLabel').textContent = payPctLabel(pct, excludedRevenue, pctBase, sharers, timed);
+  if ($('#payPctLabel')) $('#payPctLabel').textContent = payPctLabel(pct, excludedRevenue, pctBase, sharers, timed, openTotal);
   if ($('#payTip')) $('#payTip').textContent = eur(tip);
   if ($('#payTipLabel')) $('#payTipLabel').textContent = `Trinkgeľ${checkedNames.length ? ' (rozdelené medzi ' + checkedNames.length + ')' : ''}`;
   if ($('#payGrand')) $('#payGrand').textContent = eur(hourlyTotal + (sharers.length ? pctAmount : 0) + (checkedNames.length ? tip : 0));
@@ -3511,8 +3512,21 @@ function recomputePayroll() {
     note.innerHTML = payNoteHtml(hourly, shares(e.name), shareOf(e.name), tip, tipShare, empTotal, wins[e.name]);
   });
 }
-function payPctLabel(pct, excludedRevenue, pctBase, sharers, timed) {
-  return `Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''}${sharers.length ? ', delí sa ' + sharers.length : ''}${timed && sharers.length ? ', ⏰ podľa času' : ''})`;
+function payPctLabel(pct, excludedRevenue, pctBase, sharers, timed, openTotal) {
+  return `Percentá z tržby (${pct}%${excludedRevenue > 0 || openTotal > 0 ? ', základ ' + eur(pctBase) : ''}${openTotal > 0 ? ' aj s nezaplatenými' : ''}${sharers.length ? ', delí sa ' + sharers.length : ''}${timed && sharers.length ? ', ⏰ podľa času' : ''})`;
+}
+// (2026-10-30) Nezaplatené objednávky na stoloch (bez zamestnaneckých) – do tržby nie, do % pre personál áno.
+// Deň = nastavený pracovný deň (bizDay), inak čas nahodenia − 6 h – tam sa po zaplatení aj zarátajú.
+function dayOpenOrders(date) {
+  const k = dateKey(date);
+  return S.orders.filter(o => o.status !== 'zaplatena' && !o.staff && !isStaffTable(o.tableId) && (o.items || []).length
+    && (bizDay || dateKey(new Date((o.createdAt || 0) - DAY_START_H * 3600e3))) === k);
+}
+// základ pre % = všetko nahodené v ten deň: zaplatené + ešte nezaplatené na stoloch
+function payBasis(date, paid) {
+  const openOrd = dayOpenOrders(date), openTotal = sumOrders(openOrd), orders = paid.concat(openOrd);
+  const { pctBase, excludedRevenue } = pctBaseFor(orders, sumOrders(paid) + openTotal);
+  return { orders, openTotal, pctBase, excludedRevenue, pctAmount: pctAmountFor(orders, pctBase, payPct()) };
 }
 // zapísané hodiny > 0 = človek sa ráta do výplat; prázdne / 0 = vypadne (bez zaškrtávania)
 function setPayrollHours(name, val) {
@@ -3719,10 +3733,9 @@ async function downloadPayrollCsv() {
   const total = sumOrders(paidToday);
   const dayHours = dayHoursOf(payDayKey());
   const pct = payPct();
-  const { pctBase, excludedRevenue } = pctBaseFor(paidToday, total);
-  const pctAmount = pctAmountFor(paidToday, pctBase, pct);
+  const { orders: pctOrders, openTotal, pctBase, excludedRevenue, pctAmount } = payBasis(uzavDate, paidToday);
   const tip = num(tipOf(payDayKey())) || 0;
-  const { names, sharers, tipShare, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, paidToday, payDayKey());
+  const { names, sharers, tipShare, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, payDayKey());
   const pctPaid = sharers.length ? pctAmount : 0, tipPaid = names.length ? tip : 0;   // reálne vyplatené (ak sa nikto nedelí, nič)
   let hourlyTotal = 0;
   // sadzbu €/h vidí len vedúci (aj v CSV) - ostatní (prístup cez PIN) dostanú súbor bez tohto stĺpca
@@ -3736,6 +3749,7 @@ async function downloadPayrollCsv() {
   });
   rows.push([]);
   rows.push(['Tržba za deň €', total.toFixed(2)]);
+  if (openTotal > 0) rows.push(['Ešte nezaplatené na stoloch (ráta sa do percent) €', openTotal.toFixed(2)]);
   // (2026-10-29) 📍 sektory (napr. Quiz) – v uzávierke pre vedúceho len „z toho Quiz“ a suma
   uzSectors().forEach(sec => rows.push(['z toho ' + sec.n + ' €', sectorStats(paidToday, sec).total.toFixed(2)]));
   if (isHoliday(payDayKey())) rows.push(['Sviatok – dvojnásobná hodinovka', skHolidayName(payDayKey()) || 'áno']);
