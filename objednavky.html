@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-30</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-30b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -585,8 +585,10 @@ async function callInner(m, [col, id, action], body) {
             // vynechá, takže sa pri čítaní späť správa ako undefined) - nikdy sem nedávaj "menuId: it.menuId"
             // natvrdo, lebo zápis objektu s explicitnou hodnotou undefined do Firebase rovno zlyhá (a keďže
             // to nie je fail() s hláškou, používateľ nevidí vôbec nič - účet sa potichu nedá vyplatiť).
+            // at = kedy si to hostia objednali (pôvodná objednávka) – podľa toho sa ráta ⏰ % pre čašníka, ktorý tu bol len časť dňa
             paidItems.push({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: take, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}),
-              ...(it.staffPct ? { staffPct: it.staffPct, origPrice: it.origPrice } : {}) });
+              ...(it.staffPct ? { staffPct: it.staffPct, origPrice: it.origPrice } : {}),
+              ...(typeof (it.at || o.createdAt) === 'number' ? { at: it.at || o.createdAt } : {}) });
             return { ...it, qty: it.qty - take }; }
           return it;
         }).filter(it => it.qty > 0);
@@ -625,6 +627,8 @@ async function callInner(m, [col, id, action], body) {
       // pôvodné objednávky sa ZMAŽÚ - nahradia ich podiely nižšie. (Predtým sa označili ako zaplatené a v Uzávierke
       // sa tak tržba rátala DVAKRÁT: pôvodný účet + podiely. Staré takéto dvojice odfiltruje splitDupFilter.)
       os.forEach(o => { u[o.id] = null; });
+      // ord = z čoho sa účet skladal podľa času objednania (pre ⏰ % čašníka, ktorý tu bol len časť dňa)
+      const ord = os.filter(o => typeof o.createdAt === 'number').map(o => ({ t: o.createdAt, v: sumOrders([o]) })).filter(x => x.v > 0).slice(0, 50);
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
       const n0 = r.snapshot.val();
       const guest = guestOf(id);
@@ -637,7 +641,7 @@ async function callInner(m, [col, id, action], body) {
         remainingCents -= amountCents;
         const key = db.ref('orders').push().key;
         u[key] = { no: ((n0 - 1 + i) % 999) + 1, tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30), note: '', ...(guest ? { guest } : {}),
-          items: [{ name: `Podiel účtu (${i + 1}/${parts})`, price: Math.round(amountCents) / 100, qty: 1 }],
+          items: [{ name: `Podiel účtu (${i + 1}/${parts})`, price: Math.round(amountCents) / 100, qty: 1 }], ...(ord.length ? { ord } : {}),
           status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}),
           ...(isStaffTable(id) ? { staff: true, staffName: str(staffNameOf(id), 40) } : {}) };
       }
@@ -3206,23 +3210,32 @@ function renderUzavierka() {
   // Trinkgeľ za deň - ručne zadaná suma, rozdelí sa rovným dielom medzi všetkých s hodinami; o % z tržby sa delia
   // len tí, ktorým to vedúci v Nastaveniach nevypol (payShares).
   const tip = num(tipOf(dayKey)) || 0;
-  const { names: checkedNames, sharers, splitShare, tipShare, shares } = payShares(dayHours, pctAmount, tip);
+  const { names: checkedNames, sharers, tipShare, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, paid, dayKey);
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), 0);
   // (2026-10-22) kto má v tento deň smenu (zo Smien) – je hore a označený "📅 na smene"; ostatní pod ním
   const onShift = shiftNamesFor(dayKey);
   const empOrder = (S.employees || []).map((e, i) => ({ e, i })).sort((a, b) => (onShift.includes(b.e.name) ? 1 : 0) - (onShift.includes(a.e.name) ? 1 : 0));
   const empRows = empOrder.map(({ e, i }) => { const on = e.name in dayHours; const h = dayHours[e.name] || ''; const sh = onShift.includes(e.name);
-    const hourly = (num(h) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + (on ? (shares(e.name) ? splitShare : 0) + tipShare : 0);
+    const hourly = (num(h) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + (on ? shareOf(e.name) + tipShare : 0);
+    const wn = wins[e.name], wOpen = !!wn || payWinOpen.has(e.name);
     // netreba nič zaškrtávať: kto má zapísané hodiny (> 0), ráta sa do výplat (aj do % z tržby a trinkgeľu)
     return `<div id="payEmpRow-${i}" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line);${on || sh ? '' : 'opacity:.6'}">
       <div class="row" style="gap:8px;align-items:center">
         <span style="flex:1">${esc(e.name)}${sh ? ' <small style="color:var(--ok);font-weight:700">📅 na smene</small>' : ''}</span>
         <!-- hodinová sadzba sa tu už nezobrazuje - vidí/mení ju len vedúci v Nastaveniach -> Zamestnanci -->
         ${isManager && !e.wage ? '<small class="muted" title="Nastav v Nastaveniach -> Zamestnanci">bez sadzby</small>' : ''}
+        <button class="btn ghost" title="Prišiel / odišiel v inom čase – % len z jeho času" style="width:auto;padding:6px 9px;${wn ? 'border-color:var(--accent);background:var(--accent);color:#fff' : ''}" onclick="togglePayWin(${i})">⏰</button>
         <input type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="hodín" value="${h}"
           oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)">
       </div>
-      <p class="muted" style="font-size:12px;margin:4px 0 0" id="payEmpNote-${i}">${on ? payNoteHtml(hourly, shares(e.name), splitShare, tip, tipShare, empTotal) : ''}</p>
+      ${wOpen ? `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:13px">
+        <span class="muted">⏰ bol tu od</span><input id="payWf-${i}" type="time" value="${wn ? wn.f : ''}" style="width:auto;padding:6px" onchange="setPayrollWin(${i})">
+        <span class="muted">do</span><input id="payWt-${i}" type="time" value="${wn ? wn.t : ''}" style="width:auto;padding:6px" onchange="setPayrollWin(${i})">
+        ${wn ? `<button class="btn ghost" title="Zrušiť čas (celý deň)" style="width:auto;padding:5px 10px" onclick="setPayrollWin(${i},true)">✕</button>` : ''}
+        ${wn && wn.bad ? '<small style="color:var(--warn);font-weight:700;width:100%">⚠ „do“ musí byť neskôr ako „od“ – zatiaľ sa ráta celý deň</small>'
+          : `<small class="muted" style="width:100%">% len z toho, čo hostia objednali v tomto čase${wn ? '' : ' (prázdne = celý deň)'}</small>`}
+      </div>` : ''}
+      <p class="muted" style="font-size:12px;margin:4px 0 0" id="payEmpNote-${i}">${on ? payNoteHtml(hourly, shares(e.name), shareOf(e.name), tip, tipShare, empTotal, wn) : ''}</p>
     </div>`; }).join('');
   $('#app').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:6px">
@@ -3280,7 +3293,7 @@ function renderUzavierka() {
         <span class="muted">€</span>
       </div>
       <div class="total" style="margin-top:10px"><span>Hodinovky spolu</span><span id="payHourly">${eur(hourlyTotal)}</span></div>
-      <div class="total"><span id="payPctLabel">Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''}${sharers.length ? ', delí sa ' + sharers.length : ''})</span><span id="payPct">${eur(sharers.length ? pctAmount : 0)}</span></div>
+      <div class="total"><span id="payPctLabel">${payPctLabel(pct, excludedRevenue, pctBase, sharers, timed)}</span><span id="payPct">${eur(sharers.length ? pctAmount : 0)}</span></div>
       <div class="total"><span id="payTipLabel">Trinkgeľ${checkedNames.length ? ' (rozdelené medzi ' + checkedNames.length + ')' : ''}</span><span id="payTip">${eur(tip)}</span></div>
       <div class="total" style="border-top:2px solid var(--ink);padding-top:8px;margin-top:6px"><b>Výplaty spolu</b><b id="payGrand">${eur(hourlyTotal + (sharers.length ? pctAmount : 0) + (checkedNames.length ? tip : 0))}</b></div>
       <button class="btn ghost" style="margin-top:10px" onclick="downloadPayrollCsv()">⬇️ Stiahnuť / zdieľať výplaty (CSV pre Excel)</button>
@@ -3481,11 +3494,11 @@ function recomputePayroll() {
   const { pctBase, excludedRevenue } = pctBaseFor(paidToday, total);
   const pctAmount = pctAmountFor(paidToday, pctBase, pct);
   const tip = num(tipOf(payDayKey())) || 0;
-  const { names: checkedNames, sharers, splitShare, tipShare, shares } = payShares(dayHours, pctAmount, tip);
+  const { names: checkedNames, sharers, tipShare, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, paidToday, payDayKey());
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), 0);
   if ($('#payHourly')) $('#payHourly').textContent = eur(hourlyTotal);
   if ($('#payPct')) $('#payPct').textContent = eur(sharers.length ? pctAmount : 0);
-  if ($('#payPctLabel')) $('#payPctLabel').textContent = `Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''}${sharers.length ? ', delí sa ' + sharers.length : ''})`;
+  if ($('#payPctLabel')) $('#payPctLabel').textContent = payPctLabel(pct, excludedRevenue, pctBase, sharers, timed);
   if ($('#payTip')) $('#payTip').textContent = eur(tip);
   if ($('#payTipLabel')) $('#payTipLabel').textContent = `Trinkgeľ${checkedNames.length ? ' (rozdelené medzi ' + checkedNames.length + ')' : ''}`;
   if ($('#payGrand')) $('#payGrand').textContent = eur(hourlyTotal + (sharers.length ? pctAmount : 0) + (checkedNames.length ? tip : 0));
@@ -3494,9 +3507,12 @@ function recomputePayroll() {
     if (row) row.style.opacity = on ? '' : '.6';
     if (!note) return;
     if (!on) { note.innerHTML = ''; return; }
-    const hourly = (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + (shares(e.name) ? splitShare : 0) + tipShare;
-    note.innerHTML = payNoteHtml(hourly, shares(e.name), splitShare, tip, tipShare, empTotal);
+    const hourly = (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + shareOf(e.name) + tipShare;
+    note.innerHTML = payNoteHtml(hourly, shares(e.name), shareOf(e.name), tip, tipShare, empTotal, wins[e.name]);
   });
+}
+function payPctLabel(pct, excludedRevenue, pctBase, sharers, timed) {
+  return `Percentá z tržby (${pct}%${excludedRevenue > 0 ? ', základ ' + eur(pctBase) : ''}${sharers.length ? ', delí sa ' + sharers.length : ''}${timed && sharers.length ? ', ⏰ podľa času' : ''})`;
 }
 // zapísané hodiny > 0 = človek sa ráta do výplat; prázdne / 0 = vypadne (bez zaškrtávania)
 function setPayrollHours(name, val) {
@@ -3558,13 +3574,70 @@ async function setCatPct(enc, val) {
   try { await call('PUT', '/api/access', { catPct: list }); toast(raw === '' ? `${c}: bežné %` : `${c}: ${p} % z tržby`); } finally { render(); }
 }
 const noShareSet = () => new Set((S.access && S.access.noShareEmps) || []);
-// kto má hodiny, dostane trinkgeľ; o % z tržby sa delia len tí, čo nie sú v noShareEmps
-function payShares(dayHours, pctAmount, tip) {
-  const names = Object.keys(dayHours), ns = noShareSet(), sharers = names.filter(n => !ns.has(n));
-  return { names, sharers, splitShare: sharers.length ? pctAmount / sharers.length : 0, tipShare: names.length ? tip / names.length : 0, shares: n => !ns.has(n) };
+// ---------- ⏰ čas, kedy tu človek bol (2026-10-30) ----------
+// Kto prišiel neskôr / odišiel skôr, má v Uzávierke „bol tu od – do“ (meta/payroll/{deň}/w/{meno} = "HH:MM-HH:MM",
+// jedna strana môže chýbať). % z tržby dostane len z objednávok, ktoré hostia OBJEDNALI v tom čase (čas objednania –
+// položka `at` z paySome, pri rovnakom podiele účtu `ord`; staršie platby bez toho = čas zaplatenia). O objednávku
+// sa delia všetci, čo tu vtedy boli (bez zadaného času = celý deň). Čas sa ráta v pracovnom dni od 6:00 do 6:00.
+const bizMinOf = hhmm => { const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm || ''); if (!m) return null; const v = +m[1] * 60 + +m[2] - DAY_START_H * 60; return v < 0 ? v + 1440 : v; };
+function dayWinsOf(day) {
+  const w = (sharedPay[day] || {}).w || {}, out = {};
+  Object.keys(w).forEach(k => {
+    const [f, t] = String(w[k] || '').split('-'); if (!f && !t) return;
+    const a = f ? bizMinOf(f) : 0; let b = t ? bizMinOf(t) : 1440; if (t && b === 0) b = 1440;   // do 6:00 = koniec dňa
+    out[payDec(k)] = { f: f || '', t: t || '', from: a === null ? 0 : a, to: b === null ? 1440 : b, bad: !(b > a) };
+  });
+  return out;
 }
-const payNoteHtml = (hourly, sharing, splitShare, tip, tipShare, total) =>
-  `hodinovka ${eur(hourly)} + ${sharing ? 'podiel z tržby ' + eur(splitShare) : '<i>bez podielu z %</i>'} = hodinovka a percentá <b>${eur(hourly + (sharing ? splitShare : 0))}</b>${tip > 0 ? ` · + trinkgeľ ${eur(tipShare)} = spolu <b>${eur(total)}</b>` : ''}`;
+const winTxt = w => w ? `${w.f || 'od rána'} – ${w.t || 'do konca'}` : '';
+// minúty od 6:00 pracovného dňa, kedy sa položka objednala
+const bizMinAt = (ts, day) => Math.min(1439, Math.max(0, Math.floor((ts - parseISODate(day).getTime() - DAY_START_H * 3600e3) / 60e3)));
+// časti platby pre % – [{ts, raw}] (raw = % z položky ako v pctAmountFor, vylúčené položky nič)
+function pctChunks(o, pct) {
+  const noPctSet = new Set((S.access && S.access.noPctItems) || []), out = [];
+  const rawOf = i => (i.noPct || noPctSet.has(pctName(i))) ? 0 : (Number(i.price) || 0) * (Number(i.qty) || 0) * (catPctOf(i) ?? pct) / 100;
+  const ord = o.ord ? Object.values(o.ord).filter(x => x && x.v > 0) : [];
+  if (ord.length) {   // rovnaký podiel účtu – rozdelí sa podľa toho, z čoho sa účet skladal
+    const raw = (o.items || []).reduce((s, i) => s + rawOf(i), 0), sum = ord.reduce((s, x) => s + x.v, 0);
+    ord.forEach(x => out.push({ ts: x.t, raw: raw * x.v / sum }));
+  } else (o.items || []).forEach(i => out.push({ ts: i.at || o.createdAt || o.paidAt, raw: rawOf(i) }));
+  return out.filter(x => x.raw > 0);
+}
+// kto má hodiny, dostane trinkgeľ; o % z tržby sa delia len tí, čo nie sú v noShareEmps
+// shareOf(meno) = jeho podiel z % (pri ⏰ čase len z objednávok v jeho čase, inak rovným dielom)
+function payShares(dayHours, pctAmount, tip, paidOrders, day) {
+  const names = Object.keys(dayHours), ns = noShareSet(), sharers = names.filter(n => !ns.has(n));
+  const splitShare = sharers.length ? pctAmount / sharers.length : 0;
+  const wins = day ? dayWinsOf(day) : {}, timed = sharers.some(n => wins[n] && !wins[n].bad);
+  let shareOf = n => sharers.includes(n) ? splitShare : 0;
+  if (timed && pctAmount > 0 && paidOrders) {
+    const w = {}, pct = payPct(); let sum = 0;
+    sharers.forEach(n => { w[n] = 0; });
+    paidOrders.forEach(o => pctChunks(o, pct).forEach(c => {
+      const t = bizMinAt(c.ts, day), here = sharers.filter(n => !wins[n] || wins[n].bad || (t >= wins[n].from && t < wins[n].to));
+      const list = here.length ? here : sharers;   // vtedy tu podľa časov nebol nikto → delí sa medzi všetkých
+      list.forEach(n => { w[n] += c.raw / list.length; }); sum += c.raw;
+    }));
+    if (sum > 0) shareOf = n => sharers.includes(n) ? Math.round(pctAmount * w[n] / sum * 100) / 100 : 0;
+  }
+  return { names, sharers, splitShare, tipShare: names.length ? tip / names.length : 0, shares: n => !ns.has(n), shareOf, timed, wins };
+}
+const payNoteHtml = (hourly, sharing, share, tip, tipShare, total, win) =>
+  `hodinovka ${eur(hourly)} + ${sharing ? `podiel z tržby${win && !win.bad ? ` <b>za ⏰ ${winTxt(win)}</b>` : ''} ${eur(share)}` : '<i>bez podielu z %</i>'} = hodinovka a percentá <b>${eur(hourly + (sharing ? share : 0))}</b>${tip > 0 ? ` · + trinkgeľ ${eur(tipShare)} = spolu <b>${eur(total)}</b>` : ''}`;
+let payWinOpen = new Set();   // komu je rozbalené ⏰ (aj bez zadaného času)
+function togglePayWin(i) { const e = (S.employees || [])[i]; if (!e) return; if (payWinOpen.has(e.name)) payWinOpen.delete(e.name); else payWinOpen.add(e.name); render(); }
+function setPayrollWin(i, clear) {
+  const e = (S.employees || [])[i]; if (!e) return;
+  const k = payDayKey(), fEl = $('#payWf-' + i), tEl = $('#payWt-' + i);
+  const f = clear ? '' : ((fEl && fEl.value) || ''), t = clear ? '' : ((tEl && tEl.value) || ''), v = f || t ? `${f}-${t}` : null;
+  sharedPay[k] = sharedPay[k] || {}; sharedPay[k].w = sharedPay[k].w || {};
+  if (v) sharedPay[k].w[payEnc(e.name)] = v; else { delete sharedPay[k].w[payEnc(e.name)]; if (clear) payWinOpen.delete(e.name); }
+  db.ref(`meta/payroll/${k}/w/${payEnc(e.name)}`).set(v).catch(() => toast('Čas sa nepodarilo uložiť'));
+  // hodiny ešte nie sú zapísané → doplnia sa z času (na štvrťhodiny), dajú sa prepísať
+  const w = dayWinsOf(k)[e.name];
+  if (f && t && w && !w.bad && !((num(dayHoursOf(k)[e.name]) || 0) > 0)) setPayrollHours(e.name, String(Math.round((w.to - w.from) / 15) / 4));
+  render();
+}
 async function setPayPct(val) {
   if (!isManager) return;
   const v = num(val); if (!(v >= 0 && v <= 100)) return toast('Zadaj % od 0 do 100');
@@ -3649,17 +3722,17 @@ async function downloadPayrollCsv() {
   const { pctBase, excludedRevenue } = pctBaseFor(paidToday, total);
   const pctAmount = pctAmountFor(paidToday, pctBase, pct);
   const tip = num(tipOf(payDayKey())) || 0;
-  const { names, sharers, splitShare, tipShare, shares } = payShares(dayHours, pctAmount, tip);
+  const { names, sharers, tipShare, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, paidToday, payDayKey());
   const pctPaid = sharers.length ? pctAmount : 0, tipPaid = names.length ? tip : 0;   // reálne vyplatené (ak sa nikto nedelí, nič)
   let hourlyTotal = 0;
   // sadzbu €/h vidí len vedúci (aj v CSV) - ostatní (prístup cez PIN) dostanú súbor bez tohto stĺpca
-  const rows = [['Meno', 'Odpracované hodiny', ...(isManager ? ['Hodinovka €/h'] : []), 'Hodinovka spolu €', 'Podiel z tržby €', 'Hodinovka + percentá €', 'Trinkgeľ €', 'Spolu €']];
+  const rows = [['Meno', 'Odpracované hodiny', '⏰ Bol tu (od – do)', ...(isManager ? ['Hodinovka €/h'] : []), 'Hodinovka spolu €', 'Podiel z tržby €', 'Hodinovka + percentá €', 'Trinkgeľ €', 'Spolu €']];
   (S.employees || []).forEach(e => {
     if (!(e.name in dayHours)) return;
-    const h = num(dayHours[e.name]) || 0;
-    const hourly = h * (e.wage || 0) * wageMult(payDayKey()), share = shares(e.name) ? splitShare : 0;
+    const h = num(dayHours[e.name]) || 0, w = wins[e.name];
+    const hourly = h * (e.wage || 0) * wageMult(payDayKey()), share = shareOf(e.name);
     hourlyTotal += hourly;
-    rows.push([e.name, h, ...(isManager ? [e.wage || 0] : []), hourly.toFixed(2), share.toFixed(2), (hourly + share).toFixed(2), tipShare.toFixed(2), (hourly + share + tipShare).toFixed(2)]);
+    rows.push([e.name, h, w && !w.bad ? winTxt(w) : 'celý deň', ...(isManager ? [e.wage || 0] : []), hourly.toFixed(2), share.toFixed(2), (hourly + share).toFixed(2), tipShare.toFixed(2), (hourly + share + tipShare).toFixed(2)]);
   });
   rows.push([]);
   rows.push(['Tržba za deň €', total.toFixed(2)]);
@@ -3672,6 +3745,7 @@ async function downloadPayrollCsv() {
   rows.push(['Percentá %', pct]);
   rows.push(['Percentá spolu €', pctPaid.toFixed(2)]);
   if (noShareSet().size) rows.push(['Nedelia sa o percentá', [...noShareSet()].join(', ')]);
+  if (timed && sharers.length) rows.push(['⏰ Percentá podľa času', 'kto má zadaný čas, má % len z objednávok v tom čase']);
   rows.push(['Trinkgeľ spolu €', tipPaid.toFixed(2)]);
   rows.push(['Hodinovky spolu €', hourlyTotal.toFixed(2)]);
   rows.push(['Hodinovky + percentá spolu €', (hourlyTotal + pctPaid).toFixed(2)]);
