@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-30c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-30d</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -3213,8 +3213,9 @@ function renderUzavierka() {
   const { names: checkedNames, sharers, tipShare, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, dayKey);
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), 0);
   // (2026-10-22) kto má v tento deň smenu (zo Smien) – je hore a označený "📅 na smene"; ostatní pod ním
+  // (2026-10-30) úplne hore sú tí, čo už majú zapísané hodiny (payEmpOrder)
   const onShift = shiftNamesFor(dayKey);
-  const empOrder = (S.employees || []).map((e, i) => ({ e, i })).sort((a, b) => (onShift.includes(b.e.name) ? 1 : 0) - (onShift.includes(a.e.name) ? 1 : 0));
+  const empOrder = payEmpOrder(dayHours, onShift);
   const empRows = empOrder.map(({ e, i }) => { const on = e.name in dayHours; const h = dayHours[e.name] || ''; const sh = onShift.includes(e.name);
     const hourly = (num(h) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + (on ? shareOf(e.name) + tipShare : 0);
     const wn = wins[e.name], wOpen = !!wn || payWinOpen.has(e.name);
@@ -3226,7 +3227,7 @@ function renderUzavierka() {
         ${isManager && !e.wage ? '<small class="muted" title="Nastav v Nastaveniach -> Zamestnanci">bez sadzby</small>' : ''}
         <button class="btn ghost" title="Prišiel / odišiel v inom čase – % len z jeho času" style="width:auto;padding:6px 9px;${wn ? 'border-color:var(--accent);background:var(--accent);color:#fff' : ''}" onclick="togglePayWin(${i})">⏰</button>
         <input type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="hodín" value="${h}"
-          oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)">
+          oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)" onchange="sortPayRow(${i})" onkeydown="if(event.key==='Enter')this.blur()">
       </div>
       ${wOpen ? `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:13px">
         <span class="muted">⏰ bol tu od</span><input id="payWf-${i}" type="time" value="${wn ? wn.f : ''}" style="width:auto;padding:6px" onchange="setPayrollWin(${i})">
@@ -3272,7 +3273,7 @@ function renderUzavierka() {
       <label style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding:8px 10px;border-radius:10px;${isHoliday(dayKey) ? 'background:var(--warnbg);color:var(--warn);font-weight:700' : 'border:1px dashed var(--line)'}">
         <input type="checkbox" style="width:22px;height:22px;flex:none" ${isHoliday(dayKey) ? 'checked' : ''} onchange="setHoliday(this.checked)">
         <span>🎉 Sviatok – dvojnásobná hodinovka${skHolidayName(dayKey) ? ` <small>(${esc(skHolidayName(dayKey))})</small>` : ''}</span></label>
-      ${empRows || '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách a nastav im sadzbu v Nastaveniach.</p>'}
+      ${empRows ? `<div id="payEmpList">${empRows}</div>` : '<p class="muted">Zatiaľ žiadni zamestnanci. Pridaj ich v Smenách a nastav im sadzbu v Nastaveniach.</p>'}
       <div class="row" style="margin-top:10px;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
         <span class="muted" style="flex:1;font-size:13px">Percentá z tržby pre personál: <b>${pct} %</b>${noShareSet().size ? ` · nedelia sa: ${esc([...noShareSet()].join(', '))}` : ''}
           ${accessPctSet() ? '' : (sharedPayPct !== null && sharedPayPct !== undefined)
@@ -3527,6 +3528,19 @@ function payBasis(date, paid) {
   const openOrd = dayOpenOrders(date), openTotal = sumOrders(openOrd), orders = paid.concat(openOrd);
   const { pctBase, excludedRevenue } = pctBaseFor(orders, sumOrders(paid) + openTotal);
   return { orders, openTotal, pctBase, excludedRevenue, pctAmount: pctAmountFor(orders, pctBase, payPct()) };
+}
+// (2026-10-30) poradie vo výplatnej kalkulačke: so zapísanými hodinami hore (pod sebou), potom 📅 na smene, potom ostatní
+function payEmpOrder(dayHours, onShift) {
+  const rank = n => (num(dayHours[n]) || 0) > 0 ? 0 : onShift.includes(n) ? 1 : 2;
+  return (S.employees || []).map((e, i) => ({ e, i })).sort((a, b) => rank(a.e.name) - rank(b.e.name) || a.i - b.i);
+}
+// po dopísaní hodín (zmena / Enter) sa presunie LEN tento riadok – bez prekreslenia, nech sa nezatvorí políčko,
+// do ktorého človek práve ťukol
+function sortPayRow(i) {
+  const box = $('#payEmpList'), row = $('#payEmpRow-' + i); if (!box || !row) return;
+  const day = payDayKey(), order = payEmpOrder(dayHoursOf(day), shiftNamesFor(day)), at = order.findIndex(x => x.i === i);
+  const next = order.slice(at + 1).map(x => $('#payEmpRow-' + x.i)).find(Boolean);
+  if (next) { if (row.nextElementSibling !== next) box.insertBefore(row, next); } else if (box.lastElementChild !== row) box.appendChild(row);
 }
 // zapísané hodiny > 0 = človek sa ráta do výplat; prázdne / 0 = vypadne (bez zaškrtávania)
 function setPayrollHours(name, val) {
