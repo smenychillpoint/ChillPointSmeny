@@ -93,7 +93,7 @@
   // zdieľané zariadenie (rovnaké ako v Objednávkach) - aby sa dali čítať rezervácie a odovzdávky
   const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk', DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
   // časti, ku ktorým vedúci nastavuje prístup (settings/hubAccess/e/<meno>/<kľúč> = false -> nemá prístup)
-  const AREAS = [['smeny', '📅 Smeny'], ['objednavky', '🍹 Objednávky'], ['kupit', '📦 Kúpiť'], ['odovzdavka', '📝 Odovzdávka'], ['rezervacie', '📆 Rezervácie'], ['odpovede', '✉️ Odpovede']];
+  const AREAS = [['smeny', '📅 Smeny'], ['objednavky', '🍹 Objednávky'], ['kupit', '📦 Kúpiť'], ['odovzdavka', '📝 Odovzdávka'], ['rezervacie', '📆 Rezervácie']];
   const DAY_NAMES = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
 
   // (2026-10-26) Prehliadač nemá ponúkať uložené heslá v bežných políčkach (odovzdávka, kúpiť, kód…):
@@ -430,7 +430,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-28</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-30</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -523,11 +523,7 @@
       const r = laserStats();
       html += `<a class="tile" href="rezervacie.html" style="border-left-color:var(--blue)"><span class="ic">🎯</span><span class="tx"><b>Rezervácie laser game${r.fresh ? `<span class="badge">${r.fresh}</span>` : ''}</b><span>${r.ok ? `${r.today ? `Dnes: ${r.today} · ` : ''}Nadchádzajúce: ${r.upcoming}${r.fresh ? ` · 🆕 nové: ${r.fresh}` : ''}${laserEnv === 'test' ? ' · 🧪 test' : ''}` : 'Laser game z webu – pridať, upraviť, zrušiť'}</span></span><span class="arr">›</span></a>`;
     }
-    // (2026-10-26e) ✉️ Odpovede na e-maily – vedúci vždy; zamestnanci až keď vedúci v Odpovediach → ⚙ zapne
-    // „Aj zamestnanci“ (settings/hubAccess/odpAll) a človek nemá v Prístupoch odškrtnuté ✉️ Odpovede
-    if (isMgr || (access.odpAll && me && allowed('odpovede'))) {
-      html += `<a class="tile" href="odpovede.html" style="border-left-color:var(--green)"><span class="ic">✉️</span><span class="tx"><b>Odpovede na e-maily</b><span>Hotové odpovede – vyber, doplň meno, počet, dátum a skopíruj${isMgr && !access.odpAll ? ' · 🔒 zatiaľ len vedúci' : ''}</span></span><span class="arr">›</span></a>`;
-    }
+    // (2026-10-30) dlaždica ✉️ Odpovede na e-maily odstránená z úvodu (želanie používateľa); odpovede.html a šablóny vo Firebase (ai) ostali
     if (allowed('kupit')) {
       // otvorené položky s tlačidlom "✓ doplnené/kúpené", vybavené (7 dní) s "↺ vrátiť", vedúci môže mazať
       // jeden zoznam "Kúpiť" (staré položky typu "chýba" sú v ňom tiež)
@@ -583,7 +579,7 @@
         + link('rezervacie.html#nastavenia', '🎯', 'Nastavenia rezervácií', 'Balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-28</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-30</footer>`;
     app.innerHTML = html;
   }
 
