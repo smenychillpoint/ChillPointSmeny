@@ -254,7 +254,9 @@
   // offerStep = výber ponuky zákazníkom na webe: 'off' | 'before' | 'after' (pred / po počte hráčov)
   // (2026-10-30, plugin 1.5.0) stepOrder = poradie krokov na webe: 'players' (najprv počet hráčov) | 'term' (najprv termín);
   // webPkgs = {<id balíčka>: true} – ktoré balíčky si zákazník môže rezervovať na webe ("" = žiadny)
-  const CFG_KEYS = ['hours', 'daysOff', 'step', 'game', 'change', 'rest', 'minPlayers', 'maxPlayers', 'maxGames', 'leadMinutes', 'offers', 'offerStep', 'stepOrder', 'webPkgs', 'mailCustomer', 'mailNote', 'mailUs'];
+  // (2026-10-31) mailCustSubj/mailCustBody/mailUsSubj/mailUsBody = celé texty e-mailov so značkami {meno}… ("" = predvolené, plugin 1.6.0)
+  const CFG_KEYS = ['hours', 'daysOff', 'step', 'game', 'change', 'rest', 'minPlayers', 'maxPlayers', 'maxGames', 'leadMinutes', 'offers', 'offerStep', 'stepOrder', 'webPkgs', 'mailCustomer', 'mailNote', 'mailUs',
+    'mailCustSubj', 'mailCustBody', 'mailUsSubj', 'mailUsBody'];
   // hra 15 min + 5 min výmena → iná partia najskôr o 20 min (BLOCK); tá istá partia oddych 40 min (rest)
   let B = null, BLOCK = 20;
   function offersNorm(v) {
@@ -1385,45 +1387,81 @@
       offerStep: ['before', 'after'].includes(o.offerStep) ? o.offerStep : 'off',
       stepOrder: o.stepOrder === 'term' ? 'term' : 'players',
       webPkgs: { ...(o.webPkgs || {}) },
-      mailCustomer: o.mailCustomer !== false, mailNote: String(o.mailNote == null ? '' : o.mailNote), mailUs: String(o.mailUs || '')
+      mailCustomer: o.mailCustomer !== false, mailNote: String(o.mailNote == null ? '' : o.mailNote), mailUs: String(o.mailUs || ''),
+      // nevyplnený text = predvolený (s doterajším „textom navyše“), nech sa dá hneď upravovať
+      ...Object.fromEntries(MAIL_TPL_KEYS.map(k => [k, String(o[k] || '').trim() ? String(o[k]) : mailDefs(o.mailNote)[k]]))
     };
   }
   // ---- ✉️ ukážka e-mailov z webu – rovnaký text skladá WordPress (chillpoint-rezervacie.php, cpr_mail_texts) ----
   let mailSample = 'laser';
   const MAIL_DAYS = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
   const mailDay = k => { const d = new Date(k + 'T12:00:00'); return `${MAIL_DAYS[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}. ${d.getFullYear()}`; };
+  // (2026-10-31) celé texty e-mailov sa píšu v Nastaveniach; značky {…} nahradí WordPress údajmi z rezervácie
+  const MAIL_NOTE_DEF = 'Príďte prosím aspoň 10 minút pred prvou hrou.';
+  const MAIL_TPL_KEYS = ['mailCustSubj', 'mailCustBody', 'mailUsSubj', 'mailUsBody'];
+  const MAIL_TAGS = [['meno', 'meno zákazníka'], ['telefon', 'telefón zákazníka'], ['email', 'e-mail zákazníka'], ['pocet', 'počet hráčov / osôb'],
+    ['co', '„laser game“ alebo názov balíčka'], ['datum', 'deň, napr. piatok 6. 11. 2026'], ['cas', 'začiatok (pri balíčku príchod)'], ['hry', 'deň a časy hier'],
+    ['rezervacia', 'celý prehľad – počet, hry, pri balíčku príchod a čas atrakcií'], ['stav_potvrdenia', 'pre nás: či zákazníkovi odišlo potvrdenie']];
+  // predvolené texty – ROVNAKÉ ako cpr_mail_defaults() v plugine (chillpoint-rezervacie.php)
+  function mailDefs(note) {
+    note = String(note == null ? '' : note).trim();
+    return {
+      mailCustSubj: 'Potvrdenie rezervácie – Chillpoint {co}',
+      mailCustBody: `Dobrý deň {meno},\n\nďakujeme za rezerváciu {co} v Chillpoint Trnava.\n\n{rezervacia}\n\nPlatba je na mieste.\n${note ? note + '\n' : ''}`
+        + '\nAk potrebujete rezerváciu zmeniť alebo zrušiť, zavolajte nám na 0910 836 876.\n\nTešíme sa na vás!\nChillpoint\nhttps://chillpoint.sk/',
+      mailUsSubj: 'Nová rezervácia z webu – {meno}, {datum} o {cas}',
+      mailUsBody: 'Nová rezervácia z webu chillpoint.sk:\n\nMeno: {meno}\nTelefón: {telefon}\nE-mail: {email}\n{rezervacia}\n\n'
+        + 'Potvrdiť alebo upraviť v appke: https://smenychillpoint.github.io/ChillPointSmeny/rezervacie.html\n{stav_potvrdenia}\nKeď na tento e-mail odpovieš, odpoveď pôjde zákazníkovi.' };
+  }
+  // ako PHP strtr: nahradí len známe značky, výsledok sa už znova neprechádza
+  const mailFill = (t, map) => String(t).replace(/\{([a-z_]+)\}/g, (m, k) => Object.prototype.hasOwnProperty.call(map, k) ? map[k] : m);
+  const mailOneLine = t => t.replace(/[\r\n\t ]+/g, ' ').trim();   // predmet = jeden riadok (ako sanitize_text_field v PHP)
   function mailTexts(c, env0, s) {
-    const T = env0 === 'test' ? '[TEST] ' : '', phone = '0910 836 876', P = s.pkg ? pkgs()[s.pkg] || pkgNorm({}) : null;
+    const T = env0 === 'test' ? '[TEST] ' : '', P = s.pkg ? pkgs()[s.pkg] || pkgNorm({}) : null, D = mailDefs(c.mailNote);
+    const tpl = k => String(c[k] || '').trim() ? String(c[k]).replace(/\r/g, '').trim().slice(0, k.endsWith('Subj') ? 150 : 3000) : D[k];
     const lines = s.games.map(t => `  • ${mailDay(s.date)} o ${t}`);
-    let pk = '';
+    let block;
     if (P) {
       const a = mcAttr({ games: Object.fromEntries(s.games.map(t => [rawKey(s.date, t), true])), mStart: s.mStart, mOrder: s.mOrder }, P);
-      pk = `Balíček: ${P.name}\nPríchod: ${mailDay(s.date)} o ${s.mStart}\nLaser game: ${s.games.join(', ')}\n` + (P.attrMin ? `${P.attrText || 'Atrakcie'}: cca ${showM(a.from)} – ${showM(a.to)}\n` : '');
-    }
-    const cust = {
-      to: s.email, subj: `${T}Potvrdenie rezervácie – Chillpoint ${P ? P.name : 'laser game'}`,
-      body: `Dobrý deň ${s.name},\n\nďakujeme za rezerváciu ${P ? P.name : 'laser game'} v Chillpoint Trnava.\n\n`
-        + (P ? pk + `Počet osôb: ${s.players}\n` : `Počet hráčov: ${s.players}\n${lines.length > 1 ? 'Hry' : 'Hra'}:\n${lines.join('\n')}\n`)
-        + `\nPlatba je na mieste.\n${c.mailNote ? c.mailNote.trim() + '\n' : ''}`
-        + `\nAk potrebujete rezerváciu zmeniť alebo zrušiť, zavolajte nám na ${phone}.\n\nTešíme sa na vás!\nChillpoint\nhttps://chillpoint.sk/` };
-    const us = {
-      to: c.mailUs || '(nevyplnené)', subj: `${T}Nová rezervácia z webu – ${s.name}, ${mailDay(s.date).split(' ').slice(0, 3).join(' ')} o ${s.mStart || s.games[0]}`,
-      body: `Nová rezervácia z webu chillpoint.sk:\n\nMeno: ${s.name}\nTelefón: ${s.phone}\nE-mail: ${s.email}\n`
-        + (P ? pk + `Počet osôb: ${s.players}\n` : `Počet hráčov: ${s.players}\nHry: ${mailDay(s.date)} o ${s.games.join(', ')}\n`)
-        + `\nPotvrdiť alebo upraviť v appke: https://smenychillpoint.github.io/ChillPointSmeny/rezervacie.html\n`
-        + (c.mailCustomer ? `Zákazníkovi odišlo potvrdenie na ${s.email}.` : 'Zákazníkovi sa potvrdenie neposiela.')
-        + `\nKeď na tento e-mail odpovieš, odpoveď pôjde zákazníkovi.` };
+      block = `Balíček: ${P.name}\nPríchod: ${mailDay(s.date)} o ${s.mStart}\nLaser game: ${s.games.join(', ')}\n`
+        + (P.attrMin ? `${P.attrText || 'Atrakcie'}: cca ${showM(a.from)} – ${showM(a.to)}\n` : '') + `Počet osôb: ${s.players}`;
+    } else block = `Počet hráčov: ${s.players}\n${lines.length > 1 ? 'Hry' : 'Hra'}:\n${lines.join('\n')}`;
+    const map = { meno: s.name, telefon: s.phone || '—', email: s.email, pocet: String(s.players), co: P ? P.name : 'laser game', datum: mailDay(s.date),
+      cas: P ? s.mStart : s.games[0], hry: `${mailDay(s.date)} o ${s.games.join(', ')}`, rezervacia: block, stav_potvrdenia: '' };
+    const cust = { to: s.email, subj: mailOneLine(T + mailFill(tpl('mailCustSubj'), map)), body: mailFill(tpl('mailCustBody'), map) };
+    map.stav_potvrdenia = c.mailCustomer ? `Zákazníkovi odišlo potvrdenie na ${s.email}.` : 'Zákazníkovi sa potvrdenie neposiela.';
+    const us = { to: c.mailUs || '(nevyplnené)', subj: mailOneLine(T + mailFill(tpl('mailUsSubj'), map)), body: mailFill(tpl('mailUsBody'), map) };
     return { cust, us };
   }
-  function mailPreviewHtml(c) {
+  function mailBoxesHtml(c) {
     const d = addDays(todayKey(), ((5 - new Date(todayKey() + 'T12:00:00').getDay() + 7) % 7) || 7);   // najbližší piatok
     const pk = Object.keys(pkgs())[0];
     const s = mailSample === 'pkg' && pk ? { name: 'Lucia Kováčová', phone: '+421 905 111 222', email: 'lucia@example.com', players: 10, date: d, pkg: pk, mStart: '16:00', mOrder: 'games', games: mcGames('16:00', 'games', pkgs()[pk]) }
       : { name: 'Ján Novák', phone: '+421 910 123 456', email: 'jan.novak@example.com', players: 6, date: d, games: ['18:00', '18:40'] };
     const m = mailTexts(c, env, s);
     const box = (title, x, off) => `<div class="mailbox${off ? ' off' : ''}"><div class="mh"><b>${title}</b>${off ? ' <span class="mut">– neposiela sa</span>' : ''}<br><span class="mut">Komu:</span> ${esc(x.to)}<br><span class="mut">Predmet:</span> <b>${esc(x.subj)}</b></div><pre>${esc(x.body)}</pre></div>`;
+    return box('📨 Zákazníkovi', m.cust, !c.mailCustomer) + box('📥 Nám', m.us, !c.mailUs);
+  }
+  function mailPreviewHtml(c) {
     return `<div class="seg" style="margin:10px 0 8px"><button class="${mailSample !== 'pkg' ? 'on' : ''}" onclick="mailSample='laser';render()">Ukážka: laser game</button><button class="${mailSample === 'pkg' ? 'on' : ''}" onclick="mailSample='pkg';render()">Ukážka: balíček</button></div>
-      <div class="mails">${box('📨 Zákazníkovi', m.cust, !c.mailCustomer)}${box('📥 Nám', m.us, !c.mailUs)}</div>`;
+      <div class="mails" id="mailPrev">${mailBoxesHtml(c)}</div>`;
+  }
+  // písanie textu → ukážka sa prepíše hneď (bez prekreslenia, políčko ostane otvorené)
+  function cfgMail(k, v) { cfgSet(k, v); const p = $('mailPrev'); if (p) p.innerHTML = mailBoxesHtml(cfgF); }
+  // ťuknutie na značku ju vloží tam, kde je kurzor (do naposledy otvoreného políčka e-mailu)
+  let mailFocus = 'c_mailCustBody';
+  function mailTag(k) {
+    const el = $(mailFocus); if (!el) return;
+    // kurzor si políčko pamätá aj po opustení (na mobile ťuknutie na značku políčko zavrie)
+    const a = el.selectionStart == null ? el.value.length : el.selectionStart, b = el.selectionEnd == null ? a : el.selectionEnd;
+    el.focus();
+    el.setRangeText('{' + k + '}', a, b, 'end');
+    cfgMail(mailFocus.slice(2), el.value);
+  }
+  function mailReset(who) {
+    if (!confirm(`Vrátiť pôvodný text e-mailu ${who === 'cust' ? 'zákazníkovi' : 'nám'}? Tvoje úpravy v ňom sa stratia (platí až po 💾 Uložiť).`)) return;
+    const D = mailDefs(MAIL_NOTE_DEF), ks = who === 'cust' ? ['mailCustSubj', 'mailCustBody'] : ['mailUsSubj', 'mailUsBody'];
+    ks.forEach(k => { cfgF[k] = D[k]; }); cfgDirty = true; cfgErr = ''; render();
   }
   function cfgWebPkg(id, on) { const w = { ...cfgF.webPkgs }; if (on) w[id] = true; else delete w[id]; cfgF.webPkgs = w; cfgDirty = true; cfgErr = ''; render(); }
   // poradie krokov, ako ich uvidí zákazník (text do nastavení)
@@ -1502,9 +1540,17 @@
     // len balíčky, ktoré ešte existujú; prázdne → "" (Firebase prázdny objekt neuloží)
     const wp = {}; Object.keys(c.webPkgs || {}).forEach(id => { if (c.webPkgs[id] && pkgs()[id]) wp[id] = true; });
     out.webPkgs = Object.keys(wp).length ? wp : '';
-    const mailUs = String(c.mailUs || '').trim(), mailNote = String(c.mailNote || '').trim();
+    const mailUs = String(c.mailUs || '').trim(), mailNote = String(c.mailNote || '').trim().slice(0, 400);
     if (mailUs && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mailUs)) return fail('E-mail pre nás nie je v poriadku (napr. info@chillpoint.sk).');
-    if (mailNote.length > 400) return fail('Text navyše v e-maile môže mať najviac 400 znakov.');
+    // texty e-mailov: prázdne = predvolené; neznáma značka by v e-maile ostala ako {xyz} → radšej upozorniť
+    for (const k of MAIL_TPL_KEYS) {
+      const v = String(c[k] || '').replace(/\r/g, '').trim(), subj = k.endsWith('Subj'), what = `${subj ? 'Predmet' : 'Text'} e-mailu ${k.startsWith('mailCust') ? 'zákazníkovi' : 'nám'}`;
+      if (v.length > (subj ? 150 : 3000)) return fail(`${what} môže mať najviac ${subj ? 150 : 3000} znakov.`);
+      const bad = (v.match(/\{[^{}\n]*\}/g) || []).find(t => !MAIL_TAGS.some(([x]) => `{${x}}` === t));
+      if (bad) return fail(`${what}: neznáma značka ${bad} – použi len značky zo zoznamu (napr. {meno}).`);
+      out[k] = v;
+    }
+    // mailNote ostáva len pre prípad prázdneho textu (predvolený text ho obsahuje)
     out.mailCustomer = !!c.mailCustomer; out.mailNote = mailNote; out.mailUs = mailUs;
     out.updatedAt = firebase.database.ServerValue.TIMESTAMP;
     busyAct = true;
@@ -1566,12 +1612,25 @@
         ${pkOk === false ? '<div class="warn" style="margin:8px 0 0">⚠ Kým nie sú vo Firebase vložené nové pravidlá (firebase-rules.json – pribudlo „pk“), balíček sa na webe rezervovať nedá. Najprv pravidlá, potom zaškrtni.</div>' : ''}</div>
       <h2>✉️ E-maily z webu</h2>
       <div class="card">
-        <label class="chk"><input type="checkbox" ${c.mailCustomer ? 'checked' : ''} onchange="cfgSetR('mailCustomer',this.checked)"> 📨 Poslať zákazníkovi potvrdenie na e-mail</label>
-        <label class="f" style="margin-top:10px">Text navyše pre zákazníka (napr. kedy prísť, parkovanie, čo si vziať)</label>
-        <textarea id="c_mailNote" maxlength="400" oninput="cfgSet('mailNote',this.value)">${esc(c.mailNote)}</textarea>
-        <label class="f">📥 Upozornenie o novej rezervácii z webu posielať nám na e-mail</label>
-        <input id="c_mailUs" type="email" maxlength="100" value="${esc(c.mailUs)}" placeholder="napr. info@chillpoint.sk – prázdne = neposielať" oninput="cfgSet('mailUs',this.value)">
-        <p class="hint" style="margin:0">E-maily posiela WordPress (plugin 1.5.0) po rezervácii na chillpoint.sk. Testovacia stránka na GitHube e-maily neposiela – tu je presná ukážka (po úprave textu ťukni mimo políčka). Platí po 💾 Uložiť.</p>
+        <p class="hint" style="margin:0 0 8px">E-maily posiela WordPress (plugin 1.6.0) po rezervácii na chillpoint.sk – testovacia stránka na GitHube ich neposiela. Texty si napíš, ako chceš; <b>značky v {zátvorkách}</b> sa nahradia údajmi z rezervácie. Ťukni na značku a vloží sa tam, kde práve píšeš. Ukážka dole sa mení hneď, platí po 💾 Uložiť.</p>
+        <div class="chips" style="margin-bottom:4px">${MAIL_TAGS.map(([k, d]) => `<button class="chip" title="${esc(d)}" onmousedown="event.preventDefault()" onclick="mailTag('${k}')">{${k}}</button>`).join('')}</div>
+        <p class="hint" style="margin:0 0 10px">${MAIL_TAGS.map(([k, d]) => `<b>{${k}}</b> ${esc(d)}`).join(' · ')}</p>
+        <label class="f"><b>📨 E-mail zákazníkovi</b></label>
+        <label class="chk"><input type="checkbox" ${c.mailCustomer ? 'checked' : ''} onchange="cfgSetR('mailCustomer',this.checked)"> Posielať zákazníkovi potvrdenie</label>
+        <label class="f">Predmet</label>
+        <input id="c_mailCustSubj" maxlength="150" value="${esc(c.mailCustSubj)}" onfocus="mailFocus=this.id" oninput="cfgMail('mailCustSubj',this.value)">
+        <label class="f">Text</label>
+        <textarea id="c_mailCustBody" rows="14" maxlength="3000" onfocus="mailFocus=this.id" oninput="cfgMail('mailCustBody',this.value)">${esc(c.mailCustBody)}</textarea>
+        <button class="btn ghost sm" style="margin:6px 0 14px" onclick="mailReset('cust')">↺ Pôvodný text zákazníkovi</button>
+        <label class="f"><b>📥 E-mail nám (nová rezervácia z webu)</b></label>
+        <label class="f">Posielať na e-mail</label>
+        <input id="c_mailUs" type="email" maxlength="100" value="${esc(c.mailUs)}" placeholder="napr. info@chillpoint.sk – prázdne = neposielať" oninput="cfgMail('mailUs',this.value)">
+        <label class="f">Predmet</label>
+        <input id="c_mailUsSubj" maxlength="150" value="${esc(c.mailUsSubj)}" onfocus="mailFocus=this.id" oninput="cfgMail('mailUsSubj',this.value)">
+        <label class="f">Text</label>
+        <textarea id="c_mailUsBody" rows="11" maxlength="3000" onfocus="mailFocus=this.id" oninput="cfgMail('mailUsBody',this.value)">${esc(c.mailUsBody)}</textarea>
+        <button class="btn ghost sm" style="margin:6px 0 4px" onclick="mailReset('us')">↺ Pôvodný text nám</button>
+        <label class="f" style="margin-top:10px"><b>👀 Ukážka</b> <span class="mut">(v teste má predmet navyše [TEST])</span></label>
         ${mailPreviewHtml(c)}
       </div>
       <h2>🎁 Ponuky na webe${c.offers.length ? ' · ' + c.offers.map(o => esc(o.paid) + '+' + esc(o.free)).join(', ') : ''}</h2>
@@ -1740,7 +1799,7 @@
     const ovScroll = document.querySelector('.ov') ? document.querySelector('.ov').scrollTop : 0;
     html += `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <div class="seg" style="flex:1;min-width:220px;margin:0"><button class="${env === 'test' ? 'on' : ''}" onclick="setEnv('test')">🧪 Test</button><button class="${env === 'live' ? 'on' : ''}" onclick="setEnv('live')">🟢 Ostré (web)</button></div>
-        ${env === 'test' && isMgr ? '<a class="btn ghost sm" href="https://smenychillpoint.github.io/Teststranky/" target="_blank" rel="noopener" style="text-decoration:none">🧪 Ako zákazník ›</a>' : ''}</div>
+        ${isMgr ? `<a class="btn ghost sm" href="https://smenychillpoint.github.io/Teststranky/${env === 'live' ? '?ostre' : ''}" target="_blank" rel="noopener" style="text-decoration:none">${env === 'live' ? '🟢' : '🧪'} Ako zákazník ›</a>` : ''}</div>
       <div class="tabs">${[['cal', '🗓 Kalendár'], ['sheet', '📋 Hárok dňa'], ['play', '🏁 Hry'], ['list', '📃 Zoznam']].concat(isMgr ? [['set', '⚙ Nastavenia']] : [])
         .map(([k, l]) => `<button class="${view === k ? 'on' : ''}" onclick="setView('${k}')">${l}</button>`).join('')}</div>`;
     if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
@@ -1748,7 +1807,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : view === 'play' ? playHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-30c</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
@@ -1880,7 +1939,8 @@
     firebase.database().ref('employees/list').on('value', s => { const v = s.val(); emps = (Array.isArray(v) ? v : Object.values(v || {})).filter(e => e && e.name).sort((a, b) => String(a.name).localeCompare(String(b.name), 'sk')); render(); }, () => {});
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
   render();
-  window.addEventListener('focusout', () => setTimeout(render, 50));
+  // texty e-mailov sa po opustení neprekresľujú (ukážka sa mení pri písaní) – inak by ťuknutie na značku {…} netrafilo
+  window.addEventListener('focusout', e => { if (!/^c_mail/.test((e.target && e.target.id) || '')) setTimeout(render, 50); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && (f || sel || af || tf || cf || more)) closeOv(); });
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
