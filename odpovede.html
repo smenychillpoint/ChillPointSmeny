@@ -82,7 +82,8 @@
   // pri odpAll aj zariadenie; pridávať/upravovať smie aj zariadenie pri odpAll, mazať len vedúci).
   const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
   // zdieľané zariadenie (ako na úvode a v Rezerváciách) – aby zamestnanci mohli čítať šablóny
-  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk', DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
+  // (2026-10-31) heslo zariadenia UŽ NIE JE v kóde – zadá sa raz na úvode / v Objednávkach, uložené v prehliadači (cp_devpw)
+  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';
   const LIM = { title: 80, when: 300, text: 6000, mail: 20000, val: 300 };
 
   const $ = id => document.getElementById(id);
@@ -318,7 +319,7 @@
     let html = `<div class="top"><a href="./">‹ Úvod</a><h1>✉️ Odpovede na e-maily</h1></div>`;
     if (!authReady || hubAccess === null) { app.innerHTML = html + '<p class="empty">Načítavam…</p>'; return; }
     if (!canUse()) {
-      app.innerHTML = html + `<div class="card"><p style="margin:0 0 10px">${!myName() && !isMgr ? 'Najprv sa prihlás na úvodnej stránke.' : 'Odpovede na e-maily zatiaľ používa len vedúci.'}</p><a class="btn" href="./" style="text-decoration:none;display:inline-block">‹ Na úvod</a></div>`;
+      app.innerHTML = html + `<div class="card"><p style="margin:0 0 10px">${!authUser ? '🔐 Toto zariadenie nie je prihlásené – prihlás ho na úvodnej stránke (heslo zariadenia povie vedúci).' : !myName() && !isMgr ? 'Najprv sa prihlás na úvodnej stránke.' : 'Odpovede na e-maily zatiaľ používa len vedúci.'}</p><a class="btn" href="./" style="text-decoration:none;display:inline-block">‹ Na úvod</a></div>`;
       return;
     }
     if (!isMgr && view === 'set') view = 'reply';
@@ -327,7 +328,7 @@
     if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
     if (!loaded && !loadErr) html += '<p class="empty">Načítavam šablóny…</p>';
     else html += view === 'tpl' ? tplHtml() : view === 'set' ? settingsHtml() : replyHtml();
-    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-10-27</footer>`;
+    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-10-31</footer>`;
     if (tf) html += tplFormHtml();
     const ovScroll = document.querySelector('.ov') ? document.querySelector('.ov').scrollTop : 0;
     app.innerHTML = html;
@@ -360,7 +361,7 @@
     const rewatch = () => { const on = canUse(); if (on !== watching) { watching = on; watch(); } };
     firebase.auth().onAuthStateChanged(async u => {
       authUser = u;
-      if (!u) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); return; } catch (e) {} }
+      if (!u && ls.get('cp_devpw')) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, ls.get('cp_devpw')); return; } catch (e) {} }
       const mgr = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL && !ls.get('cp_viewAs');
       authReady = true;
       if (mgr !== isMgr) { isMgr = mgr; watching = canUse(); watch(); }

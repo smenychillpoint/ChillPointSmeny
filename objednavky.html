@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31f</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31g</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -153,7 +153,8 @@ body:has(.login:not(.hide)){overflow:hidden}
   </div>
 </div>
 <div id="login" class="login hide"><form onsubmit="login(event)" class="card">
-  <h2 style="margin-top:0">Prihlásenie vedúceho</h2>
+  <h2 id="ltitle" style="margin-top:0">Prihlásenie vedúceho</h2>
+  <p id="ldev" class="muted hide" style="font-size:13px;margin:0 0 8px">🔐 Toto zariadenie ešte nie je prihlásené. Stačí raz – zadaj heslo zariadenia (povie vedúci), prehliadač si ho zapamätá. Vedúci sa môže prihlásiť aj svojím e-mailom.</p>
   <input id="lmail" type="email" placeholder="E-mail" autocomplete="username" required>
   <input id="lpass" type="password" placeholder="Heslo" autocomplete="current-password" required>
   <div id="lerr" style="color:var(--warn);min-height:20px"></div>
@@ -237,9 +238,12 @@ let isManager = false;
 // Spoločný "zariadenie" účet - appka sa ním prihlási do Firebase automaticky na pozadí, aby zamestnanci
 // nemuseli poznať žiadny e-mail/heslo. Oni sa potom identifikujú len svojím menom + PIN kódom (rovnaký
 // kód, aký majú aj vo Smenách). Tento účet treba raz vytvoriť vo Firebase konzole (Authentication → Users
-// → Add user) presne s týmto e-mailom a heslom.
+// → Add user) s týmto e-mailom.
+// (2026-10-31) Heslo UŽ NIE JE v kóde (stránka je verejná na GitHube): zadá sa raz na zariadení (tu alebo na úvode)
+// a uloží sa len v tomto prehliadači (localStorage cp_devpw, rovnaké ako na úvode); s ním sa zariadenie prihlasuje samo.
 const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';
-const DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
+const devPw = () => { try { return localStorage.getItem('cp_devpw') || ''; } catch (e) { return ''; } };
+const BAD_PW = /wrong-password|invalid-credential|invalid-login|user-not-found|user-disabled|invalid-email/;
 let wantManagerLogin = false;   // true = zobraziť pôvodný formulár na prihlásenie vedúceho (e-mail/heslo)
 let deviceLoginFailed = false;  // automatické prihlásenie zariadenia zlyhalo (účet ešte nie je vo Firebase vytvorený)
 let deviceLoginAttempted = false;
@@ -1210,8 +1214,13 @@ function tryRender() {
 // vtedy sa automaticky ponúkne prihlásenie vedúceho namiesto donekonečna opakovaných neúspešných pokusov.
 async function attemptDeviceLogin() {
   deviceLoginAttempted = true;
-  try { await auth.signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); }
-  catch (e) { deviceLoginFailed = true; wantManagerLogin = true; render(); }
+  const pw = devPw();
+  if (!pw) { deviceLoginFailed = true; wantManagerLogin = true; render(); return; }   // heslo zariadenia ešte nezadané → formulár
+  try { await auth.signInWithEmailAndPassword(DEVICE_EMAIL, pw); }
+  catch (e) {
+    if (BAD_PW.test((e && e.code) || '')) { try { localStorage.removeItem('cp_devpw'); } catch (er) {} }   // zmenené heslo → vypýta sa nové
+    deviceLoginFailed = true; wantManagerLogin = true; render();
+  }
 }
 function backToGate() {
   wantManagerLogin = false;
@@ -1295,7 +1304,12 @@ function connect() {
 async function login(ev) {
   ev.preventDefault();
   $('#lerr').textContent = '';
-  try { await auth.signInWithEmailAndPassword($('#lmail').value.trim(), $('#lpass').value); }
+  const mail = $('#lmail').value.trim(), pass = $('#lpass').value;
+  try {
+    await auth.signInWithEmailAndPassword(mail, pass);
+    // heslo zariadenia si toto zariadenie zapamätá (nabudúce a po odhlásení vedúceho sa prihlási samo)
+    if (mail.toLowerCase() === DEVICE_EMAIL) { try { localStorage.setItem('cp_devpw', pass); } catch (e) {} }
+  }
   catch { $('#lerr').textContent = 'Nesprávny e-mail alebo heslo'; }
 }
 function logout() {
@@ -1406,6 +1420,11 @@ function render() {
   const showGate = !!user && !isManager && !showManagerForm && !waiterVerified;
   if (showGate && waiterBlocked && $('#gateErr')) $('#gateErr').textContent = `${curWaiter}: nemáš prístup do Objednávok. Ozvi sa vedúcemu.`;
   $('#login').classList.toggle('hide', !showManagerForm);
+  // nikto nie je prihlásený a heslo zariadenia chýba → formulár ako „Prihlásenie zariadenia“ s predvyplneným e-mailom
+  const devForm = showManagerForm && !user && deviceLoginFailed;
+  if ($('#ltitle')) $('#ltitle').textContent = devForm ? '🔐 Prihlásenie zariadenia' : 'Prihlásenie vedúceho';
+  if ($('#ldev')) $('#ldev').classList.toggle('hide', !devForm);
+  if (devForm && $('#lmail') && !$('#lmail').value && document.activeElement !== $('#lmail')) $('#lmail').value = DEVICE_EMAIL;
   $('#employeeGate').classList.toggle('hide', !showGate);
   if (showGate) {
     const sel = $('#gateName');

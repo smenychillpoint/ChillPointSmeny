@@ -260,7 +260,8 @@
     new MutationObserver(ms => ms.forEach(m => m.addedNodes.forEach(n => { if (n.nodeType === 1) fix(n); }))).observe(document.documentElement, { childList: true, subtree: true });
   })();
   // zdieľané zariadenie (ako na úvode a v Objednávkach) – aby zamestnanci mohli čítať rezervácie
-  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk', DEVICE_PASSWORD = 'CP-PcZtW5wlmH9xuY';
+  // (2026-10-31) heslo zariadenia UŽ NIE JE v kóde – zadá sa raz na úvode / v Objednávkach, uložené v prehliadači (cp_devpw)
+  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';
   // Nastavenia rezervácií = laser/<env>/config (plugin ich načíta a prepíšu jeho WordPress nastavenia).
   // DEF = predvolené hodnoty pluginu; kým config nie je uložený, web berie hodiny z WordPressu (tu sa ukážu tieto).
   // hours: kľúč = deň v týždni (0 = nedeľa), chýbajúci deň = zatvorené; "24:00" = polnoc
@@ -1916,7 +1917,7 @@
     let html = `<div class="top"><a href="./">‹ Úvod</a><a href="objednavky.html">🍹 Objednávky</a><h1>🎯 Rezervácie laser game</h1></div>`;
     if (!authReady || hubAccess === null) { app.innerHTML = html + '<p class="empty">Načítavam…</p>'; return; }
     if (!canUse()) {
-      app.innerHTML = html + `<div class="card"><p style="margin:0 0 10px">${!myName() ? 'Najprv sa prihlás na úvodnej stránke.' : 'Rezervácie zatiaľ vidí len vedúci.'}</p><a class="btn" href="./" style="text-decoration:none;display:inline-block">‹ Na úvod</a></div>`;
+      app.innerHTML = html + `<div class="card"><p style="margin:0 0 10px">${!authUser ? '🔐 Toto zariadenie nie je prihlásené – prihlás ho na úvodnej stránke (heslo zariadenia povie vedúci).' : !myName() ? 'Najprv sa prihlás na úvodnej stránke.' : 'Rezervácie zatiaľ vidí len vedúci.'}</p><a class="btn" href="./" style="text-decoration:none;display:inline-block">‹ Na úvod</a></div>`;
       return;
     }
     if (!isMgr && view === 'set') view = 'cal';
@@ -1932,7 +1933,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : view === 'play' ? playHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31e</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31f</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
@@ -2085,7 +2086,7 @@
     const rewatch = () => { const on = canUse(); if (on !== watching) { watching = on; watch(); } };
     firebase.auth().onAuthStateChanged(async u => {
       authUser = u;
-      if (!u) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, DEVICE_PASSWORD); return; } catch (e) {} }
+      if (!u && ls.get('cp_devpw')) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, ls.get('cp_devpw')); return; } catch (e) {} }
       const mgr = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL && !ls.get('cp_viewAs');
       authReady = true;
       if (mgr !== isMgr) { isMgr = mgr; watching = canUse(); watch(); }   // watch() zruší staré odbery a pripojí nové
