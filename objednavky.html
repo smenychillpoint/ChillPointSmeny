@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31d</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -4153,14 +4153,8 @@ function renderSettings() {
       ${S.tables.length > 1 ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Ťukni na skupinu – rozbalí sa a uvidíš jej stoly. Podrž ⠿ a potiahni – zmení sa poradie stolov. Do inej skupiny stôl presunieš tak, že ho pustíš na jej stôl alebo na jej nadpis (ide to aj pri zbalenej skupine), prípadne výberom skupiny v riadku.</p>' : ''}
       <p class="muted" style="font-size:12px;margin-top:6px">🙈 Skrytú skupinu čašníci na svojich zariadeniach nevidia (vedúci áno). Stôl zo skrytej skupiny, na ktorom je otvorený účet, sa im ukáže aj tak – nech sa nestratí nezaplatený účet. Nový stôl v skupine prevezme farbu skupiny.</p></div>`;
 
-  const ceMap = {}; ((S.access && S.access.catExtras) || []).forEach(x => { if (x) ceMap[x.n] = x; });
-  const iceCard = `<h2>🧊 Ľad a poháre podľa kategórie</h2><div class="card">
-      <p class="muted" style="font-size:13px;margin:0 0 8px">🧊 <b>Ľad</b> = položka sa pridá rovno „s ľadom“ a v košíku sa jedným ťuknutím prepne na „bez ľadu“ / „ľad zvlášť“ (napr. Whiskey, Gin, Rum, Vodka). 🥤 <b>Poháre</b> = pri pridaní sa opýta, koľko pohárov (napr. Limonády, karafy). Barman to vidí pri položke.</p>
-      ${cats.map(c => { const x = ceMap[c] || {}, e = grpArg(c); return `<div class="row" style="gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
-        <span style="flex:1;min-width:110px">${esc(c)}</span>
-        <label style="display:flex;align-items:center;gap:4px;font-size:14px"><input type="checkbox" style="width:20px;height:20px" ${x.ice ? 'checked' : ''} onchange="setCatExtra('${e}','ice',this.checked)">🧊 ľad</label>
-        <label style="display:flex;align-items:center;gap:4px;font-size:14px"><input type="checkbox" style="width:20px;height:20px" ${x.glasses ? 'checked' : ''} onchange="setCatExtra('${e}','glasses',this.checked)">🥤 poháre</label></div>`; }).join('')}</div>`;
-  const menuTab = iceCard + `<h2>Kategórie</h2><div class="card">
+  // (2026-10-31) karta „🧊 Ľad a poháre podľa kategórie“ z Nastavení odstránená na želanie majiteľa (nič nebolo zaškrtnuté)
+  const menuTab = `<h2>Kategórie</h2><div class="card">
       ${cats.map(c => `<div class="set-row t"><input value="${esc(c)}" disabled style="opacity:.75">
         <button class="del" onclick="delCategory('${c.replace(/'/g, "\\'")}')">Zmazať</button></div>`).join('') || '<p class="muted">Zatiaľ žiadne kategórie.</p>'}
       <div class="set-row t" style="margin-top:10px"><input id="newC" placeholder="Názov novej kategórie, napr. Panáky">
