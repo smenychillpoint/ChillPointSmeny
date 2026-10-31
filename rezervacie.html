@@ -247,7 +247,7 @@
   // hours: kľúč = deň v týždni (0 = nedeľa), chýbajúci deň = zatvorené; "24:00" = polnoc
   const DEF = { hours: { 0: ['13:00', '22:00'], 1: ['15:00', '22:00'], 2: ['15:00', '22:00'], 3: ['15:00', '22:00'], 4: ['15:00', '22:00'], 5: ['15:00', '24:00'], 6: ['13:00', '24:00'] },
     daysOff: [], step: 20, game: 15, change: 5, rest: 40, minPlayers: 2, maxPlayers: 16, maxGames: 8, leadMinutes: 15, offers: [{ minPlayers: 8, paid: 3, free: 1 }], offerStep: 'off',
-    stepOrder: 'players', webPkgs: {}, mailCustomer: true, mailNote: 'Príďte prosím aspoň 10 minút pred prvou hrou.', mailUs: '' };
+    stepOrder: 'players', webPkgs: {}, mailCustomer: true, mailNote: 'Príďte prosím aspoň 10 minút pred prvou hrou.', mailUs: '', selfHours: 3 };
   // (2026-10-30e) e-maily z webu (posiela WordPress, plugin 1.5.0): mailCustomer = potvrdenie zákazníkovi, mailNote = text navyše,
   // mailUs = kam príde upozornenie o novej rezervácii ("" = nikam). Plugin ich číta z laser/<env>/config.
   // (2026-10-27) offers = zoznam ponúk (namiesto jednej „offer“, tá sa ešte číta zo starých nastavení),
@@ -255,8 +255,9 @@
   // (2026-10-30, plugin 1.5.0) stepOrder = poradie krokov na webe: 'players' (najprv počet hráčov) | 'term' (najprv termín);
   // webPkgs = {<id balíčka>: true} – ktoré balíčky si zákazník môže rezervovať na webe ("" = žiadny)
   // (2026-10-31) mailCustSubj/mailCustBody/mailUsSubj/mailUsBody = celé texty e-mailov so značkami {meno}… ("" = predvolené, plugin 1.6.0)
+  // (2026-10-31b) selfHours = zákazník si cez odkaz v e-maile rezerváciu sám zmení / zruší najneskôr toľko hodín pred hrou (0 = vypnuté, plugin 1.7.0)
   const CFG_KEYS = ['hours', 'daysOff', 'step', 'game', 'change', 'rest', 'minPlayers', 'maxPlayers', 'maxGames', 'leadMinutes', 'offers', 'offerStep', 'stepOrder', 'webPkgs', 'mailCustomer', 'mailNote', 'mailUs',
-    'mailCustSubj', 'mailCustBody', 'mailUsSubj', 'mailUsBody'];
+    'mailCustSubj', 'mailCustBody', 'mailUsSubj', 'mailUsBody', 'selfHours'];
   // hra 15 min + 5 min výmena → iná partia najskôr o 20 min (BLOCK); tá istá partia oddych 40 min (rest)
   let B = null, BLOCK = 20;
   function offersNorm(v) {
@@ -927,6 +928,7 @@
     if (!confirm(`Natrvalo zmazať rezerváciu ${b.name}?`)) return;
     busyAct = true;
     const u = {}; u[`${base()}/bookings/${id}`] = null; u[`${base()}/contacts/${id}`] = null; freeSlotsPatch(u, id, b);
+    const tok = (contacts[id] || {}).tok; if (tok && selfOk) u[`${base()}/self/${tok}`] = null;   // odkaz zákazníka už nič neukáže
     tablePatch(u, id, b, true); delete u[`${base()}/bookings/${id}/tableQ`];   // booking sa maže celý
     try { await firebase.database().ref().update(u); toast('Zmazané'); sel = ''; }
     catch (e) { toast('Nepodarilo sa zmazať.'); }
@@ -1096,7 +1098,8 @@
       // kontakty mení len ten, kto ich vidí (vedúci); staré kontakty priamo v rezervácii sa presunú do contacts
       if (canSeeContact()) {
         u[bp + '/phone'] = null; u[bp + '/email'] = null;
-        u[cp] = phone || email ? { ...(phone ? { phone } : {}), ...(email ? { email } : {}) } : null;
+        const tok = (contacts[f.id] || {}).tok;   // kód na zmenu zákazníkom musí ostať (inak by odkaz z e-mailu prestal fungovať)
+        u[cp] = phone || email || tok ? { ...(phone ? { phone } : {}), ...(email ? { email } : {}), ...(tok ? { tok } : {}) } : null;
       }
     } else {
       // pozor: undefined do Firebase nesmie (pouč. #1) → nepovinné polia len keď sú
@@ -1161,9 +1164,9 @@
     if (!isMc(b) && !isClosed(b) && b.offerPick && b.offerPick !== 'none' && !offerFor(b)) out.push(`Na webe si vybrali ponuku ${b.offerPick}, ale majú málo hráčov – ponuka neplatí.`);
     return out;
   }
-  // 📝 pri poznámke, ❗ pri chybe (podrobnosti po podržaní / v detaile)
+  // 📝 pri poznámke, ❗ pri chybe (podrobnosti po podržaní / v detaile), ✎ keď si ju zákazník zmenil a ešte nie je potvrdená
   const flagsHtml = (b, d) => { const iss = issuesOf(b, d);
-    return `${b.note ? `<span class="ntc" title="${esc(b.note)}">📝</span>` : ''}${iss.length ? `<span class="nx" title="${esc(iss.join(' '))}">!</span>` : ''}`; };
+    return `${custMoved(b) ? `<span class="ntc" title="Zákazník si rezerváciu zmenil cez e-mail${b.chOld ? ' – predtým: ' + esc(b.chOld) : ''}">✎</span>` : ''}${b.note ? `<span class="ntc" title="${esc(b.note)}">📝</span>` : ''}${iss.length ? `<span class="nx" title="${esc(iss.join(' '))}">!</span>` : ''}`; };
   const closedNote = d => hoursFor(d) ? '' : `<div class="warn">🚫 Podľa nastavení je ${esc(dayTitle(d))} zatvorené${(B.daysOff || []).includes(d) ? ' (deň voľna)' : ''} – web v tento deň rezervácie neprijíma. Vedúci môže zapísať výnimku.</div>`;
   // (2026-10-29) každá partia v dni má vlastnú farbu (hárok aj tabuľka dňa), nech sa riadky dvoch partií nepletú;
   // farby idú po poradí prvej hry v ten deň, takže susedné partie majú vždy inú farbu
@@ -1388,8 +1391,9 @@
       stepOrder: o.stepOrder === 'term' ? 'term' : 'players',
       webPkgs: { ...(o.webPkgs || {}) },
       mailCustomer: o.mailCustomer !== false, mailNote: String(o.mailNote == null ? '' : o.mailNote), mailUs: String(o.mailUs || ''),
+      selfOn: +o.selfHours > 0, selfHours: +o.selfHours > 0 ? +o.selfHours : 3,
       // nevyplnený text = predvolený (s doterajším „textom navyše“), nech sa dá hneď upravovať
-      ...Object.fromEntries(MAIL_TPL_KEYS.map(k => [k, String(o[k] || '').trim() ? String(o[k]) : mailDefs(o.mailNote)[k]]))
+      ...Object.fromEntries(MAIL_TPL_KEYS.map(k => [k, String(o[k] || '').trim() ? mailUpgrade(String(o[k])) : mailDefs(o.mailNote)[k]]))
     };
   }
   // ---- ✉️ ukážka e-mailov z webu – rovnaký text skladá WordPress (chillpoint-rezervacie.php, cpr_mail_texts) ----
@@ -1401,14 +1405,21 @@
   const MAIL_TPL_KEYS = ['mailCustSubj', 'mailCustBody', 'mailUsSubj', 'mailUsBody'];
   const MAIL_TAGS = [['meno', 'meno zákazníka'], ['telefon', 'telefón zákazníka'], ['email', 'e-mail zákazníka'], ['pocet', 'počet hráčov / osôb'],
     ['co', '„laser game“ alebo názov balíčka'], ['datum', 'deň, napr. piatok 6. 11. 2026'], ['cas', 'začiatok (pri balíčku príchod)'], ['hry', 'deň a časy hier'],
-    ['rezervacia', 'celý prehľad – počet, hry, pri balíčku príchod a čas atrakcií'], ['stav_potvrdenia', 'pre nás: či zákazníkovi odišlo potvrdenie']];
+    ['rezervacia', 'celý prehľad – počet, hry, pri balíčku príchod a čas atrakcií'], ['stav_potvrdenia', 'pre nás: či zákazníkovi odišlo potvrdenie'],
+    ['zmena', 'veta s odkazom, cez ktorý si zákazník rezerváciu sám zmení / zruší (keď je to vypnuté: „zavolajte nám“)'], ['odkaz', 'len samotný odkaz na zmenu / zrušenie']];
+  // (2026-10-31b) {zmena} – ROVNAKÉ ako cpr_self_text() v plugine; bez odkazu (vypnuté, starý plugin) = doterajšia veta OLD_CALL
+  const OLD_CALL = 'Ak potrebujete rezerváciu zmeniť alebo zrušiť, zavolajte nám na 0910 836 876.';
+  const hoursWord = h => h === 1 ? '1 hodinu' : h >= 2 && h <= 4 ? `${h} hodiny` : `${h} hodín`;
+  const selfTxt = (link, h) => link ? `Rezerváciu si môžete zmeniť alebo zrušiť tu (najneskôr ${hoursWord(h)} pred prvou hrou):\n${link}\nNeskôr už len telefonicky na 0910 836 876.` : OLD_CALL;
+  // uložený text s vetou „zavolajte nám“ (predvolený do 1.6.0) → na jej mieste {zmena}; to isté robí plugin
+  const mailUpgrade = t => t.includes(OLD_CALL) && !/\{(zmena|odkaz)\}/.test(t) ? t.replace(OLD_CALL, '{zmena}') : t;
   // predvolené texty – ROVNAKÉ ako cpr_mail_defaults() v plugine (chillpoint-rezervacie.php)
   function mailDefs(note) {
     note = String(note == null ? '' : note).trim();
     return {
       mailCustSubj: 'Potvrdenie rezervácie – Chillpoint {co}',
       mailCustBody: `Dobrý deň {meno},\n\nďakujeme za rezerváciu {co} v Chillpoint Trnava.\n\n{rezervacia}\n\nPlatba je na mieste.\n${note ? note + '\n' : ''}`
-        + '\nAk potrebujete rezerváciu zmeniť alebo zrušiť, zavolajte nám na 0910 836 876.\n\nTešíme sa na vás!\nChillpoint\nhttps://chillpoint.sk/',
+        + '\n{zmena}\n\nTešíme sa na vás!\nChillpoint\nhttps://chillpoint.sk/',
       mailUsSubj: 'Nová rezervácia z webu – {meno}, {datum} o {cas}',
       mailUsBody: 'Nová rezervácia z webu chillpoint.sk:\n\nMeno: {meno}\nTelefón: {telefon}\nE-mail: {email}\n{rezervacia}\n\n'
         + 'Potvrdiť alebo upraviť v appke: https://smenychillpoint.github.io/ChillPointSmeny/rezervacie.html\n{stav_potvrdenia}\nKeď na tento e-mail odpovieš, odpoveď pôjde zákazníkovi.' };
@@ -1418,7 +1429,8 @@
   const mailOneLine = t => t.replace(/[\r\n\t ]+/g, ' ').trim();   // predmet = jeden riadok (ako sanitize_text_field v PHP)
   function mailTexts(c, env0, s) {
     const T = env0 === 'test' ? '[TEST] ' : '', P = s.pkg ? pkgs()[s.pkg] || pkgNorm({}) : null, D = mailDefs(c.mailNote);
-    const tpl = k => String(c[k] || '').trim() ? String(c[k]).replace(/\r/g, '').trim().slice(0, k.endsWith('Subj') ? 150 : 3000) : D[k];
+    const tpl = k => String(c[k] || '').trim() ? mailUpgrade(String(c[k]).replace(/\r/g, '').trim()).slice(0, k.endsWith('Subj') ? 150 : 3000) : D[k];
+    const sh = c.selfOn === false ? 0 : Math.max(0, parseInt(c.selfHours, 10) || 0), link = sh ? 'https://chillpoint.sk/rezervacia/#cpr=k8Fq2xZ…' : '';
     const lines = s.games.map(t => `  • ${mailDay(s.date)} o ${t}`);
     let block;
     if (P) {
@@ -1427,7 +1439,7 @@
         + (P.attrMin ? `${P.attrText || 'Atrakcie'}: cca ${showM(a.from)} – ${showM(a.to)}\n` : '') + `Počet osôb: ${s.players}`;
     } else block = `Počet hráčov: ${s.players}\n${lines.length > 1 ? 'Hry' : 'Hra'}:\n${lines.join('\n')}`;
     const map = { meno: s.name, telefon: s.phone || '—', email: s.email, pocet: String(s.players), co: P ? P.name : 'laser game', datum: mailDay(s.date),
-      cas: P ? s.mStart : s.games[0], hry: `${mailDay(s.date)} o ${s.games.join(', ')}`, rezervacia: block, stav_potvrdenia: '' };
+      cas: P ? s.mStart : s.games[0], hry: `${mailDay(s.date)} o ${s.games.join(', ')}`, rezervacia: block, stav_potvrdenia: '', zmena: selfTxt(link, sh), odkaz: link };
     const cust = { to: s.email, subj: mailOneLine(T + mailFill(tpl('mailCustSubj'), map)), body: mailFill(tpl('mailCustBody'), map) };
     map.stav_potvrdenia = c.mailCustomer ? `Zákazníkovi odišlo potvrdenie na ${s.email}.` : 'Zákazníkovi sa potvrdenie neposiela.';
     const us = { to: c.mailUs || '(nevyplnené)', subj: mailOneLine(T + mailFill(tpl('mailUsSubj'), map)), body: mailFill(tpl('mailUsBody'), map) };
@@ -1548,8 +1560,15 @@
       if (v.length > (subj ? 150 : 3000)) return fail(`${what} môže mať najviac ${subj ? 150 : 3000} znakov.`);
       const bad = (v.match(/\{[^{}\n]*\}/g) || []).find(t => !MAIL_TAGS.some(([x]) => `{${x}}` === t));
       if (bad) return fail(`${what}: neznáma značka ${bad} – použi len značky zo zoznamu (napr. {meno}).`);
-      out[k] = v;
+      // nezmenený predvolený text sa uloží ako "" → keď sa predvolený text v plugine zmení, platí nový
+      out[k] = v === mailDefs(mailNote)[k].trim() ? '' : v;
     }
+    // (2026-10-31b) zmena / zrušenie zákazníkom cez odkaz v e-maile – najneskôr X hodín pred hrou, 0 = vypnuté
+    if (c.selfOn) {
+      const h = Number(c.selfHours);
+      if (!Number.isInteger(h) || h < 1 || h > 168) return fail('Zmena zákazníkom: zadaj celé číslo hodín 1–168 (napr. 3).');
+      out.selfHours = h;
+    } else out.selfHours = 0;
     // mailNote ostáva len pre prípad prázdneho textu (predvolený text ho obsahuje)
     out.mailCustomer = !!c.mailCustomer; out.mailNote = mailNote; out.mailUs = mailUs;
     out.updatedAt = firebase.database.ServerValue.TIMESTAMP;
@@ -1610,9 +1629,19 @@
         ${Object.entries(pkgs()).map(([id, p]) => `<label class="chk" style="margin:6px 0"><input type="checkbox" ${c.webPkgs[id] ? 'checked' : ''} onchange="cfgWebPkg('${id}',this.checked)"><span>${esc(p.icon)} <b>${esc(p.name)}</b> <span class="mut">· ${p.games} ${plural(p.games, 'hra', 'hry', 'hier')}${p.attrMin ? ` + ${esc(p.attrText)} ${p.attrMin} min` : ''} · na webe ${p.webMin || c.minPlayers}–${p.webMax || c.maxPlayers} ľudí</span></span></label>`).join('')}
         <p class="hint" style="margin:8px 0 0">Zaškrtnutý balíček si zákazník vyberie hneď v 1. kroku („Čo si rezervujete“), zvolí len začiatok a web sám rozpíše hry (každá o ${esc(c.rest)} min) a ukáže čas atrakcií. Dva balíčky s atrakciami naraz web nepustí. Ikonku, názov, hry, atrakcie a popis pre zákazníka upravíš hore v 🎁 Balíčky, nový pridáš cez ➕ Pridať balíček.</p>
         ${pkOk === false ? '<div class="warn" style="margin:8px 0 0">⚠ Kým nie sú vo Firebase vložené nové pravidlá (firebase-rules.json – pribudlo „pk“), balíček sa na webe rezervovať nedá. Najprv pravidlá, potom zaškrtni.</div>' : ''}</div>
+      <h2>🔁 Zmena a zrušenie zákazníkom${c.selfOn ? ` · do ${esc(c.selfHours)} h pred hrou` : ' · vypnuté'}</h2>
+      <div class="card">
+        <label class="chk"><input type="checkbox" ${c.selfOn ? 'checked' : ''} onchange="cfgSetR('selfOn',this.checked)"> Zákazník si môže rezerváciu sám zmeniť alebo zrušiť cez odkaz v e-maile</label>
+        ${c.selfOn ? `<div class="row2" style="margin-top:6px"><div><label class="f">Najneskôr koľko hodín pred prvou hrou</label><input id="c_selfHours" type="number" inputmode="numeric" min="1" max="168" value="${esc(c.selfHours)}" oninput="cfgMail('selfHours',this.value)"></div></div>` : ''}
+        <p class="hint" style="margin:6px 0 0">${c.selfOn
+          ? `Zákazník môže zmeniť deň, čas, počet hráčov (pri balíčku začiatok a počet ľudí) alebo rezerváciu zrušiť – najneskôr ${esc(c.selfHours)} h pred prvou hrou, potom už len telefonicky. Vyberá len z voľných časov. O zmene príde e-mail nám (adresa nižšie) aj zákazníkovi, v appke bude rezervácia znova 🆕 nová s poznámkou, čo bolo predtým. Odkaz je v e-maile zákazníkovi na mieste značky <b>{zmena}</b> (alebo {odkaz}).`
+          : 'Zákazník dostane v e-maile len vetu „zavolajte nám“ (značka {zmena}).'} Funguje od pluginu 1.7.0 a s novými pravidlami Firebase.</p>
+        ${c.selfOn && !/\{(zmena|odkaz)\}/.test(mailUpgrade(String(c.mailCustBody || ''))) ? '<div class="warn" style="margin:8px 0 0">⚠ V texte e-mailu zákazníkovi nie je značka {zmena} ani {odkaz} – zákazník odkaz na zmenu nedostane. Doplň ju nižšie (ťukni na {zmena}).</div>' : ''}
+        ${selfOk === false ? '<div class="warn" style="margin:8px 0 0">⚠ Vo Firebase ešte nie sú nové pravidlá (firebase-rules.json – pribudlo „self“). Kým ich nevložíš, rezervácie z webu sa ukladajú bez odkazu na zmenu.</div>' : ''}
+      </div>
       <h2>✉️ E-maily z webu</h2>
       <div class="card">
-        <p class="hint" style="margin:0 0 8px">E-maily posiela WordPress (plugin 1.6.0) po rezervácii na chillpoint.sk – testovacia stránka na GitHube ich neposiela. Texty si napíš, ako chceš; <b>značky v {zátvorkách}</b> sa nahradia údajmi z rezervácie. Ťukni na značku a vloží sa tam, kde práve píšeš. Ukážka dole sa mení hneď, platí po 💾 Uložiť.</p>
+        <p class="hint" style="margin:0 0 8px">E-maily posiela WordPress (plugin 1.6.0, odkaz na zmenu od 1.7.0) po rezervácii na chillpoint.sk – testovacia stránka na GitHube ich neposiela. Texty si napíš, ako chceš; <b>značky v {zátvorkách}</b> sa nahradia údajmi z rezervácie. Ťukni na značku a vloží sa tam, kde práve píšeš. Ukážka dole sa mení hneď, platí po 💾 Uložiť.</p>
         <div class="chips" style="margin-bottom:4px">${MAIL_TAGS.map(([k, d]) => `<button class="chip" title="${esc(d)}" onmousedown="event.preventDefault()" onclick="mailTag('${k}')">{${k}}</button>`).join('')}</div>
         <p class="hint" style="margin:0 0 10px">${MAIL_TAGS.map(([k, d]) => `<b>{${k}}</b> ${esc(d)}`).join(' · ')}</p>
         <label class="f"><b>📨 E-mail zákazníkovi</b></label>
@@ -1663,7 +1692,7 @@
     const st = STATUS[b.status] ? b.status : 'new', g = gamesOf(b);
     const times = g.map(x => x.date === firstGame(b).date ? showT(x.time) : `${dayTitle(x.date)} ${showT(x.time)}`).join(' · ');
     return `<div class="card bk st-${st}${isMc(b) ? ' mc' : ''}" onclick="openDetail('${b.id}')">
-      <b style="font-size:16px">${esc(b.name)}</b> <span class="tag ${st}">${STATUS[st]}</span>${isMc(b) ? `<span class="tag mc">${pIc(b)} ${esc(pkgOf(b).name)}</span>` : ''}
+      <b style="font-size:16px">${esc(b.name)}</b> <span class="tag ${st}">${STATUS[st]}</span>${custMoved(b) ? '<span class="tag new">✎ zmenil zákazník</span>' : ''}${isMc(b) ? `<span class="tag mc">${pIc(b)} ${esc(pkgOf(b).name)}</span>` : ''}
       <div class="times">🕹 ${esc(times)} · 👥 ${esc(plTxt(b))}${b.seat ? ` · 📍 ${esc(b.seat)}` : ''}</div></div>`;
   }
   function listHtml() {
@@ -1680,6 +1709,13 @@
     return html + `<button class="btn ghost sm" style="margin-top:12px" onclick="showOld=!showOld;render()">${showOld ? 'Len nadchádzajúce' : 'Zobraziť aj staré a zrušené'}</button>`;
   }
 
+  // 🔁 (2026-10-31b) zákazník si rezerváciu sám zmenil / zrušil cez odkaz v e-maile (plugin 1.7.0): ch = kedy, chA = move | cancel, chOld = čo bolo predtým
+  function custChangeHtml(b) {
+    if (b.chA !== 'move' && b.chA !== 'cancel') return '';
+    const t = typeof b.ch === 'number' ? new Date(b.ch) : null;
+    return `<div class="warn" style="margin:10px 0 0;font-size:13px">${b.chA === 'cancel' ? '✕ Zákazník rezerváciu <b>ZRUŠIL</b>' : '✎ Zákazník si rezerváciu <b>ZMENIL</b>'} cez odkaz v e-maile${t ? ` (${t.getDate()}. ${t.getMonth() + 1}. ${pad(t.getHours())}:${pad(t.getMinutes())})` : ''}${b.chOld ? `<br>predtým: ${esc(b.chOld)}` : ''}${b.chA === 'move' && tableQOf(b) ? '<br>🪑 Stôl ostal na pôvodný čas – skontroluj ho (✎ Upraviť).' : ''}</div>`;
+  }
+  const custMoved = b => b.chA === 'move' && (b.status || 'new') === 'new';   // zmenil a ešte sme ju nepotvrdili
   // ---- okno: detail rezervácie ----
   function detailHtml(b) {
     const st = STATUS[b.status] ? b.status : 'new', g = gamesOf(b), mc = isMc(b);
@@ -1690,6 +1726,7 @@
       <h3>${esc(b.name)}</h3>
       <div><span class="tag ${st}" style="margin-left:0">${STATUS[st]}</span>${allPlayed(b) ? '<span class="tag played">🏁 všetko odohraté</span>' : ''}${mc ? `<span class="tag mc">${pIc(b)} ${esc(pkgOf(b).name)}</span>` : isClosed(b) ? `<span class="tag" style="background:${CLOSED_COLOR};color:#fff">🔒 Uzavretá spoločnosť ${closedRange(b).join('–')}</span>` : '<span class="tag src">🔫 Laser game</span>'}${b.source === 'admin' ? '<span class="tag src">zapísali sme my</span>' : '<span class="tag src">z webu</span>'}</div>
       ${(iss => iss.length ? `<div class="issues">${iss.map(x => '❗ ' + esc(x)).join('<br>')}</div>` : '')([...new Set(g.map(x => x.date))].flatMap(dd => issuesOf(b, dd)))}
+      ${custChangeHtml(b)}
       <div class="info" style="margin-top:10px">
         ${isClosed(b) ? '🔒 celý laser game je v tom čase len pre nich<br>' : `👥 ${+b.players > 0 ? `<b>${esc(b.players)}</b> ${plural(+b.players, 'osoba', 'osoby', 'osôb')}` : '<b>?</b> počet osôb neuviedli'}${b.seat ? ` · 📍 <b>${esc(b.seat)}</b>` : ''}<br>`}
         🕹 ${[...new Set(g.map(x => x.date))].map(dd => `${esc(dayTitle(dd))}: <b>${g.filter(x => x.date === dd).map(x => showT(x.time)).join(' · ')}</b>`).join('; ')} <span style="color:var(--muted)">(${g.length} ${plural(g.length, 'hra', 'hry', 'hier')}${g.some(x => isPlayed(b, x.key)) ? `, odohraté ${g.filter(x => isPlayed(b, x.key)).length}` : ''})</span>
@@ -1807,7 +1844,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : view === 'play' ? playHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31b</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
@@ -1828,7 +1865,7 @@
     const db = firebase.database();
     const err = e => { console.error('[rezervácie]', e); loadErr = 'Rezervácie sa nepodarilo načítať. Skontroluj, či sú vo Firebase vložené pravidlá pre „laser“ (firebase-rules.json).'; render(); };
     const bRef = db.ref(`${base()}/bookings`), sRef = db.ref(`${base()}/slots`), cRef = db.ref(`${base()}/config`);
-    const bCb = bRef.on('value', s => { bookings = s.val() || {}; loaded = true; migrateContacts(); schedulePkSync(); render(); }, err);
+    const bCb = bRef.on('value', s => { bookings = s.val() || {}; loaded = true; migrateContacts(); schedulePkSync(); scheduleSelfSync(); render(); }, err);
     const sCb = sRef.on('value', s => { slots = s.val() || {}; render(); }, err);
     // nastavenia: rozpísané (neuložené) zmeny sa živou zmenou neprepíšu
     const cCb = cRef.on('value', s => { cfgRaw = s.val(); applyCfg(cfgRaw); cfgLoaded = true; if (!cfgDirty) cfgF = null; render(); },
@@ -1851,9 +1888,16 @@
     contacts = {}; contactsLoaded = false;
     if (canSeeContact()) {
       const kRef = db.ref(`${base()}/contacts`);
-      const kCb = kRef.on('value', s => { contacts = s.val() || {}; contactsLoaded = true; migrateContacts(); render(); },
+      const kCb = kRef.on('value', s => { contacts = s.val() || {}; contactsLoaded = true; migrateContacts(); scheduleSelfSync(); render(); },
         e => { console.warn('[rezervácie contacts]', e); contactsLoaded = true; render(); });
       offFns.push(() => kRef.off('value', kCb));
+    }
+    // 🔁 čo vidia zákazníci na stránke zmeny (len vedúci – sú tam aj e-maily; bez nových pravidiel selfOk = false)
+    selfIdx = {}; selfOk = null;
+    if (canSeeContact()) {
+      const xRef = db.ref(`${base()}/self`);
+      const xCb = xRef.on('value', s => { selfIdx = s.val() || {}; selfOk = true; scheduleSelfSync(); }, e => { selfOk = false; console.warn('[zmena zákazníkom] treba nové pravidlá (laser/self)', e); render(); });
+      offFns.push(() => xRef.off('value', xCb));
     }
     // 🪑 rezervácie stolov z Objednávok (queue) – aby bolo vidno stôl pri rezervácii laser game
     const qRef = db.ref('queue');
@@ -1889,6 +1933,36 @@
     try { await firebase.database().ref().update(u); } catch (e) { console.warn('[balíčky na webe] index', e); }
     pkBusy = false;
   }
+  // 🔁 (2026-10-31b) laser/<env>/self/<kód> = čo vidí zákazník na stránke „zmeniť / zrušiť“ (plugin 1.7.0). Kód je v
+  // contacts/<id>/tok – vidí ho len vedúci (a bar), preto self dorovnáva appka vedúceho podľa rezervácie (zmena v appke,
+  // zrušenie, iný e-mail); bez rezervácie viac ako minútu → zmazať. Zlyhanie (staré pravidlá) appku nebrzdí.
+  let selfIdx = {}, selfOk = null, selfTimer = null, selfBusy = false;
+  const selfGone = {};
+  function scheduleSelfSync(ms) { clearTimeout(selfTimer); selfTimer = setTimeout(syncSelf, ms || 1500); }
+  const canonJson = v => JSON.stringify(v, (k, x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.keys(x).sort().reduce((o, y) => { o[y] = x[y]; return o; }, {}) : x);
+  const selfOf = (b, c) => ({ b: b.id, nm: String(b.name || '').slice(0, 80), em: String(c.email || '').slice(0, 100), d: { ...(b.games || {}) }, n: Math.max(0, Math.min(30, +b.players || 0)),
+    st: STATUS[b.status] ? b.status : 'new', ...(b.pkg && b.pkg !== 'laser' && /^[a-z0-9-]{1,30}$/.test(b.pkg) ? { pkg: b.pkg } : {}),
+    ...(/^[0-2]\d:[0-5]\d$/.test(b.mStart || '') ? { mStart: b.mStart } : {}), ...(b.mOrder === 'attr' || b.mOrder === 'games' ? { mOrder: b.mOrder } : {}),
+    ...(b.offerPick ? { of: String(b.offerPick).slice(0, 20) } : {}), ...(typeof b.ch === 'number' ? { ch: b.ch } : {}), ...(b.chOld ? { o: String(b.chOld).slice(0, 300) } : {}) });
+  async function syncSelf() {
+    if (!canSeeContact() || !loaded || !contactsLoaded || selfOk !== true || selfBusy) return;
+    const u = {}, want = {}, now = Date.now();
+    Object.entries(bookings || {}).forEach(([id, b]) => { const t = (contacts[id] || {}).tok;
+      if (b && t && b.name && b.games && Object.keys(b.games).length) want[t] = selfOf({ id, ...b }, contacts[id]); });
+    Object.entries(want).forEach(([t, v]) => { delete selfGone[t]; if (canonJson(selfIdx[t]) !== canonJson(v)) u[`${base()}/self/${t}`] = v; });
+    let later = false;
+    Object.entries(selfIdx || {}).forEach(([t, v]) => {
+      if (want[t]) return;
+      if (v && bookings[v.b] && !(contacts[v.b] && contacts[v.b].tok !== t)) return;   // rezervácia je, len ešte nemá kontakty načítané
+      selfGone[t] = selfGone[t] || now;
+      if (now - selfGone[t] > 60e3) u[`${base()}/self/${t}`] = null; else later = true;
+    });
+    if (later) scheduleSelfSync(61e3);
+    if (!Object.keys(u).length) return;
+    selfBusy = true;
+    try { await firebase.database().ref().update(u); } catch (e) { console.warn('[zmena zákazníkom] self', e); }
+    selfBusy = false;
+  }
   // staré rezervácie mali telefón/e-mail priamo v sebe → vedúci ich pri otvorení presunie do contacts (raz za načítanie)
   let contactsLoaded = false, migrating = false, migrateOff = false;
   function migrateContacts() {
@@ -1897,7 +1971,7 @@
     Object.entries(bookings || {}).forEach(([id, b]) => {
       if (!b || (!b.phone && !b.email)) return;
       const c = contacts[id] || {};
-      u[`${base()}/contacts/${id}`] = { ...(c.phone || b.phone ? { phone: c.phone || b.phone } : {}), ...(c.email || b.email ? { email: c.email || b.email } : {}) };
+      u[`${base()}/contacts/${id}`] = { ...(c.phone || b.phone ? { phone: c.phone || b.phone } : {}), ...(c.email || b.email ? { email: c.email || b.email } : {}), ...(c.tok ? { tok: c.tok } : {}) };
       u[`${base()}/bookings/${id}/phone`] = null; u[`${base()}/bookings/${id}/email`] = null;
     });
     if (!Object.keys(u).length) return;
