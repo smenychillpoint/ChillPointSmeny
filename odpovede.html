@@ -328,7 +328,7 @@
     if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
     if (!loaded && !loadErr) html += '<p class="empty">Načítavam šablóny…</p>';
     else html += view === 'tpl' ? tplHtml() : view === 'set' ? settingsHtml() : replyHtml();
-    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-10-31b</footer>`;
+    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-10-31c</footer>`;
     if (tf) html += tplFormHtml();
     const ovScroll = document.querySelector('.ov') ? document.querySelector('.ov').scrollTop : 0;
     app.innerHTML = html;
@@ -359,8 +359,12 @@
     // zamestnanci: keď nikto nie je prihlásený, prihlási sa zariadenie (ako na úvode)
     let watching = false;
     const rewatch = () => { const on = canUse(); if (on !== watching) { watching = on; watch(); } };
+    // (2026-10-31) prístupy (settings/hubAccess) čítajú len prihlásení → odber až po prihlásení, po odhlásení sa zruší
+    let accOff = null;
     firebase.auth().onAuthStateChanged(async u => {
       authUser = u;
+      if (!u && accOff) { accOff(); accOff = null; }
+      if (u && !accOff) { const ref = firebase.database().ref('settings/hubAccess'), cb = ref.on('value', s => { hubAccess = s.val() || {}; rewatch(); render(); }, () => { hubAccess = {}; render(); }); accOff = () => ref.off('value', cb); }
       if (!u && ls.get('cp_devpw')) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, ls.get('cp_devpw')); return; } catch (e) {} }
       const mgr = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL && !ls.get('cp_viewAs');
       authReady = true;
@@ -368,7 +372,6 @@
       else rewatch();
       render();
     });
-    firebase.database().ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; rewatch(); render(); }, () => { hubAccess = {}; render(); });
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
   render();
   // po dopísaní e-mailu sa prekreslí (návrh ⭐ podľa nového textu) a dokreslia sa odložené zmeny

@@ -673,7 +673,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-26· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-31· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -1226,6 +1226,12 @@
   const DAYS=['PO','UT','ST','ŠT','PI','SO','NE'];
   // E-mail účtu vedúceho vo Firebase Authentication (heslo sa nastavuje vo Firebase, nie v kóde).
   const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
+  // (2026-10-31) Smeny čítajú len prihlásené účty personálu (vedúci, bar, zariadenie). Bez prihláseného vedúceho sa
+  // prihlási zariadenie heslom, ktoré sa zadalo raz na úvode (localStorage cp_devpw – rovnaké ako úvod a Objednávky).
+  const DEVICE_EMAIL = 'rezervacia@chillpoint.sk';
+  const OLD_DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';   // starý účet (heslo bolo verejné) – pravidlá ho už nepustia
+  const BAD_PW = /wrong-password|invalid-credential|invalid-login|user-not-found|user-disabled|invalid-email/;
+  let devNeed=false, devErr='';   // devNeed = zariadenie nie je prihlásené → pás hore s odkazom na úvod
   const $=id=>document.getElementById(id);
 
   let db=null, dbAvailable=false;
@@ -1486,6 +1492,9 @@
         // LOCAL = vedúci ostane prihlásený aj po zavretí appky (predtým SESSION → odhlasovalo) – 2026-10-16
         try{ await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
         auth.onAuthStateChanged(u=>{
+          // (2026-10-31) dáta až po prihlásení; bez účtu (alebo so starým účtom zariadenia) sa prihlási zariadenie
+          if(u && (u.email||'').toLowerCase()!==OLD_DEVICE_EMAIL){ devNeed=false; devErr=''; startData(); }
+          else { stopData(); if(u) devErr='Toto zariadenie je ešte prihlásené starým účtom – zadaj nové heslo zariadenia na úvode.'; devAutoLogin(); }
           const isMgrAuth = !!u && (u.email||'').toLowerCase()===MANAGER_EMAIL.toLowerCase();
           viewAsActive = isMgrAuth && !!viewAsName;
           manager = isMgrAuth && !viewAsActive;
@@ -1499,13 +1508,33 @@
         });
       }
     }catch(e){}
-    scheduleRef.on('value', snap=>{
+  }
+  // (2026-10-31) odbery dát – až po prihlásení (zariadenie / vedúci / bar). Bez prihlásenia ich pravidlá nepustia a po
+  // odhlásení ich Firebase zruší, preto si ich pamätáme, zrušíme a po ďalšom prihlásení pripojíme znova.
+  let dataSubs=[], todoHashDone=false;   // todoHashDone: úvodná stránka "smeny.html#ulohy" -> rovno okno Úlohy a navyše
+  const sub=(ref,ok,bad)=>{ const cb=ref.on('value',ok,bad); dataSubs.push(()=>ref.off('value',cb)); };
+  function stopData(){ dataSubs.forEach(f=>f()); dataSubs=[]; }
+  // zariadenie sa prihlási heslom uloženým na úvode; bez neho / so zlým heslom → pás hore s odkazom na úvod (🔐 karta)
+  async function devAutoLogin(){
+    let pw=''; try{ pw=localStorage.getItem('cp_devpw')||''; }catch(e){}
+    if(!pw || !auth){ devNeed=true; renderAll(); return; }
+    try{ await auth.signInWithEmailAndPassword(DEVICE_EMAIL, pw); }
+    catch(e){
+      if(BAD_PW.test((e&&e.code)||'')){ try{ localStorage.removeItem('cp_devpw'); }catch(er){} devErr='Uložené heslo zariadenia už neplatí – zadaj nové na úvode.'; }
+      else devErr='Zariadenie sa nepodarilo prihlásiť – skontroluj internet.';
+      devNeed=true; renderAll();
+    }
+  }
+  function startData(){
+    if(dataSubs.length || !scheduleRef) return;
+    if(!offlineMode) dbAvailable=dbReady;   // chyba oprávnenia z doby bez prihlásenia nemá blokovať zápisy
+    sub(scheduleRef, snap=>{
       let raw = snap.val() || {};
       if(needsMigration(raw)){ latestRaw=raw; migrateWrite(raw); raw = migrateDays(raw); } else latestRaw=null;
       schedule = { days: raw };
       scheduleLoaded=true; renderAll(); saveCacheSoon();
     }, err=>{ dbAvailable=false; scheduleLoaded=true; renderAll(); });
-    employeesRef.on('value', snap=>{
+    sub(employeesRef, snap=>{
       const val = snap.val();
       if(Array.isArray(val)) employees = { list: val.filter(Boolean) };
       else if(val && typeof val==='object') employees = { list: Object.values(val).filter(Boolean) };
@@ -1513,61 +1542,60 @@
       employeesLoaded=true; renderAll(); saveCacheSoon();
     }, err=>{ dbAvailable=false; employeesLoaded=true; renderAll(); });
     // Limity: predvolene vypnuté, kým ich vedúci nezapne
-    settingsRef.on('value', snap=>{
+    sub(settingsRef, snap=>{
       const v=snap.val()||{};
       limitCfg={ enabled: v.enabled===true, defaultLimit: Number(v.defaultLimit)||0 };
       renderAll();
     }, err=>{});
     // Minimum ľudí na deň: predvolene vypnuté, kým ho vedúci nezapne
-    minRef.on('value', snap=>{
+    sub(minRef, snap=>{
       const v=snap.val()||{};
       minCfg={ enabled: v.enabled===true, people: Number(v.people)||0 };
       renderAll();
     }, err=>{});
     // Minimum a limit podľa dňa v týždni (leto / zima)
-    weekRef.on('value', snap=>{
+    sub(weekRef, snap=>{
       const v=snap.val()||{};
       weekCfg={ summerFrom:Number(v.summerFrom)||5, summerTo:Number(v.summerTo)||9, summer:v.summer||{}, winter:v.winter||{} };
       renderAll();
     }, err=>{});
     // Nástenka oznamov a ich potvrdenia
-    noticesRef.on('value', snap=>{ notices=snap.val()||{}; renderAll(); }, err=>{ notices={}; });
-    noticeAcksRef.on('value', snap=>{ noticeAcks=snap.val()||{}; renderAll(); }, err=>{ noticeAcks={}; });
-    flexRef.on('value', snap=>{ flex=snap.val()||{}; renderAll(); }, err=>{ flex={}; });
+    sub(noticesRef, snap=>{ notices=snap.val()||{}; renderAll(); }, err=>{ notices={}; });
+    sub(noticeAcksRef, snap=>{ noticeAcks=snap.val()||{}; renderAll(); }, err=>{ noticeAcks={}; });
+    sub(flexRef, snap=>{ flex=snap.val()||{}; renderAll(); }, err=>{ flex={}; });
     // Chýba/Kúpiť sa zapisuje a odškrtáva už len na úvodnej stránke (index.html) - tu sa len načíta (počty, upratovanie)
-    boardRef.on('value', snap=>{ board=snap.val()||{}; pruneBoard(); renderAll(); }, err=>{ board={}; });
-    menuRef.on('value', snap=>{ menu=snap.val()||{}; renderAll(); }, err=>{ menu={}; });
-    let todoHashDone=false;   // úvodná stránka: "smeny.html#ulohy" -> rovno okno Úlohy a navyše
-    todosRef.on('value', snap=>{ todos=snap.val()||{}; renderAll();
+    sub(boardRef, snap=>{ board=snap.val()||{}; pruneBoard(); renderAll(); }, err=>{ board={}; });
+    sub(menuRef, snap=>{ menu=snap.val()||{}; renderAll(); }, err=>{ menu={}; });
+    sub(todosRef, snap=>{ todos=snap.val()||{}; renderAll();
       if(!todoHashDone){ todoHashDone=true; if(location.hash==='#ulohy'){ try{ window.history.replaceState(null,'',location.pathname); }catch(e){} openTodo(); } }
     }, err=>{ todos={}; });
     // prístupy nastavené vedúcim na úvodnej stránke (settings/hubAccess): kto má Smeny vypnuté, odhlási sa
-    rtdb.ref('settings/hubAccess').on('value', snap=>{ hubAccess=snap.val()||{};
+    sub(rtdb.ref('settings/hubAccess'), snap=>{ hubAccess=snap.val()||{};
       if(myName && !manager && !hubAllowed(myName,'smeny')){ myName=''; localStorage.removeItem('cp_myname'); showToast('Nemáš prístup do Smien. Ozvi sa vedúcemu.', 4000); }
       renderAll();
     }, err=>{});
-    weekWantRef.on('value', snap=>{ weekWant=snap.val()||{}; renderAll(); }, err=>{ weekWant={}; });
+    sub(weekWantRef, snap=>{ weekWant=snap.val()||{}; renderAll(); }, err=>{ weekWant={}; });
     // Vypínanie funkcií
     // featLoaded: kým sa nenačítajú nastavenia funkcií, feat() vracia "zapnuté" → pripomienka potvrdenia účasti
     // čaká na načítanie (inak vyskočila, aj keď je funkcia vypnutá, a potvrdenie sa potom ticho neuložilo)
-    featRef.on('value', snap=>{ featCfg=snap.val()||{}; featLoaded=true;
+    sub(featRef, snap=>{ featCfg=snap.val()||{}; featLoaded=true;
       if(!feat('confirm') && $('cfRemindModal').classList.contains('open')) $('cfRemindModal').classList.remove('open');
       renderAll(); }, err=>{ featLoaded=true; });
-    checkRef.on('value', snap=>{
+    sub(checkRef, snap=>{
       const v=snap.val()||{}; const arr=x=>(Array.isArray(x)?x:Object.values(x||{})).filter(t=>typeof t==='string' && t.trim());
       checkCfg={ open:arr(v.open), close:arr(v.close) }; renderAll();
     }, err=>{});
-    tplRef.on('value', snap=>{ const v=snap.val()||{}; tplCfg={ call:typeof v.call==='string'?v.call:'', notice:typeof v.notice==='string'?v.notice:'' }; renderAll(); }, err=>{});
+    sub(tplRef, snap=>{ const v=snap.val()||{}; tplCfg={ call:typeof v.call==='string'?v.call:'', notice:typeof v.notice==='string'?v.notice:'' }; renderAll(); }, err=>{});
     // Obdobia s vlastným minimom a limitom
-    periodsRef.on('value', snap=>{
+    sub(periodsRef, snap=>{
       const v=snap.val();
       periods=(Array.isArray(v)?v:Object.values(v||{})).filter(x=>x && x.from && x.to);
       renderAll();
     }, err=>{});
     // Pravidelné „nemôžem“ zamestnancov
-    recurringRef.on('value', snap=>{ recurring=snap.val()||{}; renderAll(); }, err=>{ recurring={}; });
+    sub(recurringRef, snap=>{ recurring=snap.val()||{}; renderAll(); }, err=>{ recurring={}; });
     // Žiadosti o výmenu smien
-    swapsRef.on('value', snap=>{ swaps=snap.val()||{}; swapsLoaded=true; renderAll(); }, err=>{ swaps={}; swapsLoaded=true; renderAll(); });
+    sub(swapsRef, snap=>{ swaps=snap.val()||{}; swapsLoaded=true; renderAll(); }, err=>{ swaps={}; swapsLoaded=true; renderAll(); });
   }
   async function migrateWrite(raw, force){
     if(!dbAvailable || migrating) return;
@@ -4525,11 +4553,13 @@
   // krátke výpadky (pri štarte alebo v tuneli) sa ignorujú, offline sa vyhlási až po 4 sekundách
   function onConnectionChange(connected){
     netConnected=connected; clearTimeout(offlineTimer);
-    if(connected){ goOnline(); }
+    if(connected){ goOnline(); if(devNeed){ let pw=''; try{ pw=localStorage.getItem('cp_devpw')||''; }catch(e){} if(pw) devAutoLogin(); } }   // prihlásenie zlyhalo bez internetu → skúsiť znova
     else offlineTimer=setTimeout(()=>{ if(!netConnected) goOffline(); }, 4000);
   }
   function renderOfflineBanner(){
     const b=$('offlineBanner');
+    // (2026-10-31) zariadenie nie je prihlásené → Smeny sa nenačítajú; heslo zariadenia sa zadá raz na úvode
+    if(devNeed){ b.hidden=false; b.innerHTML=`🔐 ${esc(devErr||'Toto zariadenie ešte nie je prihlásené, preto sa Smeny nenačítajú.')} <a href="./" style="color:inherit;font-weight:800;text-decoration:underline">Prihlásiť zariadenie na úvode ›</a>`; return; }
     if(!offlineMode){ b.hidden=true; b.textContent=''; return; }
     b.hidden=false;
     b.textContent = offlineFromCache ? `📴 Bez internetu. Zobrazujem naposledy uložený stav (${fmtTsShort(cacheTime)}), iba na čítanie.`
@@ -5524,7 +5554,12 @@
 
   function renderAll(){
     renderOfflineBanner();
-    if(!scheduleLoaded||!employeesLoaded) return;
+    if(!scheduleLoaded||!employeesLoaded){
+      // (2026-10-31) neprihlásené zariadenie: namiesto prázdneho žltého pásu jasná výzva (heslo sa zadáva na úvode)
+      if(devNeed) $('hero').innerHTML=`<div><span class="tag">SMENY</span><h1>PRIHLÁS<span>ZARIADENIE</span></h1><p class="lead">Smeny vidí len prihlásené zariadenie. Heslo zariadenia zadá vedúci raz na úvode – potom sa už otvára samo.</p></div>
+        <div class="who"><a class="primary" href="./" style="display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none;height:auto;min-height:48px;padding:8px 12px">🔐 Prihlásiť zariadenie na úvode ›</a></div>`;
+      return;
+    }
     if(myName && dbAvailable && employees.list.length && !employees.list.some(e=>e.name===myName)){
       myName=''; localStorage.removeItem('cp_myname');
       showToast('Tvoje meno sa zmenilo alebo bolo odstránené. Prihlás sa znova.', 3500);

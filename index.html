@@ -90,7 +90,8 @@
   // Rozcestník + nástenka "Dnes" + odovzdávka smeny + jedno prihlásenie pre Smeny aj Objednávky
   // (nastaví cp_myname pre Smeny a waiter pre Objednávky) + vedúci nastavuje prístupy zamestnancov.
   const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
-  // zdieľané zariadenie (rovnaké ako v Objednávkach) - aby sa dali čítať rezervácie a odovzdávky.
+  // zdieľané zariadenie (rovnaké ako v Objednávkach) – (2026-10-31) bez prihláseného účtu personálu databáza nič nepustí
+  // (ani zoznam zamestnancov na prihlásenie, smeny, nákupy…), takže zariadenie sa prihlási skôr, než sa čokoľvek načíta.
   // (2026-10-31) Heslo UŽ NIE JE v kóde (stránky sú verejné na GitHube): zadá sa raz na každom zariadení (🔐 karta nižšie)
   // a uloží sa len v tomto prehliadači (localStorage cp_devpw) – po odhlásení vedúceho sa zariadenie prihlási samo ako doteraz.
   // Čítajú ho aj Objednávky, Rezervácie a Odpovede (rovnaká adresa = rovnaké úložisko).
@@ -264,7 +265,7 @@
   }
   const devCard = () => !authReady || !devNeed || (user && (user.email || '').toLowerCase() !== OLD_DEVICE_EMAIL) ? '' : `<div class="card" style="border-color:var(--yellow)">
       <h3 style="margin:0 0 6px">🔐 Prihlásiť toto zariadenie</h3>
-      <p style="margin:0 0 8px;color:var(--muted);font-size:13px">Stačí raz na každom mobile / tablete – heslo zariadenia povie vedúci, prehliadač si ho zapamätá. Bez toho sa nenačítajú rezervácie, odovzdávky ani Objednávky.</p>
+      <p style="margin:0 0 8px;color:var(--muted);font-size:13px">Stačí raz na každom mobile / tablete – heslo zariadenia povie vedúci, prehliadač si ho zapamätá. Bez toho sa nenačíta nič (ani zoznam mien na prihlásenie, Smeny či Objednávky).</p>
       <form onsubmit="return false" style="margin:0"><input type="text" name="username" autocomplete="username" value="${DEVICE_EMAIL}" hidden><input type="password" id="dPass" placeholder="Heslo zariadenia" autocomplete="current-password" onkeydown="if(event.key==='Enter')devLogin()"></form>
       <div class="err">${esc(devErr)}</div><button class="btn" style="width:100%" onclick="devLogin()">Prihlásiť zariadenie</button></div>`;
   async function logout() {
@@ -461,7 +462,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-31b</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-31c</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -610,7 +611,7 @@
         + link('rezervacie.html#nastavenia', '🎯', 'Nastavenia rezervácií', 'Balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-31b</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-31c</footer>`;
     app.innerHTML = html;
   }
 
@@ -626,37 +627,45 @@
       appId: "1:251580957782:web:801f838e4cd65abb4027f7"
     });
     const db = firebase.database();
-    const on = (path, set) => db.ref(path).on('value', s => { set(s.val()); render(); }, () => { set(null); render(); });
-    // verejne čitateľné (aj bez prihlásenia)
-    on('employees/list', v => { emps = (Array.isArray(v) ? v : Object.values(v || {})).filter(e => e && e.name).sort((a, b) => a.name.localeCompare(b.name, 'sk')); });
-    on('todos', v => { todos = v || {}; });
-    on('board', v => { board = v || {}; });
-    on('notices', v => { notices = v || {}; });
-    on('settings/hubAccess', v => { access = v || {}; });
+    // (2026-10-31) Dáta čítajú LEN prihlásené účty personálu (vedúci, bar, zariadenie) – cudzí ich už nevidí. Odbery sa
+    // preto pripoja až po prihlásení; po odhlásení ich Firebase zruší, preto ich zrušíme aj my a pri ďalšom prihlásení
+    // (napr. zariadenie po odhlásení vedúceho) sa pripoja znova.
+    let subs = [];
+    const watch = (ref, ok, bad) => { const cb = ref.on('value', ok, bad); subs.push(() => ref.off('value', cb)); };
+    const on = (path, set) => watch(db.ref(path), s => { set(s.val()); render(); }, () => { set(null); render(); });
     // deň sa mení o 6:00 - pri zmene sa prepojí na nový deň
     let dayKey = '';
-    const watchDay = () => { const k = iso(bizDate()); if (k === dayKey) return; if (dayKey) db.ref('schedule/days/' + dayKey).off(); dayKey = k; on('schedule/days/' + k, v => { day = v || {}; }); };
-    watchDay(); setInterval(() => { watchDay(); render(); }, 60000);
-    // (2026-10-19) 📅 Moje najbližšie smeny + 📋 Na vybavenie – dni od 60 dní dozadu (kvôli „vzal/a som si“) dopredu
-    const from = new Date(); from.setDate(from.getDate() - 60);
-    db.ref('schedule/days').orderByKey().startAt(iso(from)).limitToFirst(150)
-      .on('value', s => { upcoming = s.val() || {}; render(); }, () => { upcoming = {}; });
-    on('swaps', v => { swaps = v || {}; });
-    on('settings/min', v => { minCfg = v || {}; });
-    on('settings/weekdays', v => { weekCfg = v || {}; });
-    on('settings/features', v => { featCfg = v || {}; });
-    // rezervácie a odovzdávky potrebujú prihlásenie - ak nikto nie je prihlásený, prihlási sa zariadenie (ako v Objednávkach)
-    let authOn = false;
+    const watchDay = () => { const k = iso(bizDate()); if (!subs.length || k === dayKey) return; if (dayKey) db.ref('schedule/days/' + dayKey).off(); dayKey = k; on('schedule/days/' + k, v => { day = v || {}; }); };
+    setInterval(() => { watchDay(); render(); }, 60000);
+    function startData() {
+      if (subs.length) return;
+      on('employees/list', v => { emps = (Array.isArray(v) ? v : Object.values(v || {})).filter(e => e && e.name).sort((a, b) => a.name.localeCompare(b.name, 'sk')); });
+      on('todos', v => { todos = v || {}; });
+      on('board', v => { board = v || {}; });
+      on('notices', v => { notices = v || {}; });
+      on('settings/hubAccess', v => { access = v || {}; });
+      dayKey = ''; watchDay();
+      // (2026-10-19) 📅 Moje najbližšie smeny + 📋 Na vybavenie – dni od 60 dní dozadu (kvôli „vzal/a som si“) dopredu
+      const from = new Date(); from.setDate(from.getDate() - 60);
+      watch(db.ref('schedule/days').orderByKey().startAt(iso(from)).limitToFirst(150), s => { upcoming = s.val() || {}; render(); }, () => { upcoming = {}; });
+      on('swaps', v => { swaps = v || {}; });
+      on('settings/min', v => { minCfg = v || {}; });
+      on('settings/weekdays', v => { weekCfg = v || {}; });
+      on('settings/features', v => { featCfg = v || {}; });
+      on('queue', v => { queue = v || {}; }); on('meta/handover', v => { handover = v || {}; }); on('meta/worklist', v => { worklist = v || {}; });
+      laserBk = {}; watch(db.ref(`laser/${laserEnv}/bookings`), s => { laserBk = s.val() || {}; render(); }, () => { laserBk = null; });
+    }
+    function stopData() { subs.forEach(f => f()); subs = []; dayKey = ''; }
+    // bez prihláseného účtu (alebo so starým účtom zariadenia, ktorý už nič nesmie) sa prihlási zariadenie uloženým heslom
     firebase.auth().onAuthStateChanged(async u => {
       user = u; isMgrAuth = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL; authReady = true; applyView();
-      if (!u) { devAutoLogin(); return; }
+      if (!u || (u.email || '').toLowerCase() === OLD_DEVICE_EMAIL) {
+        stopData();
+        if (u) devErr = 'Toto zariadenie je ešte prihlásené starým účtom – zadaj nové heslo zariadenia.';
+        devAutoLogin(); return;
+      }
       devNeed = false;
-      if (!authOn) { authOn = true; on('queue', v => { queue = v || {}; }); on('meta/handover', v => { handover = v || {}; }); on('meta/worklist', v => { worklist = v || {}; }); }
-      if (laserBk === null) { laserBk = {}; db.ref(`laser/${laserEnv}/bookings`).on('value', s => { laserBk = s.val() || {}; render(); }, () => {
-        laserBk = null;
-        // (2026-10-31) ešte prihlásené starým účtom zariadenia (po novom e-maile ho pravidlá nepustia) → 🔐 karta, prihlásiť nanovo
-        if (user && (user.email || '').toLowerCase() === OLD_DEVICE_EMAIL) { authOn = false; devNeed = true; devErr = 'Toto zariadenie je ešte prihlásené starým účtom – zadaj nové heslo zariadenia.'; render(); }
-      }); }
+      startData();
       render();
     });
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
