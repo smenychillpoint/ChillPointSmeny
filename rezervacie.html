@@ -40,7 +40,7 @@
     .seg.mc button.on{background:var(--purple)}
     .tabs{display:flex;gap:6px;margin-bottom:10px}
     .tabs button{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--muted);font:inherit;font-size:14px;padding:10px 6px;cursor:pointer;min-width:0}
-    @media(max-width:520px){.tabs{gap:4px}.tabs button{font-size:12px;padding:9px 2px}}
+    @media(max-width:520px){.tabs{gap:4px;flex-wrap:wrap}.tabs button{font-size:12px;padding:9px 2px;flex:1 1 30%}}
     .tabs button.on{border-color:var(--yellow);color:var(--yellow);font-weight:800}
     /* hárok dňa – ako papierový zošit: Čas | Kto | Koľko | Kde */
     .dayhead{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
@@ -59,7 +59,10 @@
     .sr.hour .t{color:var(--yellow)}
     .sr.hour{border-top:2px solid #4b4e53}
     .sr:not(.h):hover{background:#1a1d21}
-    .sr.has{background:var(--pcb,#1c1f23);box-shadow:inset 4px 0 0 var(--pc,var(--yellow))}
+    .sr.has{background:var(--pcb,#1c1f23);box-shadow:inset 6px 0 0 var(--pc,var(--yellow))}
+    .sr.has:hover,.sr.evo:hover{background:var(--pcb,#1a1d21);filter:brightness(1.18)}
+    /* (2026-10-31) celý riadok vo farbe partie (predtým len pásik vľavo); viac partií v riadku = pásik pri každom mene */
+    .sr .it.pc{box-shadow:inset 4px 0 0 var(--ic);padding-left:7px;margin-left:-2px}
     .sr.past{opacity:.55}
     .it{display:block;font-size:14px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .it b{font-size:15px}
@@ -120,6 +123,15 @@
     .chip{background:#26292d;border:1px solid var(--line);color:#fff;font:inherit;font-size:13px;padding:6px 9px;cursor:pointer}
     .chip.on{background:var(--yellow);color:#111;font-weight:800}
     .mcinfo{background:#21132e;border:1px solid #5b3a80;padding:10px 12px;font-size:14px;line-height:1.55;margin-bottom:10px}
+    .mcinfo .arow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;font-size:13px}
+    .mcinfo .arow input{width:auto;padding:5px 6px;margin:0}
+    /* (2026-10-31) 🎁 Balíčky – karta balíčka vo farbe partie */
+    .pkc{background:var(--pcb);box-shadow:inset 6px 0 0 var(--pc);border:1px solid #2b2e33;padding:10px 12px 10px 16px;margin-bottom:8px;cursor:pointer}
+    .pkc:hover{filter:brightness(1.15)}
+    .pkc .pkt{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:16px}
+    .pkc .pkt .tm{font-weight:900;color:var(--yellow);font-variant-numeric:tabular-nums;margin-right:2px}
+    .pkc .pks{font-size:13px;color:#d0d2d5;margin-top:3px}
+    .pkc .pkp{font-size:14px;color:#e6d6ff;margin-top:5px;line-height:1.5}
     .empty{color:var(--muted);font-size:14px;padding:6px 0}
     .err{color:var(--red);font-size:13px;min-height:18px;font-weight:700}
     .warn{background:#2a2410;border:1px solid #6b5a1a;color:#ffd66b;font-size:13px;padding:10px;margin-bottom:10px;line-height:1.45}
@@ -159,6 +171,9 @@
     .dt tr.bkr.st-confirmed{background:#122317}
     .dt tr.bkr.st-arrived{background:#111e2b}
     .dt tr.bkr.mc{box-shadow:inset 4px 0 0 var(--purple)}
+    .dt tr.bkr.pcol,.dt tr.evr.pcol td{background:var(--pcb)}
+    .dt tr.bkr.pcol{box-shadow:inset 6px 0 0 var(--pc)}
+    .dt tr.evr.pcol{box-shadow:inset 6px 0 0 var(--pc)}
     .dt tr.past{opacity:.55}
     /* nastavenia */
     .hrow{display:grid;grid-template-columns:120px minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;padding:5px 0;border-top:1px solid #2b2e33}
@@ -395,7 +410,7 @@
   let env = ls.get('cp_laserEnv') === 'live' ? 'live' : 'test';
   let authReady = false, isMgr = false, bookings = {}, slots = {}, tableNames = [], loaded = false, loadErr = '';
   let cfgRaw = null, cfgLoaded = false, cfgF = null, cfgDirty = false, cfgErr = '';   // nastavenia (config) a ich rozpísaný formulár
-  const VIEWS = ['cal', 'sheet', 'play', 'list', 'set'];
+  const VIEWS = ['cal', 'sheet', 'play', 'pkg', 'list', 'set'];
   let view = VIEWS.includes(ls.get('cp_resView')) ? ls.get('cp_resView') : 'cal', sheetDay = bizOfTs(Date.now()).date;
   let calMonth = sheetDay.slice(0, 7);
   let showOld = false, busyAct = false;
@@ -580,8 +595,14 @@
     return Array.from({ length: P.games }, (_, i) => toTime(s + i * B.rest));
   }
   // kedy majú atrakcie – len orientačne (P = balíček, inak podľa rezervácie)
+  // (2026-10-31) vedúci môže čas atrakcií nastaviť ručne (✎ Upraviť): aFrom / aTo = "HH:MM" (po polnoci = ďalší deň), set = ručne
+  const hhmm = v => /^[0-2]\d:[0-5]\d$/.test(v || '');
   function mcAttr(b, P) {
     P = P || pkgOf(b) || pkgNorm({});
+    if (hhmm(b.aFrom)) {
+      const from = toMin(bizTime(b.aFrom)); let to = hhmm(b.aTo) ? toMin(bizTime(b.aTo)) : from + P.attrMin; if (to <= from) to = from + P.attrMin;
+      return { from, to, pizza: false, set: true };
+    }
     const g = gamesOf(b), d = (firstGame(b) || {}).date, s = toMin(b.mStart || (firstGame(b) || {}).time || '12:00');
     if (b.mOrder === 'attr') return { from: s, to: s + P.attrMin, pizza: false };
     const last = Math.max(s, ...g.filter(x => x.date === d).map(x => toMin(x.time)));
@@ -602,7 +623,7 @@
     }) || null;
   }
   const mcClashMsg = (c, P) => { const x = mcAttr(c, pkgOf(c));
-    return pkgOf(c).attrMin && P.attrMin ? `${pkgOf(c).name} ${c.name} má ${pkgOf(c).attrText || 'atrakcie'} ${showM(x.from)}–${showM(x.to)} – atrakcie by sa prekrývali. Zmeň začiatok alebo poradie.`
+    return pkgOf(c).attrMin && P.attrMin ? `${pkgOf(c).name} ${c.name} má ${pkgOf(c).attrText || 'atrakcie'} ${showM(x.from)}–${showM(x.to)} – atrakcie by sa prekrývali. Zmeň začiatok, poradie alebo čas atrakcií.`
       : `${pkgOf(c).name} ${c.name} začína o ${showT(c.mStart || firstGame(c).time)} – ďalší balíček najskôr o ${Math.max(P.spacing, pkgOf(c).spacing)} min.`; };
   function normalizePhone(p) {
     p = String(p || '').replace(/[\s\-/()]/g, '');
@@ -1019,20 +1040,32 @@
     if (b) {
       const fg = firstGame(b) || {}, c = contactOf({ id, ...b }), q = tableQOf(b), qd = q && q.reserveAt ? new Date(q.reserveAt) : null;
       f = { id, pkg: isMc(b) ? b.pkg : 'laser', day: fg.date || sheetDay, mStart: b.mStart || fg.time || '16:00', mOrder: b.mOrder === 'attr' ? 'attr' : 'games',
+        aFrom: hhmm(b.aFrom) ? b.aFrom : '', aTo: hhmm(b.aFrom) && hhmm(b.aTo) ? b.aTo : '',
         name: b.name || '', phone: c.phone, email: c.email, players: +b.players > 0 ? b.players : '?', seat: b.seat || '', note: b.note || '',
         tableId: q ? (q.tableId || '') : '', tableAt: qd ? pad(qd.getHours()) + ':' + pad(qd.getMinutes()) : '',
         items: gamesOf(b).map(g => ({ date: g.date, time: g.time })), err: '' };
     } else {
       const day = (preset && preset.day) || sheetDay, time = preset && preset.time;
-      f = { id: '', pkg: 'laser', day, mStart: time || '16:00', mOrder: 'games', name: '', phone: '', email: '', players: 4, seat: '', note: '',
+      f = { id: '', pkg: 'laser', day, mStart: time || '16:00', mOrder: 'games', aFrom: '', aTo: '', name: '', phone: '', email: '', players: 4, seat: '', note: '',
         tableId: '', tableAt: '', items: time ? [{ date: day, time }] : [], err: '' };
     }
     render();
   }
   const fPkg = () => f && f.pkg !== 'laser' ? pkgOf({ pkg: f.pkg }) : null;
   // rozpísaný balíček ako rezervácia (na výpočet atrakcií a prekryvu)
-  const fB0 = () => ({ games: Object.fromEntries(f.items.map(it => [rawKey(it.date, it.time), true])), mStart: f.mStart, mOrder: f.mOrder });
+  const fB0 = () => ({ games: Object.fromEntries(f.items.map(it => [rawKey(it.date, it.time), true])), mStart: f.mStart, mOrder: f.mOrder, aFrom: f.aFrom, aTo: f.aTo });
   function mcRecalc() { const P = fPkg(); if (P) f.items = mcGames(f.mStart, f.mOrder, P).map(t => ({ date: f.day, time: t })); }
+  // (2026-10-31) čas atrakcií ručne: od / do; prázdne = vypočíta sa podľa hier (k = 'aFrom' | 'aTo' | 'auto')
+  function setMcA(k, v) {
+    if (!f) return;
+    if (k === 'auto') { f.aFrom = ''; f.aTo = ''; }
+    else if (hhmm(v)) {
+      const a = mcAttr({ ...fB0(), aFrom: '', aTo: '' }, fPkg());   // vypočítaný čas – keď ručne mení len „do“, „od“ ostane
+      if (k === 'aTo' && !f.aFrom) f.aFrom = showM(a.from);
+      f[k] = v;
+    }
+    f.err = ''; blurNow(); render();
+  }
   function setPkg(p) {
     if (!f || f.pkg === p) return;
     const wasPkg = !!fPkg();
@@ -1074,9 +1107,11 @@
     if (players !== 0 && !(players >= ADM.minPlayers && players <= ADM.maxPlayers)) return fail(`Počet hráčov ${ADM.minPlayers}–${ADM.maxPlayers}, alebo ťukni „? neviem“.`);
     if (!f.items.length) return fail('Vyber aspoň jeden čas hry.');
     if (f.items.some(it => toMin(it.time) >= LATE_END)) return fail('Hra by bola až po 2:00 v noci – vyber skorší začiatok.');
+    const aSet = mc && P.attrMin > 0 && hhmm(f.aFrom);   // čas atrakcií nastavený ručne
     if (mc) {
       const c = mcClash(f.day, fB0(), f.id, P);
       if (c) return fail(mcClashMsg(c, P));
+      if (aSet && hhmm(f.aTo) && toMin(bizTime(f.aTo)) <= toMin(bizTime(f.aFrom))) return fail(`${P.attrText || 'Atrakcie'}: „do“ musí byť po „od“.`);
     }
     const clash = f.items.find(it => busyBy(it.date, it.time, f.id));
     if (clash) return fail(`Čas ${dayTitle(clash.date)} ${showT(clash.time)} má iná partia.`);
@@ -1090,6 +1125,7 @@
       u[bp + '/name'] = name; u[bp + '/players'] = players; u[bp + '/games'] = games;
       u[bp + '/note'] = note || null; u[bp + '/seat'] = seatV || null;
       u[bp + '/pkg'] = f.pkg; u[bp + '/mStart'] = mc ? f.mStart : null; u[bp + '/mOrder'] = mc ? f.mOrder : null;
+      u[bp + '/aFrom'] = mc && aSet ? f.aFrom : null; u[bp + '/aTo'] = mc && aSet && hhmm(f.aTo) ? f.aTo : null;
       // odohraté hry, ktoré už nie sú v rezervácii, zabudnúť
       Object.keys(old.played || {}).forEach(k => { if (!games[k]) u[bp + '/played/' + k] = null; });
       // staré časy, ktoré už nie sú vybrané, uvoľniť
@@ -1104,7 +1140,8 @@
     } else {
       // pozor: undefined do Firebase nesmie (pouč. #1) → nepovinné polia len keď sú
       u[bp] = { name, players, games, consent: true, createdAt: firebase.database.ServerValue.TIMESTAMP, status: 'confirmed', source: 'admin', pkg: f.pkg,
-        ...(note ? { note } : {}), ...(seatV ? { seat: seatV } : {}), ...(mc ? { mStart: f.mStart, mOrder: f.mOrder } : {}) };
+        ...(note ? { note } : {}), ...(seatV ? { seat: seatV } : {}), ...(mc ? { mStart: f.mStart, mOrder: f.mOrder } : {}),
+        ...(mc && aSet ? { aFrom: f.aFrom, ...(hhmm(f.aTo) ? { aTo: f.aTo } : {}) } : {}) };
       if (phone || email) u[cp] = { ...(phone ? { phone } : {}), ...(email ? { email } : {}) };
     }
     // 🪑 stôl v Objednávkach (queue) – rovnaký záznam ako rezervácia stola v Objednávkach
@@ -1192,12 +1229,14 @@
       const its = rows[t] || [], past = d < tk || (d === tk && toMin(t) + B.step <= nowMin);
       const mc = its.some(x => isMc(x.b)), one = its.length === 1 ? its[0].b.id : '';
       const click = one ? `openDetail('${one}')` : (its.length ? '' : `openForm('',{day:'${d}',time:'${t}'})`);
-      const cell = fn => its.map(x => `<span class="it${x.ev ? ' ev' : ''}" onclick="event.stopPropagation();openDetail('${x.b.id}')">${fn(x)}</span>`).join('');
+      const multi = new Set(its.map(x => x.b.id)).size > 1;   // viac partií v jednom riadku → farebný pásik pri každom mene
+      const cell = (fn, mark) => its.map(x => `<span class="it${x.ev ? ' ev' : ''}${mark && multi && pc[x.b.id] ? ' pc' : ''}"${mark && multi && pc[x.b.id] ? ` style="--ic:${pc[x.b.id]}"` : ''} onclick="event.stopPropagation();openDetail('${x.b.id}')">${fn(x)}</span>`).join('');
       const c = its.length ? pc[its[0].b.id] : '', onlyEv = its.length && its.every(x => x.ev);   // len príchod / atrakcie balíčka – laser game voľný
-      return `<div class="sr${t.endsWith(':00') ? ' hour' : ''}${its.length ? (onlyEv ? ' evo' : ' has') : ''}${mc ? ' mc' : ''}${past ? ' past' : ''}"${c ? ` style="--pc:${c};--pcb:${c}17"` : ''}${click ? ` onclick="${click}"` : ''}>
+      // (2026-10-31) celý riadok vo farbe partie (riadok len s príchodom / atrakciami balíčka slabšie)
+      return `<div class="sr${t.endsWith(':00') ? ' hour' : ''}${its.length ? (onlyEv ? ' evo' : ' has') : ''}${mc ? ' mc' : ''}${past ? ' past' : ''}"${c ? ` style="--pc:${c};--pcb:${c}${onlyEv ? '1f' : '4a'}"` : ''}${click ? ` onclick="${click}"` : ''}>
         <span class="t${toMin(t) >= 1440 ? ' late' : ''}">${showT(t)}</span>
         <span>${cell(x => x.ev ? `<b>${x.ev === 'arr' ? '🚪' : '🎮'} ${esc(x.b.name)}</b> <small>${x.time !== t ? showT(x.time) + ' ' : ''}${x.ev === 'arr' ? 'príchod' : esc(x.P.attrText || 'atrakcie')}</small>`
-          : `${(x.b.status || 'new') === 'new' ? '<span class="nb">NOVÁ</span>' : ''}<b>${isClosed(x.b) ? IC('closed') + ' ' : x.arr ? '🚪 ' : ''}${esc(x.b.name)}</b>${flagsHtml(x.b, d)}${x.time !== t ? ` <small>${showT(x.time)}</small>` : ''}${isPlayed(x.b, rawKey(d, x.time)) ? ' <span class="ar">🏁</span>' : x.b.status === 'arrived' ? ' <span class="ar">🚶</span>' : ''}${x.of > 1 && !isClosed(x.b) ? ` <small>${x.n}/${x.of}</small>` : ''}`)}</span>
+          : `${(x.b.status || 'new') === 'new' ? '<span class="nb">NOVÁ</span>' : ''}<b>${isClosed(x.b) ? IC('closed') + ' ' : x.arr ? '🚪 ' : ''}${esc(x.b.name)}</b>${flagsHtml(x.b, d)}${x.time !== t ? ` <small>${showT(x.time)}</small>` : ''}${isPlayed(x.b, rawKey(d, x.time)) ? ' <span class="ar">🏁</span>' : x.b.status === 'arrived' ? ' <span class="ar">🚶</span>' : ''}${x.of > 1 && !isClosed(x.b) ? ` <small>${x.n}/${x.of}</small>` : ''}`, true)}</span>
         <span>${cell(x => isClosed(x.b) ? '—' : `<b>${esc(plTxt(x.b))}</b>`)}</span>
         <span>${cell(x => esc(x.b.seat || ''))}</span>
         <span>${cell(x => x.ev ? `<span class="pk ev">${evText(x).replace(' · ', '<br>')}</span>` : pkgCellHtml(x.b, d, x.time))}</span></div>`;
@@ -1229,13 +1268,40 @@
     const mcs = live().filter(b => b.status !== 'cancelled' && isMc(b) && gamesOf(b).some(g => g.date === d)).sort((a, b) => (a.mStart || '').localeCompare(b.mStart || ''));
     const attrs = mcs.filter(b => pkgOf(b).attrMin).map(b => ({ b, a: mcAttr(b) }));
     const overlap = attrs.some((x, i) => attrs.some((y, j) => j > i && x.a.from < y.a.to && y.a.from < x.a.to));
-    // (2026-10-30b) ako ide balíček po sebe: 🚪 príchod → 🎮 atrakcie → 🔫 laser game (alebo naopak), aby sa dal sledovať
-    const plan = (b, a) => { const P = pkgOf(b), g = gamesOf(b).filter(x => x.date === d).map(x => showT(x.time)).join(' · '), at = `🎮 ${esc(P.attrText || 'atrakcie')} ${showM(a.from)}–${showM(a.to)}`;
-      return [`🚪 ${esc(showT(b.mStart || firstGame(b).time))} príchod`].concat(b.mOrder === 'attr' ? [at, `🔫 ${g}`] : [`🔫 ${g}`].concat(a.pizza ? ['🍕 pauza'] : [], [at])).join(' → '); };
     return `${attrs.length ? `<div class="card attr"><b>🎁 Balíčky – ako idú po sebe</b>${overlap ? '<div class="err" style="margin-top:6px">❗ Atrakcie dvoch skupín sa prekrývajú – budú obsadené naraz.</div>' : ''}
         ${attrs.map(({ b, a }) => `<div class="ln" onclick="openDetail('${b.id}')">${pIc(b)} <b>${esc(b.name)}</b> (${esc(plTxt(b))}) · ${esc(pkgOf(b).name)}${b.seat ? ` · 📍 ${esc(b.seat)}` : ''}${flagsHtml(b, d)}<br>
-          <span style="color:#d9c2ff">${plan(b, a)}</span></div>`).join('')}</div>` : ''}
+          <span style="color:#d9c2ff">${pkgPlanHtml(b, d, a)}</span></div>`).join('')}</div>` : ''}
       <div class="side2">${tableBoxHtml(d)}${attrBoxHtml(d)}</div>`;
+  }
+  // (2026-10-30b) ako ide balíček po sebe: 🚪 príchod → 🎮 atrakcie → 🔫 laser game (alebo naopak), aby sa dal sledovať
+  function pkgPlanHtml(b, d, a) {
+    const P = pkgOf(b), g = gamesOf(b).filter(x => x.date === d).map(x => showT(x.time)).join(' · ');
+    const at = P.attrMin ? [`🎮 ${esc(P.attrText || 'atrakcie')} ${showM(a.from)}–${showM(a.to)}${a.set ? ' ✎' : ''}`] : [];
+    return [`🚪 ${esc(showT(b.mStart || firstGame(b).time))} príchod`].concat(b.mOrder === 'attr' ? at.concat([`🔫 ${g}`]) : [`🔫 ${g}`].concat(a.pizza && at.length ? ['🍕 pauza'] : [], at)).join(' → ');
+  }
+  // ---- 🎁 Balíčky (2026-10-31): len prehľad – ktorý deň aký balíček a čo kedy majú, bez hárku a ostatných rezervácií ----
+  let pkgOld = false;
+  function pkgViewHtml() {
+    const tk = todayKey(), byDay = {};
+    live().filter(b => b.status !== 'cancelled' && isMc(b) && firstGame(b) && (pkgOld || firstGame(b).date >= tk))
+      .forEach(b => { (byDay[firstGame(b).date] = byDay[firstGame(b).date] || []).push(b); });
+    const days = Object.keys(byDay).sort();
+    const card = (b, d, color) => { const P = pkgOf(b), a = mcAttr(b, P), st = STATUS[b.status] ? b.status : 'new';
+      return `<div class="pkc" style="--pc:${color};--pcb:${color}33" onclick="openDetail('${b.id}')">
+        <div class="pkt"><span class="tm">${esc(showT(b.mStart || firstGame(b).time))}</span><b>${esc(b.name)}</b>${flagsHtml(b, d)}<span class="tag ${st}">${STATUS[st]}</span></div>
+        <div class="pks">${pIc(b)} ${esc(P.name)} · 👥 ${esc(plTxt(b))}${b.seat ? ` · 📍 ${esc(b.seat)}` : ''}${tableQOf(b) ? ` · 🪑 ${esc(tableName(tableQOf(b).tableId))}` : ''}</div>
+        <div class="pkp">${pkgPlanHtml(b, d, a)}</div></div>`; };
+    let html = `<h2>🎁 Balíčky${pkgOld ? '' : ' – nadchádzajúce'} · ${days.reduce((s, d) => s + byDay[d].length, 0)}</h2>
+      <p class="hint" style="margin:0 0 8px">Len prehľad. Ťukni na balíček = detail (tam ✎ Upraviť – aj čas ${esc((Object.values(pkgs())[0] || {}).attrText || 'atrakcií')}).</p>`;
+    days.forEach(d => {
+      const list = byDay[d].sort((x, y) => toMin(bizTime(x.mStart || firstGame(x).time)) - toMin(bizTime(y.mStart || firstGame(y).time))), pc = partyColors(d);
+      const at = list.filter(b => pkgOf(b).attrMin).map(b => mcAttr(b)), clash = at.some((x, i) => at.some((y, j) => j > i && x.from < y.to && y.from < x.to));
+      html += `<div class="day">${d === tk ? 'DNES · ' : ''}${esc(dayTitle(d))} · ${list.length} ${plural(list.length, 'balíček', 'balíčky', 'balíčkov')}</div>
+        ${clash ? '<div class="err" style="margin:0 0 6px">❗ Atrakcie dvoch skupín sa v tento deň prekrývajú.</div>' : ''}
+        ${list.map(b => card(b, d, pc[b.id] || PARTY_COLORS[0])).join('')}`;
+    });
+    if (!days.length) html += `<div class="empty">Žiadne ${pkgOld ? '' : 'nadchádzajúce '}balíčky.</div>`;
+    return html + `<button class="btn ghost sm" style="margin-top:12px" onclick="pkgOld=!pkgOld;render()">${pkgOld ? 'Len nadchádzajúce' : 'Zobraziť aj staré'}</button>`;
   }
   // stĺpec „Balík“ v hárku: Monster Chill / ponuka 3+1 (a ktorá hra je zadarmo)
   function pkgCellHtml(b, d, time) {
@@ -1307,7 +1373,9 @@
     const cols = contact ? 7 : 5;
     // 🎁 príchod a atrakcie balíčka ako tenký riadok nad hrami (v riadku mriežky, kam časom patria)
     const evs = {}; pkgEvents(d).forEach(e => { const t = rowOf(times, e.time); (evs[t] = evs[t] || []).push(e); });
-    const evRow = (e, past) => `<tr class="evr${past}"${pc[e.b.id] ? ` style="box-shadow:inset 4px 0 0 ${pc[e.b.id]}"` : ''}><td class="t">${showT(e.time)}</td>
+    // (2026-10-31) celý riadok vo farbe partie (stav ukazuje štítok), príchod / atrakcie balíčka slabšie
+    const pcs = (id, a) => pc[id] ? ` style="--pc:${pc[id]};--pcb:${pc[id]}${a}"` : '';
+    const evRow = (e, past) => `<tr class="evr${past}${pc[e.b.id] ? ' pcol' : ''}"${pcs(e.b.id, '1f')}><td class="t">${showT(e.time)}</td>
       <td colspan="${cols - 1}"><a class="nm" onclick="openDetail('${e.b.id}')">${esc(e.b.name)}</a> · ${evText(e)} <small class="mut">· ${pIc(e.b)} ${esc(e.P.name)}${e.ev === 'arr' ? ', laser game až po atrakciách' : ', po laser game'}</small></td></tr>`;
     const row = t => (evs[t] || []).map(e => evRow(e, isPast(e.time) ? ' past' : '')).join('') + rowG(t);
     const rowG = t => {
@@ -1322,7 +1390,7 @@
         const key = rawKey(d, t), pl = isPlayed(b, key), c = contactOf(b), tq = tableQOf(b);
         const sub = [b.seat ? `📍 ${esc(b.seat)}` : '', tq ? `🪑 ${esc(tableName(tq.tableId))}${tq.reserveAt ? ' od ' + new Date(tq.reserveAt).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' }) : ''}` : '',
           b.note ? `<span class="nt">📝 ${esc(b.note)}</span>` : ''].filter(Boolean).join(' · ');
-        return `<tr class="bkr st-${st}${isMc(b) ? ' mc' : ''}${pl ? ' played' : ''}${past}"${pc[b.id] ? ` style="box-shadow:inset 4px 0 0 ${pc[b.id]}"` : ''}><td class="t">${showT(t)}${pl ? ' 🏁' : ''}</td>
+        return `<tr class="bkr st-${st}${isMc(b) ? ' mc' : ''}${pl ? ' played' : ''}${past}${pc[b.id] ? ' pcol' : ''}"${pcs(b.id, '4a')}><td class="t">${showT(t)}${pl ? ' 🏁' : ''}</td>
           <td><a class="nm" onclick="openDetail('${b.id}')">${isClosed(b) ? '🔒 ' : isMc(b) && b.mOrder !== 'attr' && n === 1 ? '🚪 ' : ''}${esc(b.name)}</a>${flagsHtml(b, d)}${isClosed(b) ? ' <span class="pk cl">Uzavretá spoločnosť</span>' : ''}${g.length > 1 && !isClosed(b) ? ` <small class="mut">${n}/${g.length}</small>` : ''}${isMc(b) ? ` <span class="tag mc">${pIc(b)} ${esc(pkgOf(b).name)}</span>` : ''}${offerTagHtml(b, d, t)}
             ${sub ? `<span class="sub" title="${esc([b.seat, b.note].filter(Boolean).join(' · '))}">${sub}</span>` : ''}</td>
           <td><b>${isClosed(b) ? '—' : esc(plTxt(b))}</b></td>
@@ -1735,7 +1803,7 @@
         ${b.offerPick ? `<br>🎁 Na webe si vybrali: <b>${b.offerPick === 'none' ? 'len laser game (bez ponuky)' : 'ponuku ' + esc(b.offerPick)}</b>${b.offerPick !== 'none' && !offerFor(b) ? ' <span style="color:var(--red)">(málo hráčov – ponuka neplatí)</span>' : ''}` : ''}
         ${[...new Set(g.map(x => x.date))].map(dd => { const oi = offerInfo(b, dd); return oi ? `<br>🎁 Ponuka ${oi.name}${g.some(x => x.date !== dd) ? ` (${esc(dayTitle(dd))})` : ''}: zadarmo hra o <b>${oi.free.map(showT).join(', ')}</b>` : ''; }).join('')}
         ${mc ? `<br>🚪 príchod <b>${esc(showT(b.mStart || firstGame(b).time))}</b> · ${b.mOrder === 'attr' ? 'najprv atrakcie, potom laser game' : 'najprv laser game, potom atrakcie'}<br>
-          ${pkgOf(b).attrMin ? `<span style="color:#d9c2ff">🎮 ${esc(pkgOf(b).attrText || 'Atrakcie')} <b>${showM(a.from)}–${showM(a.to)}</b>${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}</span>` : ''}` : ''}
+          ${pkgOf(b).attrMin ? `<span style="color:#d9c2ff">🎮 ${esc(pkgOf(b).attrText || 'Atrakcie')} <b>${showM(a.from)}–${showM(a.to)}</b>${a.set ? ' (nastavené ručne)' : a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}</span>` : ''}` : ''}
         ${canSeeContact() ? (c => `${c.phone ? `<br>📞 <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}${c.email ? `<br>✉ <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : ''}`)(contactOf(b)) : ''}
         ${b.note ? `<br>📝 ${esc(b.note)}` : ''}
         ${created ? `<br><span style="color:var(--muted);font-size:12px">vytvorené ${created.getDate()}. ${created.getMonth() + 1}. ${pad(created.getHours())}:${pad(created.getMinutes())}</span>` : ''}
@@ -1780,7 +1848,10 @@
         <select id="fMStart" onchange="blurNow();setMc('mStart',this.value)">${(grid.includes(f.mStart) ? grid : grid.concat(f.mStart).sort()).map(t => `<option value="${t}" ${t === f.mStart ? 'selected' : ''}>${showT(t)}</option>`).join('')}</select>
         <div class="seg mc"><button class="${f.mOrder === 'games' ? 'on' : ''}" onclick="setMc('mOrder','games')">🔫 Najprv laser game</button><button class="${f.mOrder === 'attr' ? 'on' : ''}" onclick="setMc('mOrder','attr')">🎮 Najprv atrakcie</button></div>
         <div class="mcinfo">🚪 Príchod: <b>${esc(showT(f.mStart))}</b><br>🔫 Laser game: <b>${f.items.map(it => showT(it.time)).join(' · ') || '—'}</b><br>
-          ${P.attrMin ? `🎮 ${esc(P.attrText || 'Atrakcie')} cca <b>${showM(a.from)}–${showM(a.to)}</b>${a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}` : ''}
+          ${P.attrMin ? `🎮 ${esc(P.attrText || 'Atrakcie')}${a.set ? '' : ' cca'} <b>${showM(a.from)}–${showM(a.to)}</b>${a.set ? ' <span class="mut">(nastavené ručne)</span>' : a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}
+          <div class="arow">od <input id="fAFrom" type="time" step="300" value="${showM(a.from)}" onchange="setMcA('aFrom',this.value)"> do <input id="fATo" type="time" step="300" value="${showM(a.to)}" onchange="setMcA('aTo',this.value)">
+            ${a.set ? `<button class="btn ghost sm" onclick="setMcA('auto')">↺ podľa hier</button>` : '<span class="mut">zmeň, ak budú mať atrakcie inokedy</span>'}</div>
+          ${f.items.some(it => toMin(it.time) < a.to && toMin(it.time) + B.game > a.from) ? `<div class="err" style="margin-top:6px">⚠ ${esc(P.attrText || 'Atrakcie')} sa prekrývajú s ich hrou laser game.</div>` : ''}` : ''}
           ${clash ? `<div class="err" style="margin-top:6px">⚠ ${esc(mcClashMsg(clash, P))}</div>` : ''}
           ${busyG.length ? `<div class="err" style="margin-top:6px">⚠ Obsadené inou partiou: ${busyG.map(it => showT(it.time)).join(', ')} – posuň začiatok alebo uprav časy nižšie.</div>` : ''}</div>`;
     }
@@ -1837,14 +1908,14 @@
     html += `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <div class="seg" style="flex:1;min-width:220px;margin:0"><button class="${env === 'test' ? 'on' : ''}" onclick="setEnv('test')">🧪 Test</button><button class="${env === 'live' ? 'on' : ''}" onclick="setEnv('live')">🟢 Ostré (web)</button></div>
         ${isMgr ? `<a class="btn ghost sm" href="https://smenychillpoint.github.io/Teststranky/${env === 'live' ? '?ostre' : ''}" target="_blank" rel="noopener" style="text-decoration:none">${env === 'live' ? '🟢' : '🧪'} Ako zákazník ›</a>` : ''}</div>
-      <div class="tabs">${[['cal', '🗓 Kalendár'], ['sheet', '📋 Hárok dňa'], ['play', '🏁 Hry'], ['list', '📃 Zoznam']].concat(isMgr ? [['set', '⚙ Nastavenia']] : [])
+      <div class="tabs">${[['cal', '🗓 Kalendár'], ['sheet', '📋 Hárok dňa'], ['play', '🏁 Hry'], ['pkg', '🎁 Balíčky'], ['list', '📃 Zoznam']].concat(isMgr ? [['set', '⚙ Nastavenia']] : [])
         .map(([k, l]) => `<button class="${view === k ? 'on' : ''}" onclick="setView('${k}')">${l}</button>`).join('')}</div>`;
     if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
     if (view === 'set') html += settingsHtml();
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
-    else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : view === 'play' ? playHtml() : listHtml();
+    else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : view === 'play' ? playHtml() : view === 'pkg' ? pkgViewHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31b</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31c</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
