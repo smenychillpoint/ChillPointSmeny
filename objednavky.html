@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1610,7 +1610,7 @@ function renderTables() {
       ${uiOn('onlyBusy') ? `<button class="btn ${busyOnly ? '' : 'ghost'}" style="width:auto" onclick="toggleOnlyBusy()">${busyOnly ? '🔴 Len obsadené ✓' : '🔴 Len obsadené'}</button>` : ''}
       ${uiOn('tempTable') ? `<button class="btn ghost" style="width:auto" onclick="addTempTable()">➕ Dočasný stôl</button>` : ''}
       <button class="btn ghost" style="width:auto" onclick="showQuickCash=!showQuickCash;render()">💶 Rýchla platba</button>
-      <button class="btn ghost" style="width:auto" onclick="showQueue=true;render()">📌 Rezervácie${S.queue.length ? ' (' + S.queue.length + ')' : ''}</button>
+      <button class="btn ghost" style="width:auto" onclick="qDay='';showQueue=true;render()">📌 Rezervácie${queueDay().length ? ' (' + queueDay().length + ')' : ''}</button>
       <button class="btn ghost" style="width:auto" onclick="showHist=true;render()">📅 História</button>
       <button class="btn ghost" style="width:auto" onclick="openBizDayModal()">🌙 Pracovný deň${bizDay ? ': ' + dayShort(bizDay) : ''}</button>
     </div></div>`;
@@ -1725,9 +1725,23 @@ const isSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() 
 // Ako fmtQTime, ale keď je rezervácia na iný deň ako dnes, pridá aj dátum (napr. "5.10. 18:00"), nech sa
 // budúca rezervácia nedá pomýliť s dnešnou v tom istom (chronologicky zoradenom) zozname.
 const fmtQDateTime = t => { const d = new Date(t); const time = fmtQTime(t); return isSameDay(d, new Date()) ? time : `${d.getDate()}.${d.getMonth() + 1}. ${time}`; };
+// (2026-10-31) rezervácie sa ukazujú len pre jeden pracovný deň (6:00–6:00) – budúce (napr. šípky o 2 týždne) až v ten deň.
+// V aktuálnom dni aj rezervácie bez času („teraz“) a staršie neodbavené (nech sa nestratia). V zozname Rezervácií sa
+// dá prepnúť deň (qDay, '' = aktuálny pracovný deň); dlaždice stolov, atrakcie a „Ďalší na rade“ berú vždy aktuálny deň.
+const qBizKey = q => dateKey(new Date(q.reserveAt - DAY_START_H * 3600e3));
+const curBizKey = () => bizDay || bizTodayISO();
+const qOnDay = (q, k) => k === curBizKey() ? (!q.reserveAt || qBizKey(q) <= k) : (!!q.reserveAt && qBizKey(q) === k);
+const queueDay = k => S.queue.filter(q => qOnDay(q, k || curBizKey()));
+let qDay = '';
+function shiftQDay(n) {
+  if (n === 0) qDay = '';
+  else { const d = parseISODate(qDay || curBizKey()); d.setDate(d.getDate() + n); qDay = dateKey(d) === curBizKey() ? '' : dateKey(d); }
+  render();
+}
 function renderQueue() {
-  const nowT = now();
-  const rows = S.queue.map((q, i) => `<div class="line" style="align-items:center">
+  const nowT = now(), dk = qDay || curBizKey(), dayList = queueDay(dk);
+  const later = S.queue.filter(q => q.reserveAt && qBizKey(q) > dk).sort((a, b) => a.reserveAt - b.reserveAt);
+  const rows = dayList.map((q, i) => `<div class="line" style="align-items:center">
     <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
     <div class="row" style="gap:4px;flex-wrap:wrap">
       ${uiOn('arrived') ? `<button class="btn ok" style="width:auto;padding:6px 10px" onclick="queueArrived('${q.id}')">✓ Prišli</button>` : ''}
@@ -1754,7 +1768,13 @@ function renderQueue() {
     : `<div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
         ${seg('gauc', '🛋 Gauč', f.seat, 'qForm.seat')}${seg('stolik', '🪑 Stolík', f.seat, 'qForm.seat')}${seg('', 'Je to jedno', f.seat, 'qForm.seat')}</div>`;
   $('#app').innerHTML = `
-    ${S.queue.length ? `<div class="card" style="padding:0">${rows}</div>` : '<div class="empty">Zatiaľ žiadne rezervácie.</div>'}
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;gap:6px">
+      <button class="btn ghost" style="width:auto" onclick="shiftQDay(-1)">‹</button>
+      <b style="text-align:center;flex:1">📌 ${dk === curBizKey() ? 'Dnes · ' : ''}${fmtDay(parseISODate(dk))}</b>
+      <button class="btn ghost" style="width:auto" onclick="shiftQDay(1)">›</button></div>
+    ${dk !== curBizKey() ? `<div style="text-align:center;margin-bottom:8px"><button class="btn ghost" style="width:auto" onclick="shiftQDay(0)">Dnes</button></div>` : ''}
+    ${dayList.length ? `<div class="card" style="padding:0">${rows}</div>` : `<div class="empty">Na tento deň žiadne rezervácie.</div>`}
+    ${later.length ? `<p class="muted" style="font-size:12px;margin:6px 2px 0">Na ďalšie dni: ${later.length} ${later.length === 1 ? 'rezervácia' : later.length < 5 ? 'rezervácie' : 'rezervácií'} (najbližšia ${dayShort(qBizKey(later[0]))}) – ukážu sa v ten deň, alebo prepni šípkou ›.</p>` : ''}
     <div class="card" style="margin-top:14px">
       <label class="muted" style="font-size:13px">Nová rezervácia</label>
       <input id="qName" placeholder="Meno / číslo objednávky" style="margin-top:6px" value="${esc(f.name)}" oninput="qForm.name=this.value">
@@ -1787,7 +1807,13 @@ async function addQueue() {
   if (String(f.people).trim()) body.people = f.people;
   if (f.time) { body.time = f.time; body.date = f.date || todayISO(); }
   addingQueue = true;
-  try { await call('POST', '/api/queue', body); qFormReset(); toast('Rezervácia pridaná 📌'); }
+  try {
+    await call('POST', '/api/queue', body); qFormReset();
+    // na iný deň → zoznam sa prepne na ten deň, nech ju hneď vidno (dnešný zoznam ukazuje len dnešné)
+    const k = body.time ? dateKey(new Date(new Date(`${body.date}T${body.time}:00`).getTime() - DAY_START_H * 3600e3)) : '';
+    qDay = k && k !== curBizKey() ? k : '';
+    toast(qDay ? `Rezervácia pridaná na ${dayShort(qDay)} 📌` : 'Rezervácia pridaná 📌');
+  }
   finally { addingQueue = false; render(); }
 }
 // Zámok proti omylom - aj odbavenie sa musí potvrdiť (predtým sa dalo omylom zmazať jedným klikom)
@@ -1903,7 +1929,7 @@ function sessTableTag(s) {
 // (2026-10-16) kto je ďalší na rade na tento druh atrakcie (z rezervácií atrakcie) – vidno na obsadenej atrakcii
 function nextInQueueTag(st) {
   const type = st.type || 'Ostatné';
-  const q = S.queue.filter(x => x.type === type).sort((a, b) => (a.reserveAt || a.createdAt || 0) - (b.reserveAt || b.createdAt || 0))[0];
+  const q = queueDay().filter(x => x.type === type).sort((a, b) => (a.reserveAt || a.createdAt || 0) - (b.reserveAt || b.createdAt || 0))[0];
   if (!q) return '';
   const when = q.reserveAt ? new Date(q.reserveAt).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' }) : 'teraz';
   return `<span class="pill" style="background:var(--warnbg);color:var(--warn);white-space:normal">⏭ Ďalší: ${esc(q.name)}${q.people ? ` (${q.people})` : ''} · ${when}</span>`;
@@ -1948,7 +1974,7 @@ async function pickSessTable(tid) {
   sessTablePickId = null; render();
 }
 function stationQueueBlock(type) {
-  const rows = S.queue.filter(q => q.type === type);
+  const rows = queueDay().filter(q => q.type === type);   // len dnešné (2026-10-31)
   if (!rows.length) return '';
   const nowT = now();
   return `<div class="card" style="padding:0;margin-top:8px">${rows.map((q, i) => `<div class="line" style="align-items:center">
@@ -2099,7 +2125,12 @@ async function addStationQueue(type) {
   if (String(f.people).trim()) body.people = f.people;
   if (f.time) { body.time = f.time; body.date = f.date || todayISO(); }
   addingStationQueue = true;
-  try { await call('POST', '/api/queue', body); queueFormType = null; qfS = { type: null, table: '', name: '', date: '', time: '', people: '' }; toast('Rezervácia pridaná ✓'); }
+  try {
+    await call('POST', '/api/queue', body); queueFormType = null; qfS = { type: null, table: '', name: '', date: '', time: '', people: '' };
+    // na iný deň sa pri atrakcii neukáže (vidno len dnešné) → povedať, kam sa zapísala
+    const k = body.time ? dateKey(new Date(new Date(`${body.date}T${body.time}:00`).getTime() - DAY_START_H * 3600e3)) : '';
+    toast(k && k !== curBizKey() ? `Rezervácia pridaná na ${dayShort(k)} ✓ (ukáže sa v ten deň)` : 'Rezervácia pridaná ✓');
+  }
   finally { addingStationQueue = false; render(); }
 }
 
@@ -2196,7 +2227,7 @@ function attractionsOnTableBlock(id) {
 // Rezervácie viazané na tento konkrétny stôl (z celkového zoznamu "queue" - viď col==='queue') - nech ich
 // čašník vidí rovno pri stole, bez toho, aby musel prepínať do samostatnej obrazovky "Rezervácie".
 function tableReservationsBlock(id) {
-  const rs = S.queue.filter(q => q.tableId === id).sort((a, b) => (a.reserveAt || a.createdAt) - (b.reserveAt || b.createdAt));
+  const rs = queueDay().filter(q => q.tableId === id).sort((a, b) => (a.reserveAt || a.createdAt) - (b.reserveAt || b.createdAt));   // len dnešné (2026-10-31)
   if (!rs.length) return `<div class="card" style="margin-bottom:14px">
     <div class="row" style="justify-content:space-between;align-items:center">
       <b>📌 Rezervácie stola</b>
