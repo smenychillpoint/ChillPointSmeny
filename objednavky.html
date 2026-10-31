@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31g</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31h</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -241,7 +241,8 @@ let isManager = false;
 // → Add user) s týmto e-mailom.
 // (2026-10-31) Heslo UŽ NIE JE v kóde (stránka je verejná na GitHube): zadá sa raz na zariadení (tu alebo na úvode)
 // a uloží sa len v tomto prehliadači (localStorage cp_devpw, rovnaké ako na úvode); s ním sa zariadenie prihlasuje samo.
-const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';
+const DEVICE_EMAIL = 'rezervacia@chillpoint.sk';
+const OLD_DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';   // do 2026-10-31 (heslo bolo verejné) – už ho pravidlá nepustia
 const devPw = () => { try { return localStorage.getItem('cp_devpw') || ''; } catch (e) { return ''; } };
 const BAD_PW = /wrong-password|invalid-credential|invalid-login|user-not-found|user-disabled|invalid-email/;
 let wantManagerLogin = false;   // true = zobraziť pôvodný formulár na prihlásenie vedúceho (e-mail/heslo)
@@ -1276,7 +1277,11 @@ function connect() {
     deviceLoginAttempted = false; deviceLoginFailed = false; wantManagerLogin = false;
     render();
     try { await seedIfEmpty(); } catch (e) { console.warn(e); }
-    const errH = () => toast('Nemáte prístup k dátam – skontrolujte pravidlá databázy');
+    const errH = () => {
+      // (2026-10-31) ešte prihlásené starým účtom zariadenia, ktorý nové pravidlá nepustia → odhlásiť, vypýta sa nové heslo
+      if ((user.email || '').toLowerCase() === OLD_DEVICE_EMAIL) { auth.signOut(); return; }
+      toast('Nemáte prístup k dátam – skontrolujte pravidlá databázy');
+    };
     db.ref('tables').on('value', s => { live.tables = s.val() || {}; tryRender(); }, errH);
     db.ref('menu').on('value', s => { live.menu = s.val() || {}; tryRender(); }, errH);
     db.ref('categories').on('value', s => { live.categories = s.val() || {}; tryRender(); }, errH);

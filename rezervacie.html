@@ -261,7 +261,7 @@
   })();
   // zdieľané zariadenie (ako na úvode a v Objednávkach) – aby zamestnanci mohli čítať rezervácie
   // (2026-10-31) heslo zariadenia UŽ NIE JE v kóde – zadá sa raz na úvode / v Objednávkach, uložené v prehliadači (cp_devpw)
-  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';
+  const DEVICE_EMAIL = 'rezervacia@chillpoint.sk';
   // Nastavenia rezervácií = laser/<env>/config (plugin ich načíta a prepíšu jeho WordPress nastavenia).
   // DEF = predvolené hodnoty pluginu; kým config nie je uložený, web berie hodiny z WordPressu (tu sa ukážu tieto).
   // hours: kľúč = deň v týždni (0 = nedeľa), chýbajúci deň = zatvorené; "24:00" = polnoc
@@ -1933,7 +1933,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : view === 'play' ? playHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31f</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31g</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();

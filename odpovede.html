@@ -83,7 +83,7 @@
   const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
   // zdieľané zariadenie (ako na úvode a v Rezerváciách) – aby zamestnanci mohli čítať šablóny
   // (2026-10-31) heslo zariadenia UŽ NIE JE v kóde – zadá sa raz na úvode / v Objednávkach, uložené v prehliadači (cp_devpw)
-  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';
+  const DEVICE_EMAIL = 'rezervacia@chillpoint.sk';
   const LIM = { title: 80, when: 300, text: 6000, mail: 20000, val: 300 };
 
   const $ = id => document.getElementById(id);
@@ -328,7 +328,7 @@
     if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
     if (!loaded && !loadErr) html += '<p class="empty">Načítavam šablóny…</p>';
     else html += view === 'tpl' ? tplHtml() : view === 'set' ? settingsHtml() : replyHtml();
-    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-10-31</footer>`;
+    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-10-31b</footer>`;
     if (tf) html += tplFormHtml();
     const ovScroll = document.querySelector('.ov') ? document.querySelector('.ov').scrollTop : 0;
     app.innerHTML = html;

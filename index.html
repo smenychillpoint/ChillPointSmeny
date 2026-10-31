@@ -94,7 +94,8 @@
   // (2026-10-31) Heslo UŽ NIE JE v kóde (stránky sú verejné na GitHube): zadá sa raz na každom zariadení (🔐 karta nižšie)
   // a uloží sa len v tomto prehliadači (localStorage cp_devpw) – po odhlásení vedúceho sa zariadenie prihlási samo ako doteraz.
   // Čítajú ho aj Objednávky, Rezervácie a Odpovede (rovnaká adresa = rovnaké úložisko).
-  const DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';
+  const DEVICE_EMAIL = 'rezervacia@chillpoint.sk';
+  const OLD_DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';   // do 2026-10-31 (heslo bolo verejné) – už ho pravidlá nepustia
   const BAD_PW = /wrong-password|invalid-credential|invalid-login|user-not-found|user-disabled|invalid-email/;
   // časti, ku ktorým vedúci nastavuje prístup (settings/hubAccess/e/<meno>/<kľúč> = false -> nemá prístup)
   const AREAS = [['smeny', '📅 Smeny'], ['objednavky', '🍹 Objednávky'], ['kupit', '📦 Kúpiť'], ['odovzdavka', '📝 Odovzdávka'], ['rezervacie', '📆 Rezervácie']];
@@ -261,7 +262,7 @@
       ls.set('cp_devpw', pw); devNeed = false; devErr = ''; toast('🔐 Zariadenie prihlásené ✓');
     } catch (e) { devErr = BAD_PW.test((e && e.code) || '') ? 'Nesprávne heslo zariadenia.' : 'Nepodarilo sa prihlásiť – skontroluj internet.'; render(); }
   }
-  const devCard = () => !authReady || user || !devNeed ? '' : `<div class="card" style="border-color:var(--yellow)">
+  const devCard = () => !authReady || !devNeed || (user && (user.email || '').toLowerCase() !== OLD_DEVICE_EMAIL) ? '' : `<div class="card" style="border-color:var(--yellow)">
       <h3 style="margin:0 0 6px">🔐 Prihlásiť toto zariadenie</h3>
       <p style="margin:0 0 8px;color:var(--muted);font-size:13px">Stačí raz na každom mobile / tablete – heslo zariadenia povie vedúci, prehliadač si ho zapamätá. Bez toho sa nenačítajú rezervácie, odovzdávky ani Objednávky.</p>
       <form onsubmit="return false" style="margin:0"><input type="text" name="username" autocomplete="username" value="${DEVICE_EMAIL}" hidden><input type="password" id="dPass" placeholder="Heslo zariadenia" autocomplete="current-password" onkeydown="if(event.key==='Enter')devLogin()"></form>
@@ -460,7 +461,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-31</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-31b</footer>`;
       return;
     }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
@@ -609,7 +610,7 @@
         + link('rezervacie.html#nastavenia', '🎯', 'Nastavenia rezervácií', 'Balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-31</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-10-31b</footer>`;
     app.innerHTML = html;
   }
 
@@ -651,7 +652,11 @@
       if (!u) { devAutoLogin(); return; }
       devNeed = false;
       if (!authOn) { authOn = true; on('queue', v => { queue = v || {}; }); on('meta/handover', v => { handover = v || {}; }); on('meta/worklist', v => { worklist = v || {}; }); }
-      if (laserBk === null) { laserBk = {}; db.ref(`laser/${laserEnv}/bookings`).on('value', s => { laserBk = s.val() || {}; render(); }, () => { laserBk = null; }); }
+      if (laserBk === null) { laserBk = {}; db.ref(`laser/${laserEnv}/bookings`).on('value', s => { laserBk = s.val() || {}; render(); }, () => {
+        laserBk = null;
+        // (2026-10-31) ešte prihlásené starým účtom zariadenia (po novom e-maile ho pravidlá nepustia) → 🔐 karta, prihlásiť nanovo
+        if (user && (user.email || '').toLowerCase() === OLD_DEVICE_EMAIL) { authOn = false; devNeed = true; devErr = 'Toto zariadenie je ešte prihlásené starým účtom – zadaj nové heslo zariadenia.'; render(); }
+      }); }
       render();
     });
   } catch (e) { $('app').innerHTML = '<p class="empty">Nepodarilo sa pripojiť. Skús obnoviť stránku.</p>'; }
