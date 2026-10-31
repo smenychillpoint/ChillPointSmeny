@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-30d</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -3207,18 +3207,20 @@ function renderUzavierka() {
   // Zamestnanci, mení len vedúci) - tu sa už len zobrazuje, nedá sa to priamo odškrtnúť.
   // (2026-10-30) do % sa ráta všetko nahodené – zaplatené aj ešte nezaplatené na stoloch (payBasis)
   const { orders: pctOrders, openTotal, pctBase, excludedRevenue, pctAmount } = payBasis(uzavDate, paid);
-  // Trinkgeľ za deň - ručne zadaná suma, rozdelí sa rovným dielom medzi všetkých s hodinami; o % z tržby sa delia
-  // len tí, ktorým to vedúci v Nastaveniach nevypol (payShares).
+  // Trinkgeľ za deň - ručne zadaná suma, delí sa medzi všetkých s hodinami (podľa hodín / rovným dielom, niekto môže
+  // mať presnú sumu – tipSplit); o % z tržby sa delia len tí, ktorým to vedúci v Nastaveniach nevypol (payShares).
   const tip = num(tipOf(dayKey)) || 0;
-  const { names: checkedNames, sharers, tipShare, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, dayKey);
+  const { names: checkedNames, sharers, tipFor, tipI, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, dayKey);
+  const tipPaid = checkedNames.length ? tipI.paid : 0;
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), 0);
   // (2026-10-22) kto má v tento deň smenu (zo Smien) – je hore a označený "📅 na smene"; ostatní pod ním
   // (2026-10-30) úplne hore sú tí, čo už majú zapísané hodiny (payEmpOrder)
   const onShift = shiftNamesFor(dayKey);
   const empOrder = payEmpOrder(dayHours, onShift);
   const empRows = empOrder.map(({ e, i }) => { const on = e.name in dayHours; const h = dayHours[e.name] || ''; const sh = onShift.includes(e.name);
-    const hourly = (num(h) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + (on ? shareOf(e.name) + tipShare : 0);
+    const hourly = (num(h) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + (on ? shareOf(e.name) + tipFor(e.name) : 0);
     const wn = wins[e.name], wOpen = !!wn || payWinOpen.has(e.name);
+    const tmRaw = tipManualRaw(dayKey, e.name), tm = tmRaw !== '', tOpen = tm || payTmOpen.has(e.name);
     // netreba nič zaškrtávať: kto má zapísané hodiny (> 0), ráta sa do výplat (aj do % z tržby a trinkgeľu)
     return `<div id="payEmpRow-${i}" style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line);${on || sh ? '' : 'opacity:.6'}">
       <div class="row" style="gap:8px;align-items:center">
@@ -3226,6 +3228,7 @@ function renderUzavierka() {
         <!-- hodinová sadzba sa tu už nezobrazuje - vidí/mení ju len vedúci v Nastaveniach -> Zamestnanci -->
         ${isManager && !e.wage ? '<small class="muted" title="Nastav v Nastaveniach -> Zamestnanci">bez sadzby</small>' : ''}
         <button class="btn ghost" title="Prišiel / odišiel v inom čase – % len z jeho času" style="width:auto;padding:6px 9px;${wn ? 'border-color:var(--accent);background:var(--accent);color:#fff' : ''}" onclick="togglePayWin(${i})">⏰</button>
+        <button class="btn ghost" id="payTmB-${i}" title="Presná suma trinkgeľu" style="width:auto;padding:6px 9px;${tm ? 'border-color:var(--accent);background:var(--accent);color:#fff' : ''}" onclick="togglePayTm(${i})">💶</button>
         <input type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" placeholder="hodín" value="${h}"
           oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)" onchange="sortPayRow(${i})" onkeydown="if(event.key==='Enter')this.blur()">
       </div>
@@ -3234,9 +3237,15 @@ function renderUzavierka() {
         <span class="muted">do</span><input id="payWt-${i}" type="time" value="${wn ? wn.t : ''}" style="width:auto;padding:6px" onchange="setPayrollWin(${i})">
         ${wn ? `<button class="btn ghost" title="Zrušiť čas (celý deň)" style="width:auto;padding:5px 10px" onclick="setPayrollWin(${i},true)">✕</button>` : ''}
         ${wn && wn.bad ? '<small style="color:var(--warn);font-weight:700;width:100%">⚠ „do“ musí byť neskôr ako „od“ – zatiaľ sa ráta celý deň</small>'
-          : `<small class="muted" style="width:100%">% len z toho, čo hostia objednali v tomto čase${wn ? '' : ' (prázdne = celý deň)'}</small>`}
+          : `<small class="muted" style="width:100%">% len z toho, čo hostia objednali v tomto čase${tipI.mode === 'time' ? ', trinkgeľ za hodiny v tomto čase' : ''}${wn ? '' : ' (prázdne = celý deň)'}</small>`}
       </div>` : ''}
-      <p class="muted" style="font-size:12px;margin:4px 0 0" id="payEmpNote-${i}">${on ? payNoteHtml(hourly, shares(e.name), shareOf(e.name), tip, tipShare, empTotal, wn) : ''}</p>
+      ${tOpen ? `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:13px">
+        <span class="muted">💶 trinkgeľ presne</span><input id="payTm-${i}" type="number" min="0" step="0.5" inputmode="decimal" style="width:76px;padding:6px" placeholder="€" value="${esc(tmRaw)}"
+          oninput="setPayrollTm(${i},this.value)" onkeydown="if(event.key==='Enter')this.blur()"><span class="muted">€</span>
+        ${tm ? `<button class="btn ghost" title="Zrušiť presnú sumu (vypočíta sa)" style="width:auto;padding:5px 10px" onclick="setPayrollTm(${i},'',true)">✕</button>` : ''}
+        <small class="muted" style="width:100%">${on ? 'zvyšok trinkgeľu sa rozdelí medzi ostatných (prázdne = vypočíta sa)' : 'najprv zapíš hodiny – trinkgeľ dostanú len tí, čo majú hodiny'}</small>
+      </div>` : ''}
+      <p class="muted" style="font-size:12px;margin:4px 0 0" id="payEmpNote-${i}">${on ? payNoteHtml(hourly, shares(e.name), shareOf(e.name), tip, tipFor(e.name), empTotal, wn, tipHowOf(tipI, e.name)) : ''}</p>
     </div>`; }).join('');
   $('#app').innerHTML = `
     <div class="row" style="justify-content:space-between;margin-bottom:6px">
@@ -3291,14 +3300,19 @@ function renderUzavierka() {
         <span class="muted">€</span>
       </div>
       <div class="row" style="margin-top:10px;gap:8px;align-items:center;padding-top:10px;border-top:1px solid var(--line)">
-        <label class="muted" style="flex:1;font-size:13px">Trinkgeľ za deň (rozdelí sa rovným dielom medzi tých, čo majú zapísané hodiny)</label>
+        <label class="muted" style="flex:1;font-size:13px">Trinkgeľ za deň (dostanú ho tí, čo majú zapísané hodiny; 💶 pri mene = presná suma pre človeka)</label>
         <input id="pTip" type="number" min="0" step="0.5" inputmode="decimal" style="width:76px" value="${esc(tipOf(dayKey))}" oninput="setPayrollTip(this.value)">
         <span class="muted">€</span>
       </div>
+      <div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">
+        <button class="btn${tipI.mode === 'time' ? '' : ' ghost'}" style="width:auto;padding:7px 12px;font-size:13px" onclick="setTipMode('time')">⏰ Podľa hodín</button>
+        <button class="btn${tipI.mode === 'eq' ? '' : ' ghost'}" style="width:auto;padding:7px 12px;font-size:13px" onclick="setTipMode('eq')">⚖️ Rovným dielom</button>
+      </div>
+      <p class="muted" id="payTipHow" style="font-size:12px;margin:6px 0 0">${tipHowHtml(tip, tipI)}</p>
       <div class="total" style="margin-top:10px"><span>Hodinovky spolu</span><span id="payHourly">${eur(hourlyTotal)}</span></div>
       <div class="total"><span id="payPctLabel">${payPctLabel(pct, excludedRevenue, pctBase, sharers, timed, openTotal)}</span><span id="payPct">${eur(sharers.length ? pctAmount : 0)}</span></div>
-      <div class="total"><span id="payTipLabel">Trinkgeľ${checkedNames.length ? ' (rozdelené medzi ' + checkedNames.length + ')' : ''}</span><span id="payTip">${eur(tip)}</span></div>
-      <div class="total" style="border-top:2px solid var(--ink);padding-top:8px;margin-top:6px"><b>Výplaty spolu</b><b id="payGrand">${eur(hourlyTotal + (sharers.length ? pctAmount : 0) + (checkedNames.length ? tip : 0))}</b></div>
+      <div class="total"><span id="payTipLabel">${tipLabelTxt(checkedNames, tipI)}</span><span id="payTip">${eur(tipPaid)}</span></div>
+      <div class="total" style="border-top:2px solid var(--ink);padding-top:8px;margin-top:6px"><b>Výplaty spolu</b><b id="payGrand">${eur(hourlyTotal + (sharers.length ? pctAmount : 0) + tipPaid)}</b></div>
       <button class="btn ghost" style="margin-top:10px" onclick="downloadPayrollCsv()">⬇️ Stiahnuť / zdieľať výplaty (CSV pre Excel)</button>
     </div>
 
@@ -3496,21 +3510,24 @@ function recomputePayroll() {
   const pct = payPct();
   const { orders: pctOrders, openTotal, pctBase, excludedRevenue, pctAmount } = payBasis(uzavDate, paidToday);
   const tip = num(tipOf(payDayKey())) || 0;
-  const { names: checkedNames, sharers, tipShare, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, payDayKey());
+  const { names: checkedNames, sharers, tipFor, tipI, shares, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, payDayKey());
+  const tipPaid = checkedNames.length ? tipI.paid : 0;
   const hourlyTotal = (S.employees || []).reduce((s, e) => s + (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), 0);
   if ($('#payHourly')) $('#payHourly').textContent = eur(hourlyTotal);
   if ($('#payPct')) $('#payPct').textContent = eur(sharers.length ? pctAmount : 0);
   if ($('#payPctLabel')) $('#payPctLabel').textContent = payPctLabel(pct, excludedRevenue, pctBase, sharers, timed, openTotal);
-  if ($('#payTip')) $('#payTip').textContent = eur(tip);
-  if ($('#payTipLabel')) $('#payTipLabel').textContent = `Trinkgeľ${checkedNames.length ? ' (rozdelené medzi ' + checkedNames.length + ')' : ''}`;
-  if ($('#payGrand')) $('#payGrand').textContent = eur(hourlyTotal + (sharers.length ? pctAmount : 0) + (checkedNames.length ? tip : 0));
+  if ($('#payTip')) $('#payTip').textContent = eur(tipPaid);
+  if ($('#payTipLabel')) $('#payTipLabel').textContent = tipLabelTxt(checkedNames, tipI);
+  if ($('#payTipHow')) $('#payTipHow').innerHTML = tipHowHtml(tip, tipI);
+  if ($('#payGrand')) $('#payGrand').textContent = eur(hourlyTotal + (sharers.length ? pctAmount : 0) + tipPaid);
   (S.employees || []).forEach((e, i) => {
-    const on = e.name in dayHours, note = $('#payEmpNote-' + i), row = $('#payEmpRow-' + i);
+    const on = e.name in dayHours, note = $('#payEmpNote-' + i), row = $('#payEmpRow-' + i), tb = $('#payTmB-' + i);
     if (row) row.style.opacity = on ? '' : '.6';
+    if (tb) { const tm = tipManualRaw(payDayKey(), e.name) !== ''; tb.style.borderColor = tm ? 'var(--accent)' : ''; tb.style.background = tm ? 'var(--accent)' : ''; tb.style.color = tm ? '#fff' : ''; }
     if (!note) return;
     if (!on) { note.innerHTML = ''; return; }
-    const hourly = (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + shareOf(e.name) + tipShare;
-    note.innerHTML = payNoteHtml(hourly, shares(e.name), shareOf(e.name), tip, tipShare, empTotal, wins[e.name]);
+    const hourly = (num(dayHours[e.name]) || 0) * (e.wage || 0) * wageMult(payDayKey()), empTotal = hourly + shareOf(e.name) + tipFor(e.name);
+    note.innerHTML = payNoteHtml(hourly, shares(e.name), shareOf(e.name), tip, tipFor(e.name), empTotal, wins[e.name], tipHowOf(tipI, e.name));
   });
 }
 function payPctLabel(pct, excludedRevenue, pctBase, sharers, timed, openTotal) {
@@ -3631,8 +3648,69 @@ function pctChunks(o, pct) {
   } else (o.items || []).forEach(i => out.push({ ts: i.at || o.createdAt || o.paidAt, raw: rawOf(i) }));
   return out.filter(x => x.raw > 0);
 }
+// ---------- 💶 trinkgeľ (2026-10-31) ----------
+// meta/payroll/{deň}/tipMode = 'time' (podľa hodín) | 'eq' (rovným dielom); bez zápisu od 31. 10. 2026 podľa hodín,
+// staršie dni rovným dielom (ako sa vtedy vyplácalo). meta/payroll/{deň}/tm/{payEnc(meno)} = presná suma trinkgeľu
+// pre človeka – zvyšok sa rozdelí medzi ostatných.
+// Podľa hodín: trinkgeľ ÷ dĺžka dňa = suma za hodinu; každá hodina sa delí medzi tých, čo tu vtedy boli
+// (100 € za 10 h = 10 €/h; 4 ľudia → 2,50 € za hodinu každý; 2 h tu bola aj piata → tie 2 h po 2 €, ona 4 €).
+// Kto má ⏰ od – do, bol tu v tom čase (chýbajúca strana = podľa jeho hodín); kto ⏰ nemá, bol tu svoje hodiny
+// až do konca dňa (kto má plný počet hodín, bol tu celý čas).
+const TIP_TIME_FROM = '2026-10-31';
+const tipModeOf = day => { const m = (sharedPay[day] || {}).tipMode; return m === 'eq' || m === 'time' ? m : (day >= TIP_TIME_FROM ? 'time' : 'eq'); };
+const tipManualRaw = (day, name) => { const v = ((sharedPay[day] || {}).tm || {})[payEnc(name)]; return v === undefined || v === null ? '' : String(v); };
+function tipManualOf(day) {
+  const t = (sharedPay[day] || {}).tm || {}, out = {};
+  Object.keys(t).forEach(k => { if (t[k] !== null && t[k] !== undefined && String(t[k]).trim() !== '' && num(t[k]) >= 0) out[payDec(k)] = num(t[k]); });
+  return out;
+}
+function tipSplit(names, dayHours, tip, wins, day) {
+  const mode = tipModeOf(day), man = tipManualOf(day), of = {}, mins = {}, manual = {};
+  names.forEach(n => { of[n] = 0; if (n in man) { manual[n] = man[n]; of[n] = man[n]; } });
+  const rest = names.filter(n => !(n in manual)), manSum = Object.values(manual).reduce((s, v) => s + v, 0);
+  const left = Math.round((tip - manSum) * 100) / 100, info = { mode, manual, rest, left, rate: 0, spanMin: 0 };
+  if (rest.length && left > 0) {
+    if (mode === 'eq') rest.forEach(n => { of[n] = left / rest.length; });
+    else {
+      // čas, kedy tu kto bol (minúty pracovného dňa od 6:00)
+      const hMin = n => Math.max(0, (num(dayHours[n]) || 0) * 60), iv = {};
+      const winned = rest.filter(n => wins[n] && !wins[n].bad);
+      winned.forEach(n => { const w = wins[n], h = hMin(n); let a = w.from, b = w.to;
+        if (!w.f && w.t && h) a = Math.max(0, b - h); else if (w.f && !w.t && h) b = Math.min(1440, a + h);
+        iv[n] = [a, b]; });
+      const end = winned.length ? Math.max(...winned.map(n => iv[n][1])) : 1440;
+      rest.filter(n => !iv[n]).forEach(n => { iv[n] = [end - hMin(n), end]; });
+      const pts = [...new Set(rest.flatMap(n => iv[n]))].sort((x, y) => x - y), segs = [];
+      for (let i = 1; i < pts.length; i++) {
+        const p = pts[i - 1], q = pts[i], here = rest.filter(n => iv[n][0] <= p && iv[n][1] >= q);
+        if (here.length) segs.push({ L: q - p, here });
+      }
+      const span = segs.reduce((s, x) => s + x.L, 0);
+      if (span > 0) {
+        segs.forEach(s => s.here.forEach(n => { of[n] += left * s.L / span / s.here.length; mins[n] = (mins[n] || 0) + s.L; }));
+        info.rate = left / span * 60; info.spanMin = span;
+      } else rest.forEach(n => { of[n] = left / rest.length; });
+    }
+  }
+  info.paid = Math.round(names.reduce((s, n) => s + of[n], 0) * 100) / 100;
+  return { tipFor: n => of[n] || 0, tipMins: n => mins[n] || 0, ...info };
+}
+const fmtHrs = m => String(Math.round(m / 60 * 100) / 100).replace('.', ',');
+// ako sa delí trinkgeľ – riadok pod sumou v Uzávierke
+function tipHowHtml(tip, t) {
+  const man = Object.entries(t.manual);
+  let s = t.mode === 'time'
+    ? `⏰ Podľa hodín: trinkgeľ ÷ dĺžka dňa = suma za hodinu, každá hodina sa delí medzi tých, čo tu vtedy boli (kto má ⏰, ráta sa jeho čas; kto nemá, jeho hodiny do konca dňa).${t.rate > 0 ? ` <b>Dnes ${eur(t.left)} za ${fmtHrs(t.spanMin)} h = ${eur(t.rate)}/h.</b>` : ''}`
+    : '⚖️ Rovným dielom medzi všetkých, čo majú zapísané hodiny.';
+  if (man.length) s += `<br>💶 Presne: ${man.map(([n, v]) => `${esc(n)} ${eur(v)}`).join(', ')}${t.rest.length && t.left > 0 ? ` · zvyšok ${eur(t.left)} sa delí medzi ${t.rest.length}` : ''}`;
+  if (tip > 0 && t.left < 0) s += `<br><b style="color:var(--warn)">⚠ Presné sumy sú spolu viac ako trinkgeľ (${eur(tip)}).</b>`;
+  else if (tip > 0 && man.length && !t.rest.length && t.left > 0.004) s += `<br><b style="color:var(--warn)">⚠ Všetci majú presnú sumu – ${eur(t.left)} z trinkgeľu sa nerozdelilo.</b>`;
+  return s;
+}
+const tipLabelTxt = (names, t) => `Trinkgeľ${names.length ? ` (${t.mode === 'time' ? '⏰ podľa hodín' : 'rovným dielom'}${Object.keys(t.manual).length ? ', 💶 ' + Object.keys(t.manual).length + ' presne' : ''})` : ''}`;
 // kto má hodiny, dostane trinkgeľ; o % z tržby sa delia len tí, čo nie sú v noShareEmps
 // shareOf(meno) = jeho podiel z % (pri ⏰ čase len z objednávok v jeho čase, inak rovným dielom)
+// tipFor(meno) = jeho trinkgeľ (presná suma, podľa hodín alebo rovným dielom – tipSplit)
 function payShares(dayHours, pctAmount, tip, paidOrders, day) {
   const names = Object.keys(dayHours), ns = noShareSet(), sharers = names.filter(n => !ns.has(n));
   const splitShare = sharers.length ? pctAmount / sharers.length : 0;
@@ -3648,12 +3726,31 @@ function payShares(dayHours, pctAmount, tip, paidOrders, day) {
     }));
     if (sum > 0) shareOf = n => sharers.includes(n) ? Math.round(pctAmount * w[n] / sum * 100) / 100 : 0;
   }
-  return { names, sharers, splitShare, tipShare: names.length ? tip / names.length : 0, shares: n => !ns.has(n), shareOf, timed, wins };
+  const tipI = tipSplit(names, dayHours, tip, wins, day || '');
+  return { names, sharers, splitShare, tipFor: tipI.tipFor, tipI, shares: n => !ns.has(n), shareOf, timed, wins };
 }
-const payNoteHtml = (hourly, sharing, share, tip, tipShare, total, win) =>
-  `hodinovka ${eur(hourly)} + ${sharing ? `podiel z tržby${win && !win.bad ? ` <b>za ⏰ ${winTxt(win)}</b>` : ''} ${eur(share)}` : '<i>bez podielu z %</i>'} = hodinovka a percentá <b>${eur(hourly + (sharing ? share : 0))}</b>${tip > 0 ? ` · + trinkgeľ ${eur(tipShare)} = spolu <b>${eur(total)}</b>` : ''}`;
+// tipHow = ako prišiel k trinkgeľu (presne / za koľko hodín)
+const tipHowOf = (t, n) => n in t.manual ? ' <b>presne</b>' : t.mode === 'time' && t.tipMins(n) ? ` za ${fmtHrs(t.tipMins(n))} h` : '';
+const payNoteHtml = (hourly, sharing, share, tip, tipShare, total, win, tipHow) =>
+  `hodinovka ${eur(hourly)} + ${sharing ? `podiel z tržby${win && !win.bad ? ` <b>za ⏰ ${winTxt(win)}</b>` : ''} ${eur(share)}` : '<i>bez podielu z %</i>'} = hodinovka a percentá <b>${eur(hourly + (sharing ? share : 0))}</b>${tip > 0 || tipShare > 0 ? ` · + trinkgeľ${tipHow || ''} ${eur(tipShare)} = spolu <b>${eur(total)}</b>` : ''}`;
 let payWinOpen = new Set();   // komu je rozbalené ⏰ (aj bez zadaného času)
 function togglePayWin(i) { const e = (S.employees || [])[i]; if (!e) return; if (payWinOpen.has(e.name)) payWinOpen.delete(e.name); else payWinOpen.add(e.name); render(); }
+let payTmOpen = new Set();    // komu je rozbalené 💶 presná suma trinkgeľu
+function togglePayTm(i) { const e = (S.employees || [])[i]; if (!e) return; if (payTmOpen.has(e.name)) payTmOpen.delete(e.name); else payTmOpen.add(e.name); render(); }
+// presná suma trinkgeľu pre človeka (prázdne = vypočíta sa); pri písaní sa len prepočíta, nič sa neprekresľuje
+function setPayrollTm(i, val, clear) {
+  const e = (S.employees || [])[i]; if (!e) return;
+  const k = payDayKey(), raw = clear ? '' : String(val ?? '').trim(), v = raw !== '' && num(raw) >= 0 ? raw : null;
+  sharedPay[k] = sharedPay[k] || {}; sharedPay[k].tm = sharedPay[k].tm || {};
+  if (v !== null) sharedPay[k].tm[payEnc(e.name)] = v; else delete sharedPay[k].tm[payEnc(e.name)];
+  db.ref(`meta/payroll/${k}/tm/${payEnc(e.name)}`).set(v).catch(() => toast('Trinkgeľ sa nepodarilo uložiť'));
+  if (clear) { payTmOpen.delete(e.name); render(); } else recomputePayroll();
+}
+function setTipMode(m) {
+  const k = payDayKey(); sharedPay[k] = sharedPay[k] || {}; sharedPay[k].tipMode = m;
+  db.ref(`meta/payroll/${k}/tipMode`).set(m).catch(() => toast('Nepodarilo sa uložiť'));
+  render();
+}
 function setPayrollWin(i, clear) {
   const e = (S.employees || [])[i]; if (!e) return;
   const k = payDayKey(), fEl = $('#payWf-' + i), tEl = $('#payWt-' + i);
@@ -3749,17 +3846,18 @@ async function downloadPayrollCsv() {
   const pct = payPct();
   const { orders: pctOrders, openTotal, pctBase, excludedRevenue, pctAmount } = payBasis(uzavDate, paidToday);
   const tip = num(tipOf(payDayKey())) || 0;
-  const { names, sharers, tipShare, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, payDayKey());
-  const pctPaid = sharers.length ? pctAmount : 0, tipPaid = names.length ? tip : 0;   // reálne vyplatené (ak sa nikto nedelí, nič)
+  const { names, sharers, tipFor, tipI, shareOf, timed, wins } = payShares(dayHours, pctAmount, tip, pctOrders, payDayKey());
+  const pctPaid = sharers.length ? pctAmount : 0, tipPaid = names.length ? tipI.paid : 0;   // reálne vyplatené (ak sa nikto nedelí, nič)
   let hourlyTotal = 0;
   // sadzbu €/h vidí len vedúci (aj v CSV) - ostatní (prístup cez PIN) dostanú súbor bez tohto stĺpca
-  const rows = [['Meno', 'Odpracované hodiny', '⏰ Bol tu (od – do)', ...(isManager ? ['Hodinovka €/h'] : []), 'Hodinovka spolu €', 'Podiel z tržby €', 'Hodinovka + percentá €', 'Trinkgeľ €', 'Spolu €']];
+  const rows = [['Meno', 'Odpracované hodiny', '⏰ Bol tu (od – do)', ...(isManager ? ['Hodinovka €/h'] : []), 'Hodinovka spolu €', 'Podiel z tržby €', 'Hodinovka + percentá €', 'Trinkgeľ €', 'Trinkgeľ ako', 'Spolu €']];
   (S.employees || []).forEach(e => {
     if (!(e.name in dayHours)) return;
     const h = num(dayHours[e.name]) || 0, w = wins[e.name];
-    const hourly = h * (e.wage || 0) * wageMult(payDayKey()), share = shareOf(e.name);
+    const hourly = h * (e.wage || 0) * wageMult(payDayKey()), share = shareOf(e.name), tp = tipFor(e.name);
+    const how = e.name in tipI.manual ? 'presná suma' : tipI.mode === 'time' ? (tipI.tipMins(e.name) ? `za ${fmtHrs(tipI.tipMins(e.name))} h` : 'podľa hodín') : 'rovným dielom';
     hourlyTotal += hourly;
-    rows.push([e.name, h, w && !w.bad ? winTxt(w) : 'celý deň', ...(isManager ? [e.wage || 0] : []), hourly.toFixed(2), share.toFixed(2), (hourly + share).toFixed(2), tipShare.toFixed(2), (hourly + share + tipShare).toFixed(2)]);
+    rows.push([e.name, h, w && !w.bad ? winTxt(w) : 'celý deň', ...(isManager ? [e.wage || 0] : []), hourly.toFixed(2), share.toFixed(2), (hourly + share).toFixed(2), tp.toFixed(2), how, (hourly + share + tp).toFixed(2)]);
   });
   rows.push([]);
   rows.push(['Tržba za deň €', total.toFixed(2)]);
@@ -3775,6 +3873,8 @@ async function downloadPayrollCsv() {
   if (noShareSet().size) rows.push(['Nedelia sa o percentá', [...noShareSet()].join(', ')]);
   if (timed && sharers.length) rows.push(['⏰ Percentá podľa času', 'kto má zadaný čas, má % len z objednávok v tom čase']);
   rows.push(['Trinkgeľ spolu €', tipPaid.toFixed(2)]);
+  if (tip > 0) rows.push(['Trinkgeľ delenie', tipI.mode === 'time' ? `podľa hodín${tipI.rate > 0 ? ` (${tipI.left.toFixed(2)} € za ${fmtHrs(tipI.spanMin)} h = ${tipI.rate.toFixed(2)} €/h)` : ''}` : 'rovným dielom']);
+  if (Object.keys(tipI.manual).length) rows.push(['Trinkgeľ presnou sumou', Object.entries(tipI.manual).map(([n, v]) => `${n} ${v.toFixed(2)} €`).join(', ')]);
   rows.push(['Hodinovky spolu €', hourlyTotal.toFixed(2)]);
   rows.push(['Hodinovky + percentá spolu €', (hourlyTotal + pctPaid).toFixed(2)]);
   rows.push(['Výplaty spolu €', (hourlyTotal + pctPaid + tipPaid).toFixed(2)]);
