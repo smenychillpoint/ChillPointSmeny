@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31c</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -948,9 +948,11 @@ async function callInner(m, [col, id, action], body) {
       // Pred odstránením sa zápis uloží do histórie poradovníka (kto čakal, ako dlho, či bol odbavený alebo zmazaný)
       const q = S.queue.find(x => x.id === id);
       if (q) {
+        // (2026-10-31) aj celý záznam (q) s jeho id (qid) – omylom odkliknutá rezervácia sa dá vrátiť (↺ Vrátiť, restoreQueue)
+        const { id: _qid, ...full } = q;
         await db.ref('queueLog').push({
           name: q.name, type: q.type || '', tableId: q.tableId || null, ...(q.seat ? { seat: q.seat } : {}), ...(q.people ? { people: q.people } : {}),
-          createdAt: q.createdAt, endedAt: now(), action: (body && body.action === 'served') ? 'served' : 'removed'
+          createdAt: q.createdAt, endedAt: now(), action: (body && body.action === 'served') ? 'served' : 'removed', qid: id, q: full
         });
       }
       return db.ref('queue/' + id).remove();
@@ -1732,7 +1734,7 @@ const qBizKey = q => dateKey(new Date(q.reserveAt - DAY_START_H * 3600e3));
 const curBizKey = () => bizDay || bizTodayISO();
 const qOnDay = (q, k) => k === curBizKey() ? (!q.reserveAt || qBizKey(q) <= k) : (!!q.reserveAt && qBizKey(q) === k);
 const queueDay = k => S.queue.filter(q => qOnDay(q, k || curBizKey()));
-let qDay = '';
+let qDay = '', qDoneOpen = false;   // qDoneOpen = rozbalené „✓ Odkliknuté“ (queueDoneOn)
 function shiftQDay(n) {
   if (n === 0) qDay = '';
   else { const d = parseISODate(qDay || curBizKey()); d.setDate(d.getDate() + n); qDay = dateKey(d) === curBizKey() ? '' : dateKey(d); }
@@ -1741,6 +1743,7 @@ function shiftQDay(n) {
 function renderQueue() {
   const nowT = now(), dk = qDay || curBizKey(), dayList = queueDay(dk);
   const later = S.queue.filter(q => q.reserveAt && qBizKey(q) > dk).sort((a, b) => a.reserveAt - b.reserveAt);
+  const done = queueDoneOn(dk);
   const rows = dayList.map((q, i) => `<div class="line" style="align-items:center">
     <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
     <div class="row" style="gap:4px;flex-wrap:wrap">
@@ -1775,6 +1778,13 @@ function renderQueue() {
     ${dk !== curBizKey() ? `<div style="text-align:center;margin-bottom:8px"><button class="btn ghost" style="width:auto" onclick="shiftQDay(0)">Dnes</button></div>` : ''}
     ${dayList.length ? `<div class="card" style="padding:0">${rows}</div>` : `<div class="empty">Na tento deň žiadne rezervácie.</div>`}
     ${later.length ? `<p class="muted" style="font-size:12px;margin:6px 2px 0">Na ďalšie dni: ${later.length} ${later.length === 1 ? 'rezervácia' : later.length < 5 ? 'rezervácie' : 'rezervácií'} (najbližšia ${dayShort(qBizKey(later[0]))}) – ukážu sa v ten deň, alebo prepni šípkou ›.</p>` : ''}
+    ${done.length ? `<details class="card" style="margin-top:10px;padding:10px 14px" ${qDoneOpen ? 'open' : ''} ontoggle="qDoneOpen=this.open">
+      <summary style="cursor:pointer"><b>✓ Odkliknuté (${done.length})</b> <small class="muted">– omylom odkliknuté sa dá vrátiť</small></summary>
+      ${done.map(L => `<div class="line" style="align-items:center">
+        <div class="n"><span class="muted">${fmtQTime(L.endedAt)}</span> ${L.action === 'served' ? '✓' : '✕'} ${esc(L.name)}${queueTargetLabel(L.q || L) ? ` <small>· ${esc(queueTargetLabel(L.q || L))}</small>` : ''}${L.q && L.q.reserveAt ? ` <small>· na ${fmtQDateTime(L.q.reserveAt)}</small>` : ''}
+          <small class="muted">${L.action === 'served' ? 'prišli / odbavené' : 'zmazané'}</small></div>
+        <button class="btn ghost" style="width:auto;padding:6px 10px" onclick="restoreQueue('${L.id}')">↺ Vrátiť</button></div>`).join('')}
+    </details>` : ''}
     <div class="card" style="margin-top:14px">
       <label class="muted" style="font-size:13px">Nová rezervácia</label>
       <input id="qName" placeholder="Meno / číslo objednávky" style="margin-top:6px" value="${esc(f.name)}" oninput="qForm.name=this.value">
@@ -1858,6 +1868,27 @@ async function delQueue(id) {
   const q = S.queue.find(x => x.id === id);
   if (!confirm(`Odstrániť${q ? ` "${q.name}"` : ''} z rezervácií?`)) return;
   await call('DELETE', '/api/queue/' + id, { action: 'removed' });
+}
+// (2026-10-31) zadné dvierka: odkliknuté rezervácie dňa (✓ Prišli / Odbaviť / ✕) – odkliknuté v ten pracovný deň (6:00–6:00)
+// alebo rezervované na ten deň. Vrátená sa v histórii označí restoredAt a tu sa už neukáže.
+function queueDoneOn(k) {
+  const s = parseISODate(k); s.setHours(DAY_START_H, 0, 0, 0);
+  const e = new Date(s); e.setDate(e.getDate() + 1);
+  return S.queueLog.filter(L => !L.restoredAt && ((L.endedAt >= s.getTime() && L.endedAt < e.getTime()) || (L.q && L.q.reserveAt && qBizKey(L.q) === k)))
+    .sort((a, b) => b.endedAt - a.endedAt);
+}
+// vráti sa s pôvodným id (ostane prepojená s Rezerváciami laser game); staršie zápisy nemajú celý záznam → bez času, poznámky
+async function restoreQueue(logId) {
+  const L = S.queueLog.find(x => x.id === logId);
+  if (!L || L.restoredAt) return;
+  if (!confirm(`Vrátiť "${L.name}" späť medzi rezervácie?`)) return;
+  const rec = L.q && typeof L.q === 'object' ? { ...L.q }
+    : { name: L.name, type: L.type || '', createdAt: L.createdAt || now(), ...(L.tableId ? { tableId: L.tableId } : {}), ...(L.seat ? { seat: L.seat } : {}), ...(L.people ? { people: L.people } : {}) };
+  const qid = L.qid && !S.queue.some(x => x.id === L.qid) ? L.qid : db.ref('queue').push().key;
+  try { await db.ref().update({ ['queue/' + qid]: rec, ['queueLog/' + logId + '/restoredAt']: now() }); }
+  catch (e) { return toast('Nepodarilo sa vrátiť, skús znova'); }
+  const k = rec.reserveAt ? qBizKey(rec) : '';
+  toast(`↺ ${L.name} je späť v rezerváciách${k && k !== (qDay || curBizKey()) ? ` (na ${dayShort(k)})` : ''}${L.q ? '' : ' – bez času (starší zápis)'}`);
 }
 
 // Atrakcie (biliard, PlayStation, ping-pong, šípky, jazz dance...) - stanice sa označia ako "hrá"
@@ -2044,7 +2075,8 @@ function renderQueueHistory() {
     ${rows.length ? `<div class="card" style="padding:0">${rows.map(q => `<div class="line">
         <div class="n"><b>${fmtTime(q.endedAt)}</b> · ${esc(q.name)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}
           <small>čakal ${fmtDur(Math.max(0, q.endedAt - q.createdAt))}</small></div>
-        <span>${q.action === 'served' ? '✓ odbavené' : '✕ zmazané'}</span>
+        <span style="text-align:right">${q.action === 'served' ? '✓ odbavené' : '✕ zmazané'}${q.restoredAt ? '<br><small class="muted">↺ vrátené</small>'
+          : `<br><button class="btn ghost" style="width:auto;padding:4px 8px;margin-top:4px;font-size:12px" onclick="restoreQueue('${q.id}')">↺ Vrátiť</button>`}</span>
       </div>`).join('')}</div>` : `<div class="empty">${q2 ? 'Nič nenájdené.' : 'Za tento deň zatiaľ neboli žiadne rezervácie.'}</div>`}
     <button class="btn ghost" style="margin-top:14px;width:100%" onclick="showQueueHist=false;render()">← Späť na atrakcie</button>`;
   if (wasFocused) { const fi = $('#queueHistFilterInput'); if (fi) { fi.focus(); const p = selPos == null ? fi.value.length : selPos; fi.setSelectionRange(p, p); } }

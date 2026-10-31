@@ -86,6 +86,17 @@
     .tbl2 .ln,.attr2 .ln{padding:7px 0;border-top:1px solid #2b2e33;cursor:pointer}
     .tbl2 .tw{color:var(--yellow);font-weight:800}
     .ln.ext{cursor:default;opacity:.85}
+    /* 🪑 výber stola kockami (2026-10-31) – najprv skupina (B, P…), potom jej stoly; farba stola ako v Objednávkach */
+    .tpk{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px;margin:2px 0 10px}
+    .tpc{background:#0d0f11;border:1px solid var(--line);border-left:6px solid var(--tc,var(--line));color:#fff;font:inherit;padding:9px 6px;min-height:64px;min-width:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-align:center}
+    .tpc b{font-size:19px;line-height:1.1}
+    .tpc.grp b{font-size:26px}
+    .tpc.grp b.long{font-size:16px}
+    .tpc small{display:block;max-width:100%;font-size:11px;color:var(--muted);line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tpc.rz small.r{color:var(--yellow)}
+    .tpc.on{background:var(--yellow);color:#111;border-color:var(--yellow);border-left-color:var(--tc,var(--yellow))}
+    .tpc.on small,.tpc.on small.r{color:#111}
+    .tph{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 6px;font-size:13px;color:var(--muted)}
     .arow{border:1px solid #2b2e33;border-left:4px solid #22b8cf;border-radius:8px;padding:8px 10px 2px;margin:8px 0}
     .attr2{border-left:5px solid #22b8cf}
     .attr2 .ln{padding:7px 0;border-top:1px solid var(--line,#333);cursor:pointer}
@@ -716,24 +727,54 @@
       ${list.length || ext.length ? '' : '<div class="hint" style="margin-top:6px">Zatiaľ nič – VR, biliard, PS5… mimo laser game.</div>'}</div>`;
   }
 
+  // ---- 🪑 výber stola kockami (2026-10-31) – ako presun účtu v Objednávkach: najprv skupina (B, P…) ako štvorčeky,
+  // potom stoly v nej, bez rolovania dlhým zoznamom. Pri stole vidno rezervácie v ten deň. Jedna skupina = hneď stoly.
+  let tblPickG = null, tblGroupOrder = [];   // otvorená skupina (null = výber skupiny), poradie skupín z Objednávok (access/groupOrder)
+  const tblGrpOf = id => { const t = tables.find(x => x.id === id); return t ? t.group || '' : null; };
+  function tblGroups() {
+    const g = {};
+    tables.forEach(t => { (g[t.group || ''] = g[t.group || ''] || []).push(t); });
+    const ix = n => n === '' ? 2e9 : (tblGroupOrder.indexOf(n) < 0 ? 1e9 : tblGroupOrder.indexOf(n));
+    return { g, names: Object.keys(g).sort((a, b) => ix(a) - ix(b) || a.localeCompare(b, 'sk')) };
+  }
+  function tblGrp(i) { blurNow(); tblPickG = i < 0 ? null : tblGroups().names[i]; render(); }
+  // d = deň (6–6), selId = vybraný stôl, pick = funkcia na ťuknutie, ownQ = vlastný záznam v Objednávkach (nie je „iná“ rezervácia)
+  function tblPickHtml(d, selId, pick, ownQ) {
+    if (!tables.length) return '<p class="hint" style="margin:0 0 8px">Stoly sa načítavajú z Objednávok…</p>';
+    const { g, names } = tblGroups();
+    const resOf = id => qList().filter(q => q.tableId === id && q.id !== ownQ && qDay(q, d)).sort((a, b) => a.reserveAt - b.reserveAt);
+    const colOf = t => t && /^#[0-9a-f]{3,8}$/i.test(t.color) ? `--tc:${t.color}` : '';
+    const grp = names.length === 1 ? names[0] : tblPickG;
+    if (grp === null || !g[grp]) {
+      return `<div class="tph"><span>Vyber skupinu stolov:</span></div><div class="tpk">${names.map((n, i) => {
+        const busy = g[n].filter(t => resOf(t.id).length).length, on = g[n].some(t => t.id === selId);
+        return `<button class="tpc grp${on ? ' on' : ''}" style="${colOf(g[n].find(t => colOf(t)))}" onclick="tblGrp(${i})"><b${(n || 'Ostatné').length > 3 ? ' class="long"' : ''}>${esc(n || 'Ostatné')}</b>
+          <small>${g[n].length} ${plural(g[n].length, 'stôl', 'stoly', 'stolov')}</small>${busy ? `<small>${busy} s rezerváciou</small>` : ''}</button>`; }).join('')}</div>`;
+    }
+    return `<div class="tph"><span>${names.length > 1 ? `Skupina <b style="color:#fff">${esc(grp || 'Ostatné')}</b> – vyber stôl:` : 'Vyber stôl:'}</span>
+        ${names.length > 1 ? '<button class="btn ghost sm" onclick="tblGrp(-1)">‹ Skupiny</button>' : ''}</div>
+      <div class="tpk">${g[grp].map(t => { const r = resOf(t.id);
+        return `<button class="tpc${t.id === selId ? ' on' : ''}${r.length ? ' rz' : ''}" style="${colOf(t)}" onclick="${pick}('${t.id}')"><b>${esc(t.name)}</b>
+          ${r.length ? r.slice(0, 2).map(q => `<small class="r">📌 ${esc(showT(qTime(q)))} ${esc(q.name)}</small>`).join('') + (r.length > 2 ? `<small class="r">+${r.length - 2}</small>` : '') : '<small>voľný</small>'}</button>`; }).join('')}</div>`;
+  }
+
   // ---- 🪑 formulár stola ----
   function openTbl(id, preset) {
     const q = id && queueMap[id];
     if (q) { const bt = bizOfTs(q.reserveAt || Date.now()); tf = { id, date: bt.date, time: showT(bt.time), tableId: q.tableId || '', name: q.name || '', people: q.people || '', note: q.note || '', err: '' }; }
     else tf = { id: '', date: (preset && preset.date) || sheetDay, time: '18:00', tableId: '', name: '', people: '', note: '', err: '' };
+    tblPickG = tblGrpOf(tf.tableId);
     sel = ''; f = null; af = null; render();
   }
   function tfSet(k, v) { if (tf) tf[k] = v; }
+  function pickTfTable(id) { if (!tf) return; blurNow(); tf.tableId = tf.tableId === id ? '' : id; render(); }
   function tblFormHtml() {
-    const groups = {};
-    tables.forEach(t => { (groups[t.group || 'Stoly'] = groups[t.group || 'Stoly'] || []).push(t); });
-    const opts = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'sk')).map(g => `<optgroup label="${esc(g)}">${groups[g].map(t => `<option value="${esc(t.id)}" ${t.id === tf.tableId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>`).join('');
     return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${tf.id ? '✎ Upraviť rezerváciu stola' : '🪑 Rezervovať stôl'}</h3>
       <div class="row2"><div><label class="f">Deň</label><input id="tDate" type="date" value="${esc(tf.date)}" oninput="tfSet('date',this.value)"></div>
         <div><label class="f">Od</label><input id="tTime" type="time" step="300" value="${esc(tf.time)}" oninput="tfSet('time',this.value)"></div></div>
-      <label class="f">Stôl</label><select id="tTable" onchange="tfSet('tableId',this.value)"><option value="">— vyber stôl —</option>${opts}</select>
+      <label class="f">Stôl${tf.tableId ? ` – vybraný <b style="color:var(--yellow)">${esc(tableName(tf.tableId))}</b>` : ''}</label>${tblPickHtml(tf.date, tf.tableId, 'pickTfTable', tf.id)}
       <label class="f">Meno (kto)</label><input id="tName" maxlength="40" value="${esc(tf.name)}" placeholder="Meno" oninput="tfSet('name',this.value)">
       <label class="f">Koľko osôb</label><input id="tPeople" type="number" inputmode="numeric" min="1" max="200" placeholder="? neviem – nechaj prázdne" value="${esc(tf.people)}" oninput="tfSet('people',this.value)">
       <label class="f">Poznámka</label><input id="tNote" maxlength="60" value="${esc(tf.note)}" oninput="tfSet('note',this.value)" placeholder="napr. oslava, torta">
@@ -766,7 +807,8 @@
     busyAct = true;
     try {
       // ako v Objednávkach: pred zmazaním záznam do histórie poradovníka
-      await firebase.database().ref('queueLog').push({ name: q.name, type: q.type || '', tableId: q.tableId || null, ...(q.people ? { people: q.people } : {}), createdAt: q.createdAt || Date.now(), endedAt: Date.now(), action: 'removed' });
+      // (2026-10-31) aj celý záznam (q, qid) – v Objednávkach sa dá vrátiť (↺ Vrátiť)
+      await firebase.database().ref('queueLog').push({ name: q.name, type: q.type || '', tableId: q.tableId || null, ...(q.people ? { people: q.people } : {}), createdAt: q.createdAt || Date.now(), endedAt: Date.now(), action: 'removed', qid: tf.id, q });
       await firebase.database().ref(`queue/${tf.id}`).remove(); toast('Rezervácia stola zrušená'); tf = null;
     } catch (e) { toast('Nepodarilo sa zrušiť.'); }
     busyAct = false; render();
@@ -1042,6 +1084,7 @@
       f = { id: '', pkg: 'laser', day, mStart: time || '16:00', mOrder: 'games', aFrom: '', aTo: '', name: '', phone: '', email: '', players: 4, seat: '', note: '',
         tableId: '', tableAt: '', items: time ? [{ date: day, time }] : [], err: '' };
     }
+    tblPickG = tblGrpOf(f.tableId);
     render();
   }
   const fPkg = () => f && f.pkg !== 'laser' ? pkgOf({ pkg: f.pkg }) : null;
@@ -1788,14 +1831,19 @@
   }
 
   // 🪑 rezervácia stola k laser game – zapíše sa do Objednávok (čašník ju uvidí na dlaždici stola)
+  // ťuk na stôl = vybrať, ťuk na vybraný = bez stola
+  function pickFTable(id) {
+    if (!f) return; blurNow();
+    f.tableId = f.tableId === id ? '' : id;
+    if (f.tableId && !f.tableAt) f.tableAt = (f.items.find(it => it.date === f.day) || {}).time || '';
+    render();
+  }
   function tableFormHtml() {
-    const groups = {};
-    tables.forEach(t => { (groups[t.group || 'Stoly'] = groups[t.group || 'Stoly'] || []).push(t); });
-    const opts = Object.keys(groups).sort((a, b) => a.localeCompare(b, 'sk')).map(g => `<optgroup label="${esc(g)}">${groups[g].map(t => `<option value="${esc(t.id)}" ${t.id === f.tableId ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}</optgroup>`).join('');
     const first = (f.items.find(it => it.date === f.day) || {}).time || '';
-    return `<label class="f">🪑 Rezervovať aj stôl (zapíše sa do Objednávok)</label>
-      <div class="row2"><select id="fTable" onchange="blurNow();f.tableId=this.value;if(f.tableId&&!f.tableAt)f.tableAt='${first}';render()"><option value="">— bez stola —</option>${opts}</select>
-        ${f.tableId ? `<input id="fTableAt" type="time" step="300" value="${esc(f.tableAt || first ? showT(f.tableAt || first) : '')}" oninput="f.tableAt=this.value" title="od kedy je stôl rezervovaný">` : '<span></span>'}</div>
+    return `<label class="f">🪑 Rezervovať aj stôl (zapíše sa do Objednávok)${f.tableId ? ` – vybraný <b style="color:var(--yellow)">${esc(tableName(f.tableId))}</b>` : ' – nepovinné'}</label>
+      ${tblPickHtml(f.day, f.tableId, 'pickFTable', f.id && bookings[f.id] ? bookings[f.id].tableQ : '')}
+      ${f.tableId ? `<div class="row2"><div><label class="f">Stôl od</label><input id="fTableAt" type="time" step="300" value="${esc(f.tableAt || first ? showT(f.tableAt || first) : '')}" oninput="f.tableAt=this.value" title="od kedy je stôl rezervovaný"></div>
+        <div><label class="f">&nbsp;</label><button class="btn ghost" style="width:100%" onclick="pickFTable('${f.tableId}')">✕ Bez stola</button></div></div>` : ''}
       ${f.tableId ? `<p class="hint" style="margin:-4px 0 8px">Stôl ${esc(tableName(f.tableId))} bude v Objednávkach rezervovaný na ${esc(dayTitle(f.day))} od ${esc(f.tableAt || first ? showT(f.tableAt || first) : '—')}${f.players === '?' ? ' (počet osôb ?)' : ` pre ${esc(f.players)} ${plural(+f.players || 0, 'osobu', 'osoby', 'osôb')}`}.</p>` : ''}`;
   }
 
@@ -1884,7 +1932,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : view === 'play' ? playHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31d</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31e</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
@@ -1945,11 +1993,13 @@
     offFns.push(() => qRef.off('value', qCb));
     // stoly z Objednávok – výber stola a návrhy do „Kde budú sedieť“
     db.ref('tables').once('value').then(s => {
-      tables = Object.entries(s.val() || {}).filter(([, t]) => t && t.name && !t.temp).map(([id, t]) => ({ id, name: String(t.name), group: t.group || '' }))
+      tables = Object.entries(s.val() || {}).filter(([, t]) => t && t.name && !t.temp).map(([id, t]) => ({ id, name: String(t.name), group: String(t.group || ''), color: String(t.color || '') }))
         .sort((a, b) => a.name.localeCompare(b.name, 'sk', { numeric: true }));
       tableNames = tables.map(t => t.name);
       render();
     }).catch(() => {});
+    // poradie skupín stolov (P, B, L…) ako ho nastavil vedúci v Objednávkach
+    db.ref('access/groupOrder').once('value').then(s => { const v = s.val(); tblGroupOrder = v && typeof v === 'object' ? Object.values(v).map(String) : []; render(); }).catch(() => {});
   }
   // 🎁 laser/<env>/pk/<YYYY-MM-DD>/<OD>_<DO> = id rezervácie: kedy má balíček atrakcie (HHMM, deň 6–6, po polnoci 24xx),
   // balíček bez atrakcií = <začiatok>_<začiatok>. Verejne čitateľné ako slots, aby web nepustil dva balíčky s atrakciami naraz –
