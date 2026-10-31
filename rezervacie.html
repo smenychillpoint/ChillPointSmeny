@@ -40,7 +40,7 @@
     .seg.mc button.on{background:var(--purple)}
     .tabs{display:flex;gap:6px;margin-bottom:10px}
     .tabs button{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--muted);font:inherit;font-size:14px;padding:10px 6px;cursor:pointer;min-width:0}
-    @media(max-width:520px){.tabs{gap:4px;flex-wrap:wrap}.tabs button{font-size:12px;padding:9px 2px;flex:1 1 30%}}
+    @media(max-width:520px){.tabs{gap:4px}.tabs button{font-size:12px;padding:9px 2px}}
     .tabs button.on{border-color:var(--yellow);color:var(--yellow);font-weight:800}
     /* hárok dňa – ako papierový zošit: Čas | Kto | Koľko | Kde */
     .dayhead{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap}
@@ -125,13 +125,6 @@
     .mcinfo{background:#21132e;border:1px solid #5b3a80;padding:10px 12px;font-size:14px;line-height:1.55;margin-bottom:10px}
     .mcinfo .arow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;font-size:13px}
     .mcinfo .arow input{width:auto;padding:5px 6px;margin:0}
-    /* (2026-10-31) 🎁 Balíčky – karta balíčka vo farbe partie */
-    .pkc{background:var(--pcb);box-shadow:inset 6px 0 0 var(--pc);border:1px solid #2b2e33;padding:10px 12px 10px 16px;margin-bottom:8px;cursor:pointer}
-    .pkc:hover{filter:brightness(1.15)}
-    .pkc .pkt{display:flex;align-items:center;flex-wrap:wrap;gap:6px;font-size:16px}
-    .pkc .pkt .tm{font-weight:900;color:var(--yellow);font-variant-numeric:tabular-nums;margin-right:2px}
-    .pkc .pks{font-size:13px;color:#d0d2d5;margin-top:3px}
-    .pkc .pkp{font-size:14px;color:#e6d6ff;margin-top:5px;line-height:1.5}
     .empty{color:var(--muted);font-size:14px;padding:6px 0}
     .err{color:var(--red);font-size:13px;min-height:18px;font-weight:700}
     .warn{background:#2a2410;border:1px solid #6b5a1a;color:#ffd66b;font-size:13px;padding:10px;margin-bottom:10px;line-height:1.45}
@@ -410,7 +403,7 @@
   let env = ls.get('cp_laserEnv') === 'live' ? 'live' : 'test';
   let authReady = false, isMgr = false, bookings = {}, slots = {}, tableNames = [], loaded = false, loadErr = '';
   let cfgRaw = null, cfgLoaded = false, cfgF = null, cfgDirty = false, cfgErr = '';   // nastavenia (config) a ich rozpísaný formulár
-  const VIEWS = ['cal', 'sheet', 'play', 'pkg', 'list', 'set'];
+  const VIEWS = ['cal', 'sheet', 'play', 'list', 'set'];
   let view = VIEWS.includes(ls.get('cp_resView')) ? ls.get('cp_resView') : 'cal', sheetDay = bizOfTs(Date.now()).date;
   let calMonth = sheetDay.slice(0, 7);
   let showOld = false, busyAct = false;
@@ -1279,30 +1272,6 @@
     const at = P.attrMin ? [`🎮 ${esc(P.attrText || 'atrakcie')} ${showM(a.from)}–${showM(a.to)}${a.set ? ' ✎' : ''}`] : [];
     return [`🚪 ${esc(showT(b.mStart || firstGame(b).time))} príchod`].concat(b.mOrder === 'attr' ? at.concat([`🔫 ${g}`]) : [`🔫 ${g}`].concat(a.pizza && at.length ? ['🍕 pauza'] : [], at)).join(' → ');
   }
-  // ---- 🎁 Balíčky (2026-10-31): len prehľad – ktorý deň aký balíček a čo kedy majú, bez hárku a ostatných rezervácií ----
-  let pkgOld = false;
-  function pkgViewHtml() {
-    const tk = todayKey(), byDay = {};
-    live().filter(b => b.status !== 'cancelled' && isMc(b) && firstGame(b) && (pkgOld || firstGame(b).date >= tk))
-      .forEach(b => { (byDay[firstGame(b).date] = byDay[firstGame(b).date] || []).push(b); });
-    const days = Object.keys(byDay).sort();
-    const card = (b, d, color) => { const P = pkgOf(b), a = mcAttr(b, P), st = STATUS[b.status] ? b.status : 'new';
-      return `<div class="pkc" style="--pc:${color};--pcb:${color}33" onclick="openDetail('${b.id}')">
-        <div class="pkt"><span class="tm">${esc(showT(b.mStart || firstGame(b).time))}</span><b>${esc(b.name)}</b>${flagsHtml(b, d)}<span class="tag ${st}">${STATUS[st]}</span></div>
-        <div class="pks">${pIc(b)} ${esc(P.name)} · 👥 ${esc(plTxt(b))}${b.seat ? ` · 📍 ${esc(b.seat)}` : ''}${tableQOf(b) ? ` · 🪑 ${esc(tableName(tableQOf(b).tableId))}` : ''}</div>
-        <div class="pkp">${pkgPlanHtml(b, d, a)}</div></div>`; };
-    let html = `<h2>🎁 Balíčky${pkgOld ? '' : ' – nadchádzajúce'} · ${days.reduce((s, d) => s + byDay[d].length, 0)}</h2>
-      <p class="hint" style="margin:0 0 8px">Len prehľad. Ťukni na balíček = detail (tam ✎ Upraviť – aj čas ${esc((Object.values(pkgs())[0] || {}).attrText || 'atrakcií')}).</p>`;
-    days.forEach(d => {
-      const list = byDay[d].sort((x, y) => toMin(bizTime(x.mStart || firstGame(x).time)) - toMin(bizTime(y.mStart || firstGame(y).time))), pc = partyColors(d);
-      const at = list.filter(b => pkgOf(b).attrMin).map(b => mcAttr(b)), clash = at.some((x, i) => at.some((y, j) => j > i && x.from < y.to && y.from < x.to));
-      html += `<div class="day">${d === tk ? 'DNES · ' : ''}${esc(dayTitle(d))} · ${list.length} ${plural(list.length, 'balíček', 'balíčky', 'balíčkov')}</div>
-        ${clash ? '<div class="err" style="margin:0 0 6px">❗ Atrakcie dvoch skupín sa v tento deň prekrývajú.</div>' : ''}
-        ${list.map(b => card(b, d, pc[b.id] || PARTY_COLORS[0])).join('')}`;
-    });
-    if (!days.length) html += `<div class="empty">Žiadne ${pkgOld ? '' : 'nadchádzajúce '}balíčky.</div>`;
-    return html + `<button class="btn ghost sm" style="margin-top:12px" onclick="pkgOld=!pkgOld;render()">${pkgOld ? 'Len nadchádzajúce' : 'Zobraziť aj staré'}</button>`;
-  }
   // stĺpec „Balík“ v hárku: Monster Chill / ponuka 3+1 (a ktorá hra je zadarmo)
   function pkgCellHtml(b, d, time) {
     if (isClosed(b)) return `<span class="pk cl">${IC('closed')} Uzavretá</span>`;
@@ -1908,14 +1877,14 @@
     html += `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
         <div class="seg" style="flex:1;min-width:220px;margin:0"><button class="${env === 'test' ? 'on' : ''}" onclick="setEnv('test')">🧪 Test</button><button class="${env === 'live' ? 'on' : ''}" onclick="setEnv('live')">🟢 Ostré (web)</button></div>
         ${isMgr ? `<a class="btn ghost sm" href="https://smenychillpoint.github.io/Teststranky/${env === 'live' ? '?ostre' : ''}" target="_blank" rel="noopener" style="text-decoration:none">${env === 'live' ? '🟢' : '🧪'} Ako zákazník ›</a>` : ''}</div>
-      <div class="tabs">${[['cal', '🗓 Kalendár'], ['sheet', '📋 Hárok dňa'], ['play', '🏁 Hry'], ['pkg', '🎁 Balíčky'], ['list', '📃 Zoznam']].concat(isMgr ? [['set', '⚙ Nastavenia']] : [])
+      <div class="tabs">${[['cal', '🗓 Kalendár'], ['sheet', '📋 Hárok dňa'], ['play', '🏁 Hry'], ['list', '📃 Zoznam']].concat(isMgr ? [['set', '⚙ Nastavenia']] : [])
         .map(([k, l]) => `<button class="${view === k ? 'on' : ''}" onclick="setView('${k}')">${l}</button>`).join('')}</div>`;
     if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
     if (view === 'set') html += settingsHtml();
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
-    else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : view === 'play' ? playHtml() : view === 'pkg' ? pkgViewHtml() : listHtml();
+    else html += view === 'cal' ? calHtml() : view === 'sheet' ? sheetHtml() : view === 'play' ? playHtml() : listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31c</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-10-31d</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
