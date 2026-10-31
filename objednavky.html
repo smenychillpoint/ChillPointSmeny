@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31d</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31e</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -3323,7 +3323,8 @@ function renderUzavierka() {
       ${uzSectors().map(sec => `<div class="row" style="justify-content:space-between;font-size:14px;margin-top:4px"><span class="muted">z toho 📍 ${esc(sec.n)}</span><b>${eur(sectorStats(paid, sec).total)}</b></div>`).join('')}
       <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p>
       ${openTotal > 0 ? `<div class="row" style="justify-content:space-between;font-size:14px;margin-top:6px"><span class="muted">🕒 ešte nezaplatené na stoloch</span><b>${eur(openTotal)}</b></div>
-        <p class="muted" style="margin:2px 0 0;font-size:12px">Do tržby sa zaráta až po zaplatení, do % pre personál sa ráta už teraz.</p>` : ''}</div>
+        <p class="muted" style="margin:2px 0 0;font-size:12px">Do tržby sa zaráta až po zaplatení, do % pre personál sa ráta už teraz.</p>
+        ${uzOpenTablesHtml(uzavDate)}` : ''}</div>
     ${staffPaid.length ? (() => {
       // zamestnanci: zaplatené (so zľavou) aj pôvodná hodnota, zoskupené podľa mena
       const full = o => o.items.reduce((s, i) => s + (i.origPrice != null ? i.origPrice : i.price) * i.qty, 0);
@@ -3603,6 +3604,27 @@ function dayOpenOrders(date) {
   return S.orders.filter(o => o.status !== 'zaplatena' && !o.staff && !isStaffTable(o.tableId) && (o.items || []).length
     && (bizDay || dateKey(new Date((o.createdAt || 0) - DAY_START_H * 3600e3))) === k);
 }
+// (2026-10-31) na ktorých stoloch je to „ešte nezaplatené“ – stôl, od kedy, čo a koľko; ťuk = otvorí účet stola
+let uzOpenOpen = false;
+function uzOpenTablesHtml(date) {
+  const byT = {};
+  dayOpenOrders(date).forEach(o => { const r = byT[o.tableId] = byT[o.tableId] || { id: o.tableId, name: '', since: Infinity, os: [] };
+    const t = S.tables.find(x => x.id === o.tableId); r.name = (t && t.name) || o.tableName || r.name || '?';
+    r.since = Math.min(r.since, o.createdAt || Infinity); r.os.push(o); });
+  const rows = Object.values(byT).sort((a, b) => a.since - b.since);
+  if (!rows.length) return '';
+  const hm = t => { const d = new Date(t); return isFinite(t) ? `${d.getDate()}.${d.getMonth() + 1}. ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` : ''; };
+  return `<details style="margin-top:6px" ${uzOpenOpen ? 'open' : ''} ontoggle="uzOpenOpen=this.open">
+    <summary style="cursor:pointer;font-size:13px;color:var(--accent);font-weight:700">Na ktorých stoloch? (${rows.length})</summary>
+    ${rows.map(r => { const items = {}; r.os.forEach(o => o.items.forEach(i => { items[i.name] = (items[i.name] || 0) + i.qty; }));
+      const live = S.tables.some(x => x.id === r.id);
+      return `<div class="line" style="align-items:center;padding:8px 0;${live ? 'cursor:pointer' : ''}" ${live ? `onclick="uzOpenTable('${r.id}')"` : ''}>
+        <div class="n"><b>${esc(r.name)}</b> <small class="muted">· od ${hm(r.since)}${live ? '' : ' · stôl už nie je v zozname'}</small>
+          <small>${esc(Object.entries(items).map(([n, q]) => `${q}× ${n}`).join(', '))}</small></div>
+        <span><b>${eur(sumOrders(r.os))}</b>${live ? ' ›' : ''}</span></div>`; }).join('')}
+    <p class="muted" style="font-size:12px;margin:4px 0 0">Ťukni na stôl – otvorí sa jeho účet (zaplatiť alebo opraviť).</p></details>`;
+}
+function uzOpenTable(id) { role = 'casnik'; store.set('role', role); showHist = false; showQueue = false; openTable(id); }
 // základ pre % = všetko nahodené v ten deň: zaplatené + ešte nezaplatené na stoloch
 function payBasis(date, paid) {
   const openOrd = dayOpenOrders(date), openTotal = sumOrders(openOrd), orders = paid.concat(openOrd);
