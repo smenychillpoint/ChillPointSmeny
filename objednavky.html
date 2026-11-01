@@ -138,7 +138,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-10-31h</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-01</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -218,7 +218,8 @@ const eur = n => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',') + ' �
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } },
                 set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} } };
 
-let S = { tables: [], menu: [], orders: [], categories: [], employees: [], access: {}, queue: [], attractions: [], sessions: [], board: [] };
+// (2026-11-01) aj queueLog – bez neho otvorenie „objednavky.html#rezervacie“ (odkaz z úvodu) spadlo ešte pred načítaním dát (queueDoneOn)
+let S = { tables: [], menu: [], orders: [], categories: [], employees: [], access: {}, queue: [], attractions: [], sessions: [], queueLog: [], board: [] };
 let role = store.get('role', 'casnik');
 let tableId = null;          // otvorený stôl (čašník)
 let view = 'order';          // 'order' | 'bill'
@@ -961,17 +962,22 @@ async function callInner(m, [col, id, action], body) {
       return db.ref('queue').push(rec);
     }
     if (m === 'DELETE') {
-      // Pred odstránením sa zápis uloží do histórie poradovníka (kto čakal, ako dlho, či bol odbavený alebo zmazaný)
+      // Pred odstránením sa zápis uloží do histórie poradovníka (kto čakal, ako dlho, či prišli alebo sa zrušila)
       const q = S.queue.find(x => x.id === id);
+      const served = !!(body && body.action === 'served');
+      // (2026-11-01) stôl k laser game: „✓ Prišli“ označí v Rezerváciách aj samotnú rezerváciu laser game ako prišli
+      const bk = q && served ? await laserBookingOfQ(id, q) : null;
       if (q) {
         // (2026-10-31) aj celý záznam (q) s jeho id (qid) – omylom odkliknutá rezervácia sa dá vrátiť (↺ Vrátiť, restoreQueue)
         const { id: _qid, ...full } = q;
         await db.ref('queueLog').push({
           name: q.name, type: q.type || '', tableId: q.tableId || null, ...(q.seat ? { seat: q.seat } : {}), ...(q.people ? { people: q.people } : {}),
-          createdAt: q.createdAt, endedAt: now(), action: (body && body.action === 'served') ? 'served' : 'removed', qid: id, q: full
+          createdAt: q.createdAt, endedAt: now(), action: served ? 'served' : 'removed', qid: id, q: full, ...(bk ? { bk } : {})
         });
       }
-      return db.ref('queue/' + id).remove();
+      await db.ref('queue/' + id).remove();
+      if (bk) await db.ref(bk.p + '/status').set('arrived').catch(e => console.warn('[rezervácie] laser game prišli', e));
+      return;
     }
   }
   // Nástenka "Chýba / Kúpiť" - zdieľaná so smenami (rovnaká Firebase). Pridať smie každý prihlásený,
@@ -1530,7 +1536,6 @@ const UI_FEATURES = [
   ['tableRes', '📌 Rezervácia na dlaždici stola (hodinu vopred oranžovo)'],
   ['onlyBusy', '🔴 Tlačidlo „Len obsadené“ na Stoloch'],
   ['tempTable', '➕ Dočasný stôl'],
-  ['arrived', '✓ „Prišli“ pri rezerváciách (otvorí stôl / spustí hru)'],
   ['nextAttr', '⏭ „Ďalší na rade“ na obsadenej atrakcii'],
   ['barSummary', '🧾 Súhrn „Spolu pripraviť“ na Bare'],
   ['soldOut', '🚫 Vypredané položky (podržať položku → „Dnes vypredané“)'],
@@ -1781,15 +1786,8 @@ function renderQueue() {
   const done = queueDoneOn(dk);
   const rows = dayList.map((q, i) => `<div class="line" style="align-items:center">
     <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
-    <div class="row" style="gap:4px;flex-wrap:wrap">
-      ${uiOn('arrived') ? `<button class="btn ok" style="width:auto;padding:6px 10px" onclick="queueArrived('${q.id}')">✓ Prišli</button>` : ''}
-      <button class="btn ${uiOn('arrived') ? 'ghost' : 'ok'}" style="width:auto;padding:6px 10px" onclick="serveQueue('${q.id}')">Odbaviť</button>
-      <button class="btn ghost" style="width:auto;padding:6px 10px" onclick="delQueue('${q.id}')">✕</button>
-    </div>
-  </div>${arrivePickId === q.id ? `<div class="line" style="display:block;background:var(--okbg)">
-    <div class="row" style="justify-content:space-between;gap:6px"><b style="font-size:14px">Kam usadiť ${esc(q.name)}?</b>
-      <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="arrivePickId=null;render()">Zrušiť</button></div>
-    ${tablePickHtml(visibleTables(), '', 'arrivePick')}</div>` : ''}`).join('');
+    <div class="row" style="gap:4px;flex-wrap:wrap">${queueBtns(q)}</div>
+  </div>`).join('');
   const attrTypes = [...new Set(S.attractions.map(a => a.type || 'Ostatné'))].sort((a, b) => a.localeCompare(b, 'sk'));
   // otvorené zo stola ("+ Rezervácia" pri stole) -> rovno "Konkrétny stôl" s týmto stolom
   if (queuePrefillTable) { qForm.kind = 'table'; qForm.tableId = queuePrefillTable; }
@@ -1817,7 +1815,7 @@ function renderQueue() {
       <summary style="cursor:pointer"><b>✓ Odkliknuté (${done.length})</b> <small class="muted">– omylom odkliknuté sa dá vrátiť</small></summary>
       ${done.map(L => `<div class="line" style="align-items:center">
         <div class="n"><span class="muted">${fmtQTime(L.endedAt)}</span> ${L.action === 'served' ? '✓' : '✕'} ${esc(L.name)}${queueTargetLabel(L.q || L) ? ` <small>· ${esc(queueTargetLabel(L.q || L))}</small>` : ''}${L.q && L.q.reserveAt ? ` <small>· na ${fmtQDateTime(L.q.reserveAt)}</small>` : ''}
-          <small class="muted">${L.action === 'served' ? 'prišli / odbavené' : 'zmazané'}</small></div>
+          <small class="muted">${L.action === 'served' ? 'prišli' : 'zrušené'}</small></div>
         <button class="btn ghost" style="width:auto;padding:6px 10px" onclick="restoreQueue('${L.id}')">↺ Vrátiť</button></div>`).join('')}
     </details>` : ''}
     <div class="card" style="margin-top:14px">
@@ -1861,48 +1859,40 @@ async function addQueue() {
   }
   finally { addingQueue = false; render(); }
 }
-// Zámok proti omylom - aj odbavenie sa musí potvrdiť (predtým sa dalo omylom zmazať jedným klikom)
-async function serveQueue(id) {
-  const q = S.queue.find(x => x.id === id);
-  if (!confirm(`Odbaviť${q ? ` "${q.name}"` : ''}? Rezervácia sa odstráni zo zoznamu.`)) return;
-  await call('DELETE', '/api/queue/' + id, { action: 'served' });
-  toast('Odbavené ✓');
-}
-// (2026-10-16) "✓ Prišli": rezervácia stola → meno na účet stola a stôl sa otvorí; "len miesto" → výber stola
-// (skupina → stôl); atrakcia → otvorí spustenie hry na prvej voľnej atrakcii toho druhu. Rezervácia sa odbaví.
-let arrivePickId = null;
+// (2026-11-01) Pri rezervácii len dve tlačidlá: „✓ Prišli“ a „✕ Zrušiť“ – na želanie majiteľa. Rezervácia je len oznam:
+// „Prišli“ ju len odklikne – stôl sa neotvára, meno sa na stôl nezapisuje a hra sa nespúšťa (hostia si často sadnú inam).
+// Odklikne sa aj v Rezerváciách: atrakcia odtiaľ zmizne, laser game k stolu sa pri „Prišli“ označí ako prišli.
+// Zámok proti omylom ostáva – obe sa potvrdzujú (omylom odkliknuté sa dá vrátiť v „✓ Odkliknuté“).
+const queueBtns = (q, sm) => `<button class="btn ok" style="width:auto;padding:6px 10px${sm ? ';font-size:13px' : ''}" onclick="queueArrived('${q.id}')">✓ Prišli</button>
+  <button class="btn ghost" style="width:auto;padding:6px 10px${sm ? ';font-size:13px' : ''}" onclick="delQueue('${q.id}')">✕ Zrušiť</button>`;
+const isLaserQ = q => !!(q && q.tableId && String(q.note || '').startsWith('🎯'));   // stôl k laser game z Rezervácií
 async function queueArrived(id) {
   const q = S.queue.find(x => x.id === id); if (!q) return;
-  if (q.type) {
-    const free = S.attractions.filter(a => (a.type || 'Ostatné') === q.type && !S.sessions.some(s => s.stationId === a.id));
-    if (!free.length) return toast(`Žiadna voľná atrakcia (${q.type}) – počkajte, kým sa uvoľní`);
-    // rezervovaná konkrétna atrakcia (napr. Biliard 8) má prednosť, ak je voľná
-    const want = queueStation(q);
-    if (want && free.some(a => a.id === want.id)) free.unshift(free.splice(free.findIndex(a => a.id === want.id), 1)[0]);
-    else if (want && !confirm(`${want.name} je obsadený. Spustiť na ${free[0].name}?`)) return;
-    if (!confirm(`${q.name} prišli? Otvorí sa spustenie hry: ${free[0].name}.`)) return;
-    try { await call('DELETE', '/api/queue/' + id, { action: 'served' }); } catch (e) { return; }
-    showQueue = false; tableId = null; tblModal = null; role = 'atrakcie'; store.set('role', role); startFormStation = free[0].id;
-    render(); return;
-  }
-  if (q.tableId) return seatQueueAt(id, q.tableId);
-  arrivePickId = id; movePickGroup = null; render();
-}
-function arrivePick(tid) { return arrivePickId ? seatQueueAt(arrivePickId, tid) : undefined; }
-async function seatQueueAt(id, tid) {
-  const q = S.queue.find(x => x.id === id), t = S.tables.find(x => x.id === tid); if (!q || !t) return;
-  if (!confirm(`${q.name} prišli – usadiť na ${t.name}?`)) return;
-  try {
-    if (!guestOf(tid)) await db.ref('meta/guests/' + tid).set({ n: str(q.name, 40), t: now() });
-    await call('DELETE', '/api/queue/' + id, { action: 'served' });
-  } catch (e) { return; }
-  arrivePickId = null; showQueue = false; tblModal = null; role = 'casnik'; store.set('role', role);
-  toast(`${q.name} → ${t.name} ✓`); openTable(tid);
+  if (!confirm(`${q.name} – prišli? Rezervácia sa odklikne.`)) return;
+  try { await call('DELETE', '/api/queue/' + id, { action: 'served' }); } catch (e) { return; }
+  toast(`✓ ${q.name} – prišli`);
 }
 async function delQueue(id) {
-  const q = S.queue.find(x => x.id === id);
-  if (!confirm(`Odstrániť${q ? ` "${q.name}"` : ''} z rezervácií?`)) return;
-  await call('DELETE', '/api/queue/' + id, { action: 'removed' });
+  const q = S.queue.find(x => x.id === id); if (!q) return;
+  if (!confirm(`Zrušiť rezerváciu "${q.name}"?${isLaserQ(q) ? '\n\nZruší sa len stôl – laser game v Rezerváciách ostane.' : ''}`)) return;
+  try { await call('DELETE', '/api/queue/' + id, { action: 'removed' }); } catch (e) { return; }
+  toast('Rezervácia zrušená');
+}
+// stôl k laser game: v Rezerváciách má rezervácia laser/<env>/bookings/<id>/tableQ = id tohto záznamu. Vráti {p: cesta, st: stav}
+// len keď je nová / potvrdená (zrušenú ani už prišlých nemeníme). Pôvodný stav ide do queueLog (bk) kvôli ↺ Vrátiť.
+async function laserBookingOfQ(qid, q) {
+  if (!isLaserQ(q)) return null;
+  const find = async () => {
+    for (const env of ['live', 'test']) {
+      try {
+        const hit = Object.entries((await db.ref(`laser/${env}/bookings`).once('value')).val() || {}).find(([, b]) => b && b.tableQ === qid);
+        if (hit) { const st = hit[1].status || 'new'; return st === 'new' || st === 'confirmed' ? { p: `laser/${env}/bookings/${hit[0]}`, st } : null; }
+      } catch (e) { console.warn('[rezervácie] laser game k stolu', e); }
+    }
+    return null;
+  };
+  // bez internetu by čítanie čakalo na spojenie → po 4 s sa rezervácia odklikne aj bez označenia laser game
+  return Promise.race([find(), new Promise(r => setTimeout(() => r(null), 4000))]);
 }
 // (2026-10-31) zadné dvierka: odkliknuté rezervácie dňa (✓ Prišli / Odbaviť / ✕) – odkliknuté v ten pracovný deň (6:00–6:00)
 // alebo rezervované na ten deň. Vrátená sa v histórii označí restoredAt a tu sa už neukáže.
@@ -1922,6 +1912,8 @@ async function restoreQueue(logId) {
   const qid = L.qid && !S.queue.some(x => x.id === L.qid) ? L.qid : db.ref('queue').push().key;
   try { await db.ref().update({ ['queue/' + qid]: rec, ['queueLog/' + logId + '/restoredAt']: now() }); }
   catch (e) { return toast('Nepodarilo sa vrátiť, skús znova'); }
+  // (2026-11-01) „Prišli“ označilo aj laser game v Rezerváciách → vrátiť jej pôvodný stav (ak ho medzitým nikto nezmenil)
+  if (L.bk && L.bk.p) db.ref(L.bk.p + '/status').once('value').then(s => s.val() === 'arrived' ? s.ref.set(L.bk.st) : null).catch(() => {});
   const k = rec.reserveAt ? qBizKey(rec) : '';
   toast(`↺ ${L.name} je späť v rezerváciách${k && k !== (qDay || curBizKey()) ? ` (na ${dayShort(k)})` : ''}${L.q ? '' : ' – bez času (starší zápis)'}`);
 }
@@ -2047,9 +2039,7 @@ function stationQueueBlock(type) {
   const nowT = now();
   return `<div class="card" style="padding:0;margin-top:8px">${rows.map((q, i) => `<div class="line" style="align-items:center">
     <div class="n">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : (i === 0 ? '<b>▶ Na rade:</b> ' : `<span class="muted">${i + 1}.</span> `)}${esc(q.name)}${queueStation(q) ? ` <b>· ${esc(queueStation(q).name)}</b>` : ''}${q.people ? `<small> · 👥 ${q.people} os.</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
-    ${i === 0 ? (uiOn('arrived') ? `<div class="row" style="gap:4px"><button class="btn ok" style="width:auto" onclick="queueArrived('${q.id}')">✓ Prišli</button><button class="btn ghost" style="width:auto;padding:6px 10px" onclick="serveQueue('${q.id}')">Odbaviť</button></div>`
-                 : `<button class="btn ok" style="width:auto" onclick="serveQueue('${q.id}')">Odbaviť ✓</button>`)
-               : `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="delQueue('${q.id}')">✕</button>`}
+    <div class="row" style="gap:4px;flex-wrap:wrap">${queueBtns(q)}</div>
   </div>`).join('')}</div>`;
 }
 function queueFormBlock(type) {
@@ -2112,7 +2102,7 @@ function renderQueueHistory() {
     ${rows.length ? `<div class="card" style="padding:0">${rows.map(q => `<div class="line">
         <div class="n"><b>${fmtTime(q.endedAt)}</b> · ${esc(q.name)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}
           <small>čakal ${fmtDur(Math.max(0, q.endedAt - q.createdAt))}</small></div>
-        <span style="text-align:right">${q.action === 'served' ? '✓ odbavené' : '✕ zmazané'}${q.restoredAt ? '<br><small class="muted">↺ vrátené</small>'
+        <span style="text-align:right">${q.action === 'served' ? '✓ prišli' : '✕ zrušené'}${q.restoredAt ? '<br><small class="muted">↺ vrátené</small>'
           : `<br><button class="btn ghost" style="width:auto;padding:4px 8px;margin-top:4px;font-size:12px" onclick="restoreQueue('${q.id}')">↺ Vrátiť</button>`}</span>
       </div>`).join('')}</div>` : `<div class="empty">${q2 ? 'Nič nenájdené.' : 'Za tento deň zatiaľ neboli žiadne rezervácie.'}</div>`}
     <button class="btn ghost" style="margin-top:14px;width:100%" onclick="showQueueHist=false;render()">← Späť na atrakcie</button>`;
@@ -2313,11 +2303,7 @@ function tableReservationsBlock(id) {
     <div style="padding:10px 14px 14px">${rs.map(q => `
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px;flex-wrap:wrap;gap:6px">
         <span>${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${fmtQDateTime(q.reserveAt)}</b> ` : ''}${esc(q.name)}${q.people ? ` <small class="muted">· 👥 ${q.people} os.</small>` : ''}${q.note ? ` <small class="muted">· ${esc(q.note)}</small>` : ''}</span>
-        <div class="row" style="gap:6px">
-          ${uiOn('arrived') ? `<button class="btn ok" style="width:auto;padding:6px 10px;font-size:13px" onclick="queueArrived('${q.id}')">✓ Prišli</button>` : ''}
-          <button class="btn ${uiOn('arrived') ? 'ghost' : 'ok'}" style="width:auto;padding:6px 10px;font-size:13px" onclick="serveQueue('${q.id}')">Odbaviť</button>
-          <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="delQueue('${q.id}')">✕</button>
-        </div>
+        <div class="row" style="gap:6px">${queueBtns(q, true)}</div>
       </div>`).join('')}</div>
   </div>`;
 }
