@@ -215,20 +215,23 @@
   // ---- prihlásenie zamestnanca (rovnaký kód ako v Smenách aj Objednávkach) ----
   let fails = 0;
   const blurNow = () => { try { document.activeElement && document.activeElement.blur(); } catch (e) {} };
+  // (2026-11-04) meno z výberu si pamätá ui – stará hláška „Vyber svoje meno“ zmizne hneď po výbere
+  function lPick(name) { ui.lName = name; if (ui.err) { ui.err = ''; render(); } }
   function empLogin() {
-    ui.lName = $('lName').value; blurNow();   // inak by render() (guard na fokus) neukázal chybu
+    ui.lName = $('lName').value; ui.lCode = $('lCode').value; blurNow();   // inak by render() (guard na fokus) neukázal chybu
     const lock = Number(ls.get('cp_lockuntil') || 0);
     if (Date.now() < lock) { ui.err = `Príliš veľa pokusov. Skús to o ${Math.ceil((lock - Date.now()) / 1000)} s.`; return render(); }
     const name = $('lName').value, code = $('lCode').value.trim();
     const e = emps.find(x => x.name === name);
     if (!e) { ui.err = 'Vyber svoje meno.'; return render(); }
     if (String(e.code) !== code) {
+      ui.lCode = ''; $('lCode').value = '';
       if (++fails >= 5) { fails = 0; ls.set('cp_lockuntil', String(Date.now() + 60000)); ui.err = 'Príliš veľa pokusov. Skús to o minútu.'; }
       else ui.err = 'Nesprávny kód.';
       return render();
     }
     if (((access.e || {})[enc(name)] || {}).smeny === false && ((access.e || {})[enc(name)] || {}).objednavky === false) { ui.err = 'Nemáš prístup. Ozvi sa vedúcemu.'; return render(); }
-    fails = 0; ui.err = ''; me = name;
+    fails = 0; ui.err = ''; ui.lCode = ''; me = name;
     ls.set('cp_myname', name); ls.set('waiter', JSON.stringify(name));   // Smeny + Objednávky naraz
     toast(`Vitaj, ${name.split(' ')[0]}!`); render();
   }
@@ -443,6 +446,7 @@
   }
 
   // ---- vykreslenie ----
+  let loginHtml = '';   // čo je práve vykreslené na prihlasovacej obrazovke
   function render() {
     // nerušiť písanie odovzdávky / prihlasovacích údajov pri živej zmene dát
     const ae = document.activeElement && document.activeElement.id;
@@ -454,17 +458,25 @@
         ? '<button onclick="backToMgr()">⚡ späť ako vedúci</button>'   // (2026-10-20) v režime 👁 len jedno tlačidlo – späť, nie odhlásenie
         : '<button onclick="logout()">odhlásiť</button>'}</div>` : ''}</div>`;
     if (!logged) {
-      app.innerHTML = head + `<h1>Prihlás sa</h1>${devCard()}<div class="card">
+      const html = head + `<h1>Prihlás sa</h1>${devCard()}<div class="card">
         ${ui.mgrForm ? `<form onsubmit="return false" style="margin:0"><input type="text" name="username" autocomplete="username" value="${MANAGER_EMAIL}" hidden><input type="password" id="mPass" placeholder="Heslo vedúceho" autocomplete="current-password" onkeydown="if(event.key==='Enter')mgrLogin()"></form>
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="mgrLogin()">Prihlásiť vedúceho</button>
           <button class="link" onclick="ui.mgrForm=false;ui.err='';render()">‹ späť na zamestnanca</button>`
-        : `<select id="lName"><option value="">— vyber svoje meno —</option>${emps.map(e => `<option value="${esc(e.name)}" ${ui.lName === e.name ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select>
-          <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" onkeydown="if(event.key==='Enter')empLogin()">
+        : `<select id="lName" onchange="lPick(this.value)"><option value="">— vyber svoje meno —</option>${emps.map(e => `<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('')}</select>
+          <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" oninput="ui.lCode=this.value" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-10-31c</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-04</footer>`;
+      // (2026-11-04) Rovnaký obsah sa neprekresľuje: iPhone po výbere zo zoznamu stratí fokus, focusout zavolá render() a nové políčka
+      // by zmazali vybrané meno aj rozpísaný kód či heslo – zamestnanec sa potom nevedel prihlásiť. Keď sa obsah naozaj zmení, meno a kód vráti ui.
+      if (html !== loginHtml) {
+        app.innerHTML = loginHtml = html;
+        const n = $('lName');
+        if (n) { n.value = ui.lName || ''; if (n.selectedIndex < 0) n.value = ''; $('lCode').value = ui.lCode || ''; }
+      }
       return;
     }
+    loginHtml = '';
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
     const hubTd = hubTodos(), tdLeft = hubTd.filter(t => !tdDone(t)).length;
     const td = todayTodos(key), resN = todayReservations(key), miss = boardOpen(), notice = latestNotice(key);
@@ -611,7 +623,7 @@
         + link('rezervacie.html#nastavenia', '🎯', 'Nastavenia rezervácií', 'Balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-10-31c</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-11-04</footer>`;
     app.innerHTML = html;
   }
 
