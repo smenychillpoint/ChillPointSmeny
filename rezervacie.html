@@ -617,6 +617,8 @@
   const isMc = b => !!pkgOf(b);   // rezervácia s balíčkom (Monster Chill a pod.)
   const todayKey = () => bizOfTs(Date.now()).date;          // o 01:00 v noci je „dnes“ ešte včerajší deň (6–6)
   const nowBizMin = () => toMin(bizOfTs(Date.now()).time);
+  // (2026-11-04) kľúč rezervácie ide do HTML a zapisuje ho aj verejný formulár bez prihlásenia: iný tvar, než aký dáva Firebase (push), sa vôbec nenačíta
+  const goodKeys = o => Object.fromEntries(Object.entries(o || {}).filter(([k]) => /^[A-Za-z0-9_-]{10,40}$/.test(k)));
   const live = () => Object.entries(bookings || {}).map(([id, b]) => ({ id, ...b })).filter(b => b && b.name && firstGame(b));
   function list() {
     const tk = todayKey();
@@ -2307,7 +2309,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? preBoxHtml() + calHtml() : view === 'sheet' ? preBoxHtml() + sheetHtml() : view === 'play' ? playHtml() : preBoxHtml() + listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z testovacej stránky a z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-02</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-04</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
@@ -2328,7 +2330,7 @@
     const db = firebase.database();
     const err = e => { console.error('[rezervácie]', e); loadErr = 'Rezervácie sa nepodarilo načítať. Skontroluj, či sú vo Firebase vložené pravidlá pre „laser“ (firebase-rules.json).'; render(); };
     const bRef = db.ref(`${base()}/bookings`), sRef = db.ref(`${base()}/slots`), cRef = db.ref(`${base()}/config`);
-    const bCb = bRef.on('value', s => { bookings = s.val() || {}; loaded = true; migrateContacts(); schedulePkSync(); scheduleSelfSync(); render(); }, err);
+    const bCb = bRef.on('value', s => { bookings = goodKeys(s.val()); loaded = true; migrateContacts(); schedulePkSync(); scheduleSelfSync(); render(); }, err);
     const sCb = sRef.on('value', s => { slots = s.val() || {}; render(); }, err);
     // nastavenia: rozpísané (neuložené) zmeny sa živou zmenou neprepíšu
     const cCb = cRef.on('value', s => { cfgRaw = s.val(); applyCfg(cfgRaw); cfgLoaded = true; if (!cfgDirty) cfgF = null; render(); },
@@ -2351,7 +2353,7 @@
     contacts = {}; contactsLoaded = false;
     if (canSeeContact()) {
       const kRef = db.ref(`${base()}/contacts`);
-      const kCb = kRef.on('value', s => { contacts = s.val() || {}; contactsLoaded = true; migrateContacts(); scheduleSelfSync(); render(); },
+      const kCb = kRef.on('value', s => { contacts = goodKeys(s.val()); contactsLoaded = true; migrateContacts(); scheduleSelfSync(); render(); },
         e => { console.warn('[rezervácie contacts]', e); contactsLoaded = true; render(); });
       offFns.push(() => kRef.off('value', kCb));
     }
