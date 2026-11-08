@@ -673,7 +673,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-10-31· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-11-05· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -758,7 +758,7 @@
       <h2>Režim vedúceho</h2>
       <p class="sub">Zadaj heslo vedúceho.</p>
       <!-- (2026-10-26) vlastný <form>: heslo vedúceho patrí len k tomuto prihláseniu, prehliadač ho neponúka v ostatných políčkach -->
-      <form class="form" onsubmit="return false"><input type="text" name="username" autocomplete="username" value="vedouci@chillpoint-smeny.sk" hidden><input id="pin" type="password" autocomplete="current-password" placeholder="Heslo vedúceho"><button type="button" class="primary" id="unlock">Otvoriť správu smien</button></form>
+      <form class="form" onsubmit="return false"><input type="text" name="username" autocomplete="username" value="chillpoint2015@gmail.com" hidden><input id="pin" type="password" autocomplete="current-password" placeholder="Heslo vedúceho"><button type="button" class="primary" id="unlock">Otvoriť správu smien</button></form>
       <div class="msg" id="pinMsg"></div>
     </div>
   </div>
@@ -1225,11 +1225,13 @@
   const MONTHS=['január','február','marec','apríl','máj','jún','júl','august','september','október','november','december'];
   const DAYS=['PO','UT','ST','ŠT','PI','SO','NE'];
   // E-mail účtu vedúceho vo Firebase Authentication (heslo sa nastavuje vo Firebase, nie v kóde).
-  const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
-  // (2026-10-31) Smeny čítajú len prihlásené účty personálu (vedúci, bar, zariadenie). Bez prihláseného vedúceho sa
+  const MANAGER_EMAIL = 'chillpoint2015@gmail.com';
+  // (2026-10-31) Smeny čítajú len prihlásené účty personálu (vedúci, zariadenie). Bez prihláseného vedúceho sa
   // prihlási zariadenie heslom, ktoré sa zadalo raz na úvode (localStorage cp_devpw – rovnaké ako úvod a Objednávky).
-  const DEVICE_EMAIL = 'rezervacia@chillpoint.sk';
-  const OLD_DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';   // starý účet (heslo bolo verejné) – pravidlá ho už nepustia
+  const DEVICE_EMAIL = 'chillpoint2015+zariadenie@gmail.com';
+  // (2026-11-05) účty sa presunuli na skutočnú schránku: každý iný účet (staré vedouci@, rezervacia@, bar@, zariadenie@…) už pravidlá nepustia,
+  // preto sa pri načítaní odhlási a ďalej to ide ako bez účtu (zariadenie sa prihlási uloženým heslom alebo si ho vypýta na úvode)
+  const isOldAccount = u => !!u && ![MANAGER_EMAIL, DEVICE_EMAIL].includes((u.email||'').toLowerCase());
   const BAD_PW = /wrong-password|invalid-credential|invalid-login|user-not-found|user-disabled|invalid-email/;
   let devNeed=false, devErr='';   // devNeed = zariadenie nie je prihlásené → pás hore s odkazom na úvod
   const $=id=>document.getElementById(id);
@@ -1241,7 +1243,7 @@
   let manager = false;
   // (2026-10-16) "👁 zobrazenie ako zamestnanec" – zapína sa na úvodnej stránke (cp_viewAs). Platí len, keď je
   // naozaj prihlásený vedúci: appka sa vtedy správa ako ten zamestnanec (manager=false, myName=meno).
-  const viewAsName = (()=>{ try{ return localStorage.getItem('cp_viewAs')||''; }catch(e){ return ''; } })();
+  let viewAsName = (()=>{ try{ return localStorage.getItem('cp_viewAs')||''; }catch(e){ return ''; } })();
   let viewAsActive = false;
   // (2026-10-19) "👁 Pozrieť ako zamestnanec" aj priamo v Nastaveniach Smien (rovnaké ako na úvode – cp_viewAs)
   function fillViewAsSel(){
@@ -1452,6 +1454,10 @@
   };
   let rtdb = null;
   let scheduleRef = null, employeesRef = null;
+  // (2026-11-05) staré výmeny, nástenku a žiadosti vedúci maže podľa dátumu, preto len keď hodiny zariadenia sedia so serverom (offset sa meria pri nadviazaní spojenia)
+  // a od merania sa nepohli (performance.now zmena hodín nepohne). Inak zlý dátum nič nezmaže, upracú sa nabudúce.
+  let srvOffset=null, srvBase=0;
+  const clockOk=()=>srvOffset!==null && Math.abs(srvOffset)<=5*60e3 && Math.abs(Date.now()-performance.now()-srvBase)<30e3;
 
   async function initDb(){
     try{
@@ -1481,6 +1487,7 @@
       todosRef = rtdb.ref('todos');
       dbAvailable = true; dbReady = true;
       try{ rtdb.ref('.info/connected').on('value', snap=>onConnectionChange(snap.val()===true)); }catch(e){}
+      try{ rtdb.ref('.info/serverTimeOffset').on('value', snap=>{ const v=snap.val(); if(typeof v==='number'){ srvOffset=v; srvBase=Date.now()-performance.now(); } }); }catch(e){}
       try{ if(window.addEventListener) window.addEventListener('offline', ()=>{ netConnected=false; goOffline(); }); }catch(e){}
     }catch(e){
       dbAvailable = false; scheduleLoaded=true; employeesLoaded=true; renderAll(); return;
@@ -1492,14 +1499,21 @@
         // LOCAL = vedúci ostane prihlásený aj po zavretí appky (predtým SESSION → odhlasovalo) – 2026-10-16
         try{ await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
         auth.onAuthStateChanged(u=>{
-          // (2026-10-31) dáta až po prihlásení; bez účtu (alebo so starým účtom zariadenia) sa prihlási zariadenie
-          if(u && (u.email||'').toLowerCase()!==OLD_DEVICE_EMAIL){ devNeed=false; devErr=''; startData(); }
-          else { stopData(); if(u) devErr='Toto zariadenie je ešte prihlásené starým účtom – zadaj nové heslo zariadenia na úvode.'; devAutoLogin(); }
+          // (2026-11-05) starý účet sa odhlási, signOut sem príde znova s u = null; zlyhané odhlásenie nesmie nechať stránku prázdnu
+          if(isOldAccount(u)){
+            stopData();
+            if(viewAsName){ viewAsName=''; myName=''; try{ localStorage.removeItem('cp_viewAs'); localStorage.removeItem('cp_myname'); localStorage.removeItem('waiter'); }catch(e){} }   // režim 👁 bez vedúceho nesmie nechať cudzie meno (ani po ďalšom prihlásení bez obnovenia stránky)
+            auth.signOut().catch(()=>{ devNeed=true; renderAll(); });
+            return;
+          }
+          // (2026-10-31) dáta až po prihlásení; bez účtu sa prihlási zariadenie
+          if(u){ devNeed=false; devErr=''; startData(); }
+          else { stopData(); devAutoLogin(); }
           const isMgrAuth = !!u && (u.email||'').toLowerCase()===MANAGER_EMAIL.toLowerCase();
           viewAsActive = isMgrAuth && !!viewAsName;
           manager = isMgrAuth && !viewAsActive;
           if(viewAsActive) myName = viewAsName;
-          else if(viewAsName){ try{ localStorage.removeItem('cp_viewAs'); }catch(e){} }
+          else if(viewAsName){ viewAsName=''; myName=''; try{ ['cp_viewAs','cp_myname','waiter'].forEach(k=>localStorage.removeItem(k)); }catch(e){} }   // režim 👁 bez vedúceho nesmie nechať cudzie meno
           // z úvodnej stránky "smeny.html#nastavenia" -> rovno okno ⚙ Nastavenia (len vedúci) – 2026-10-19
           if(manager && location.hash==='#nastavenia'){ try{ window.history.replaceState(null,'',location.pathname); }catch(e){} setTimeout(()=>{ fillViewAsSel(); $('settingsModal').classList.add('open'); }, 300); }
           resetIdle();
@@ -1509,7 +1523,7 @@
       }
     }catch(e){}
   }
-  // (2026-10-31) odbery dát – až po prihlásení (zariadenie / vedúci / bar). Bez prihlásenia ich pravidlá nepustia a po
+  // (2026-10-31) odbery dát – až po prihlásení (zariadenie / vedúci). Bez prihlásenia ich pravidlá nepustia a po
   // odhlásení ich Firebase zruší, preto si ich pamätáme, zrušíme a po ďalšom prihlásení pripojíme znova.
   let dataSubs=[], todoHashDone=false;   // todoHashDone: úvodná stránka "smeny.html#ulohy" -> rovno okno Úlohy a navyše
   const sub=(ref,ok,bad)=>{ const cb=ref.on('value',ok,bad); dataSubs.push(()=>ref.off('value',cb)); };
@@ -2185,7 +2199,7 @@
   function cantInfo(key){
     if(!feat('avail')) return [];
     const d=dayObj(key); const once=new Set(d.na||[]); const list=[];
-    once.forEach(n=>list.push({name:n, rec:false}));
+    once.forEach(n=>{ if((employees.list||[]).some(e=>e.name===n)) list.push({name:n, rec:false}); });   // odstránený zamestnanec sa už neukazuje
     (employees.list||[]).forEach(e=>{ if(!once.has(e.name) && !avMark(key,e.name) && recMatches(recFor(e.name),key)) list.push({name:e.name, rec:true}); });
     return list;
   }
@@ -2419,7 +2433,7 @@
     }
   }
   function pruneSwaps(all){
-    if(swapsPruned || !manager || !all.length || !swapsRef) return;
+    if(swapsPruned || !manager || !all.length || !swapsRef || !clockOk()) return;
     swapsPruned=true;
     all.filter(x=>(['approved','declined','declined_peer','cancelled'].includes(x.status) && x.ts && Date.now()-x.ts>30*86400000) || (x.status==='open' && x.day && x.day<todayKey()))
        .forEach(x=>{ try{ swapsRef.child(x.id).remove(); }catch(e){} });
@@ -4221,7 +4235,7 @@
   let boardPruned=false;
   // vybavené položky z nástenky staršie ako 7 dní sa potichu zmažú (mazanie smie len vedúci, preto len tu)
   function pruneBoard(){
-    if(boardPruned || !manager || !dbAvailable) return;
+    if(boardPruned || !manager || !dbAvailable || !clockOk()) return;
     boardPruned=true;
     const limit=Date.now()-7*86400000, patch={};
     boardList().forEach(b=>{ if(b.done && b.doneAt && b.doneAt<limit) patch[b.id]=null; });
@@ -4795,7 +4809,7 @@
   // dni, kde niekto flexibilne chce jeden z výberu (a ešte to nemá splnené) – pre nápovedu vo formulári pridania zamestnanca a v návrhu zostavy
   function flexInfo(key){ if(!feat('flexwant')) return []; return openFlex().filter(x=>x.days.includes(key)).map(x=>({ name:x.from, want:x.want, of:x.days.length })); }
   function flexPrune(){
-    if(!manager || !flexRef) return;
+    if(!manager || !flexRef || !clockOk()) return;
     allFlex().filter(x=>flexFulfilled(x) || flexExpired(x)).forEach(x=>{ try{ flexRef.child(x.id).remove(); }catch(e){} });
   }
   async function createFlex(keys, want){
@@ -4885,6 +4899,8 @@
     if(recurring[rk]){ patch['recurring/'+ratingKey(newName)]={...recurring[rk], name:newName}; patch['recurring/'+rk]=null; }
     if(targets[rk]!==undefined){ patch['targets/'+ratingKey(newName)]=targets[rk]; patch['targets/'+rk]=null; }
     if(pnotes[rk]!==undefined){ patch['privateNotes/'+ratingKey(newName)]=pnotes[rk]; patch['privateNotes/'+rk]=null; }
+    // prístupy z úvodu a „kto vidí rezervácie“ sú pod menom: bez presunu by po premenovaní zákaz prestal platiť a povolenie zmizlo
+    { const nk=ratingKey(newName), ha=hubAccess||{}; if((ha.e||{})[rk]){ patch['settings/hubAccess/e/'+nk]=ha.e[rk]; patch['settings/hubAccess/e/'+rk]=null; } if((ha.rezWho||{})[rk]){ patch['settings/hubAccess/rezWho/'+nk]=true; patch['settings/hubAccess/rezWho/'+rk]=null; } }
     try{
       await rtdb.ref().update(patch);   // zoznam aj všetky smeny sa zmenia naraz
       showToast(`Premenované na ${newName}` + (days?` (upravených dní: ${days})`:''), 3000);
@@ -4899,6 +4915,17 @@
     if(recFor(name)){ try{ await recurringRef.child(ratingKey(name)).remove(); }catch(e){} }
     if(getTarget(name)!==null){ try{ await targetsRef.child(ratingKey(name)).remove(); }catch(e){} }
     if(getPNote(name)){ try{ await pnotesRef.child(ratingKey(name)).remove(); }catch(e){} }
+    // nech po ňom neostane „môžem / nemôžem“: na dňoch od dneška, žiadosti „jeden z týchto dní“ a koľko dní chce (minulé dni sú história)
+    const patch={}, rk=ratingKey(name), tk=todayKey();
+    Object.keys(schedule.days||{}).filter(k=>k>=tk).forEach(k=>{
+      const d=schedule.days[k]||{}, na=Array.isArray(d.na)?d.na:[];
+      if(na.includes(name)){ const left=na.filter(n=>n!==name); patch[`schedule/days/${k}/na`]=left.length?left:null; }
+      if((d.av||{})[rk]!==undefined) patch[`schedule/days/${k}/av/${rk}`]=null;
+      if((d.avt||{})[rk]!==undefined) patch[`schedule/days/${k}/avt/${rk}`]=null;
+    });
+    Object.keys(flex||{}).forEach(id=>{ if(flex[id] && flex[id].from===name) patch[`flex/${id}`]=null; });
+    patch[`weekwant/${rk}`]=null;
+    if(Object.keys(patch).length){ try{ await rtdb.ref().update(patch); }catch(e){ showToast('Dostupnosť sa nepodarilo vymazať, skús 🔍 Kontrolu údajov.'); } }
     if(myName===name){ myName=''; localStorage.removeItem('cp_myname'); }
   }
   async function regenCode(name){
@@ -4925,7 +4952,7 @@
   }
   function doLogout(){ myName=''; localStorage.removeItem('cp_myname'); try{ localStorage.setItem('waiter', JSON.stringify('')); }catch(e){} renderAll(); }
   let heroErrMsg='';
-  function heroLoginError(m){ heroErrMsg=m; renderAll(); }
+  function heroLoginError(m){ heroErrMsg=m; if($('codeInput')) $('codeInput').value=''; renderAll(); }   // kód nesmie ostať v políčku pre ďalšieho človeka
 
   // ---------- render ----------
   function message(id,text){ $(id).textContent=text; $(id).classList.add('show'); }
@@ -4949,7 +4976,7 @@
     const hb=$('helpBtn'); if(hb) hb.onclick=openHelp;
     const ib=$('installBtn'); if(ib) ib.onclick=doInstall;
     const lb=$('logoutBtn'); if(lb) lb.onclick=doLogout;
-    const mb=$('managerBtn'); if(mb) mb.onclick=()=>{ $('managerModal').classList.add('open'); setTimeout(()=>$('pin').focus(),50); };
+    const mb=$('managerBtn'); if(mb) mb.onclick=()=>{ $('pin').value=''; $('managerModal').classList.add('open'); setTimeout(()=>$('pin').focus(),50); };
     const kb=$('lockBtn'); if(kb) kb.onclick=doManagerLogout;
     const sb=$('settingsBtn'); if(sb) sb.onclick=()=>{ fillViewAsSel(); $('settingsModal').classList.add('open'); };
     const bmb=$('backMgrBtn'); if(bmb) bmb.onclick=backToManager;
@@ -4960,6 +4987,7 @@
     const tb=$('todoBtn'); if(tb) tb.onclick=openTodo;
   }
 
+  let heroFormHtml='';   // čo je práve vykreslené v prihlasovacom formulári
   function renderHero(){
     const h=$('hero');
     if(manager){
@@ -4989,7 +5017,8 @@
         <div class="who"><label>MOJA NAJBLIŽŠIA SMENA</label><div style="margin-top:6px;">${nextHtml}</div></div>`;
       return;
     }
-    h.innerHTML=`
+    // (2026-11-05) živá zmena dát nesmie zmazať vybrané meno ani rozpísaný kód: rovnaký obsah sa neprekresľuje, nový si ich ponechá
+    const heroForm=`
       <div><span class="tag">TÍMOVÝ KALENDÁR</span><h1>VYBER SI<span>SMENU</span></h1></div>
       <div class="who">
         <label for="employee">KTO SA PRIHLASUJE?</label>
@@ -5000,6 +5029,12 @@
         ${heroErrMsg?`<div class="err">${esc(heroErrMsg)}</div>`:''}
         <p>Kód ti pridelil vedúci zmeny.</p>
       </div>`;
+    if(heroForm===heroFormHtml && $('loginBtn')) return;
+    const heroName=($('employee')||{}).value||'', heroCode=($('codeInput')||{}).value||'', heroFocus=(document.activeElement||{}).id;
+    heroFormHtml=heroForm; h.innerHTML=heroForm;
+    if(heroName){ $('employee').value=heroName; if($('employee').selectedIndex<0) $('employee').value=''; }
+    if(heroCode) $('codeInput').value=heroCode;
+    if(heroFocus==='employee'||heroFocus==='codeInput') $(heroFocus).focus();
     $('loginBtn').onclick=()=>{ heroErrMsg=''; doEmployeeLogin($('employee').value, $('codeInput').value); };
     $('codeInput').addEventListener('keydown', e=>{ if(e.key==='Enter') $('loginBtn').click(); });
   }
@@ -5154,7 +5189,7 @@
     document.querySelectorAll('[data-pnote]').forEach(x=>x.onclick=()=>openPNote(x.dataset.pnote));
     document.querySelectorAll('[data-rename]').forEach(x=>x.onclick=()=>{ const old=x.dataset.rename; const nw=prompt(`Nové meno pre „${old}“:`, old); if(nw!==null) renameEmployee(old,nw); });
     document.querySelectorAll('[data-regen]').forEach(x=>x.onclick=()=>regenCode(x.dataset.regen));
-    document.querySelectorAll('[data-remove-emp]').forEach(x=>x.onclick=()=>{ if(confirm(`Odstrániť "${x.dataset.removeEmp}" zo zoznamu?`)) removeEmployeeName(x.dataset.removeEmp); });
+    document.querySelectorAll('[data-remove-emp]').forEach(x=>x.onclick=()=>{ const n=x.dataset.removeEmp, tk=todayKey(), sm=Object.keys(schedule.days||{}).filter(k=>k>=tk && ((schedule.days[k]||{}).employees||[]).includes(n)).length; if(confirm(`Odstrániť "${n}" zo zoznamu?`+(sm?`\n\nMá zapísané budúce smeny (${sm}). Tie ostanú, uprav ich v kalendári.`:''))) removeEmployeeName(n); });
     $('addEmpBtn').onclick=()=>{ addEmployee($('newEmpInput').value); $('newEmpInput').value=''; };
   }
 
@@ -5674,6 +5709,7 @@
       $('pin').value=''; $('pinMsg').classList.remove('show');
       $('managerModal').classList.remove('open');
     }catch(e){
+      $('pin').value='';   // (2026-11-05) heslo nesmie ostať v políčku: pri chybe siete môže byť správne a ďalší by sa prihlásil jedným ťuknutím
       const c=(e&&e.code)||'';
       if(c==='auth/too-many-requests') message('pinMsg','Príliš veľa pokusov. Skús to neskôr.');
       else if(c==='auth/user-not-found') message('pinMsg','Účet vedúceho ešte nie je vytvorený vo Firebase.');

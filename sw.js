@@ -5,7 +5,9 @@
 //  • Stránky appky: vždy sa skúsi najprv internet (nech je vždy aktuálna verzia), ale keď internet neodpovie do
 //    2,5 s, ukáže sa uložená kópia (a nová sa medzitým uloží na ďalšie otvorenie). Bez internetu = uložená kópia.
 //  • Dáta (Firebase databáza, prihlásenie) service worker NEchytá – idú vždy priamo.
-const CACHE = 'cp-smeny-v5';   // v5 (2026-10-26): + odpovede.html (v4: + rezervacie.html)
+// (2026-11-05) nové účty a pravidlá: stará uložená kópia stránky by už nič nenačítala, preto nová cache (stará sa pri aktivácii zmaže).
+// Názov nie je ďalšie číslo v poradí, aby ho cudzí kód nemohol založiť vopred.
+const CACHE = 'cp-smeny-2026-11-05-k7q2m';   // v5 (2026-10-26): + odpovede.html (v4: + rezervacie.html)
 const SHELL = ['./', './index.html', './smeny.html', './objednavky.html', './rezervacie.html', './odpovede.html','./manifest.webmanifest', './icon-192.png', './icon-512.png'];
 const LIBS = [
   'https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js',

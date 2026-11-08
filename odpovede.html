@@ -80,10 +80,13 @@
   // (settings/hubAccess/odpAll) a človek nemá na úvode v Prístupoch odškrtnuté „✉️ Odpovede“.
   // Dáta: ai/templates/<id> = {title, when?, text, by, createdAt, updatedAt} (pravidlá Firebase „ai“: číta vedúci,
   // pri odpAll aj zariadenie; pridávať/upravovať smie aj zariadenie pri odpAll, mazať len vedúci).
-  const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
+  const MANAGER_EMAIL = 'chillpoint2015@gmail.com';
   // zdieľané zariadenie (ako na úvode a v Rezerváciách) – aby zamestnanci mohli čítať šablóny
   // (2026-10-31) heslo zariadenia UŽ NIE JE v kóde – zadá sa raz na úvode / v Objednávkach, uložené v prehliadači (cp_devpw)
-  const DEVICE_EMAIL = 'rezervacia@chillpoint.sk';
+  const DEVICE_EMAIL = 'chillpoint2015+zariadenie@gmail.com';
+  // (2026-11-05) účty sa presunuli na skutočnú schránku: každý iný účet (staré vedouci@, rezervacia@, bar@, zariadenie@…) už pravidlá nepustia,
+  // preto sa pri načítaní odhlási a ďalej to ide ako bez účtu (zariadenie sa prihlási uloženým heslom alebo si ho vypýta na úvode)
+  const isOldAccount = u => !!u && ![MANAGER_EMAIL, DEVICE_EMAIL].includes((u.email || '').toLowerCase());
   const LIM = { title: 80, when: 300, text: 6000, mail: 20000, val: 300 };
 
   const $ = id => document.getElementById(id);
@@ -317,7 +320,8 @@
     if (pickId && !tpls[pickId] && loaded) { pickId = ''; vals = {}; }
     const app = $('app');
     let html = `<div class="top"><a href="./">‹ Úvod</a><h1>✉️ Odpovede na e-maily</h1></div>`;
-    if (!authReady || hubAccess === null) { app.innerHTML = html + '<p class="empty">Načítavam…</p>'; return; }
+    // (2026-11-05) bez účtu sa prístupy nenačítajú nikdy: zariadenie bez platného hesla nesmie ostať na „Načítavam…“, ide na výzvu nižšie
+    if (!authReady || (authUser && hubAccess === null)) { app.innerHTML = html + '<p class="empty">Načítavam…</p>'; return; }
     if (!canUse()) {
       app.innerHTML = html + `<div class="card"><p style="margin:0 0 10px">${!authUser ? '🔐 Toto zariadenie nie je prihlásené – prihlás ho na úvodnej stránke (heslo zariadenia povie vedúci).' : !myName() && !isMgr ? 'Najprv sa prihlás na úvodnej stránke.' : 'Odpovede na e-maily zatiaľ používa len vedúci.'}</p><a class="btn" href="./" style="text-decoration:none;display:inline-block">‹ Na úvod</a></div>`;
       return;
@@ -328,7 +332,7 @@
     if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
     if (!loaded && !loadErr) html += '<p class="empty">Načítavam šablóny…</p>';
     else html += view === 'tpl' ? tplHtml() : view === 'set' ? settingsHtml() : replyHtml();
-    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-10-31c</footer>`;
+    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-11-05</footer>`;
     if (tf) html += tplFormHtml();
     const ovScroll = document.querySelector('.ov') ? document.querySelector('.ov').scrollTop : 0;
     app.innerHTML = html;
@@ -362,10 +366,16 @@
     // (2026-10-31) prístupy (settings/hubAccess) čítajú len prihlásení → odber až po prihlásení, po odhlásení sa zruší
     let accOff = null;
     firebase.auth().onAuthStateChanged(async u => {
+      // (2026-11-05) starý účet sa odhlási (signOut sem príde znova s u = null a prihlási sa zariadenie)
+      if (isOldAccount(u)) {
+        if (ls.get('cp_viewAs')) ['cp_viewAs', 'cp_myname', 'waiter'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });   // režim 👁 bez vedúceho nesmie nechať cudzie meno
+        try { await firebase.auth().signOut(); return; } catch (e) { u = null; }
+      }
       authUser = u;
       if (!u && accOff) { accOff(); accOff = null; }
       if (u && !accOff) { const ref = firebase.database().ref('settings/hubAccess'), cb = ref.on('value', s => { hubAccess = s.val() || {}; rewatch(); render(); }, () => { hubAccess = {}; render(); }); accOff = () => ref.off('value', cb); }
       if (!u && ls.get('cp_devpw')) { try { await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, ls.get('cp_devpw')); return; } catch (e) {} }
+      if (ls.get('cp_viewAs') && (!u || (u.email || '').toLowerCase() !== MANAGER_EMAIL)) ['cp_viewAs', 'cp_myname', 'waiter'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });   // režim 👁 bez vedúceho nesmie nechať cudzie meno
       const mgr = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL && !ls.get('cp_viewAs');
       authReady = true;
       if (mgr !== isMgr) { isMgr = mgr; watching = canUse(); watch(); }

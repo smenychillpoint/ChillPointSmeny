@@ -116,6 +116,8 @@ body:has(.login:not(.hide)){overflow:hidden}
 </head>
 <body>
 <header>
+  <!-- (2026-11-05) ⏰ hodiny zariadenia sa líšia od servera o viac ako 5 min (text dopĺňa showClockBar) -->
+  <div id="clockBar" class="hide" style="margin:0 -12px;padding:8px 12px;background:#c62828;color:#fff;font-weight:800;font-size:14px;text-align:center"></div>
   <div class="bar">
     <button id="backBtn" class="back hide">‹ Stoly</button>
     <h1 id="title">Objednávky</h1>
@@ -138,7 +140,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-02</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-05</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -234,7 +236,7 @@ let billSel = {};            // { "názov|cena": počet kusov, čo sa platí ter
 let orderNote = '';
 let q = '';                  // hľadanie v menu
 // Nastavenia (stoly/menu) smie meniť len vedúci - rovnaký účet ako v appke na smeny.
-const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
+const MANAGER_EMAIL = 'chillpoint2015@gmail.com';
 let isManager = false;
 // Spoločný "zariadenie" účet - appka sa ním prihlási do Firebase automaticky na pozadí, aby zamestnanci
 // nemuseli poznať žiadny e-mail/heslo. Oni sa potom identifikujú len svojím menom + PIN kódom (rovnaký
@@ -242,24 +244,44 @@ let isManager = false;
 // → Add user) s týmto e-mailom.
 // (2026-10-31) Heslo UŽ NIE JE v kóde (stránka je verejná na GitHube): zadá sa raz na zariadení (tu alebo na úvode)
 // a uloží sa len v tomto prehliadači (localStorage cp_devpw, rovnaké ako na úvode); s ním sa zariadenie prihlasuje samo.
-const DEVICE_EMAIL = 'rezervacia@chillpoint.sk';
-const OLD_DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';   // do 2026-10-31 (heslo bolo verejné) – už ho pravidlá nepustia
+const DEVICE_EMAIL = 'chillpoint2015+zariadenie@gmail.com';
+// (2026-11-05) účty sa presunuli na skutočnú schránku: každý iný účet (staré vedouci@, rezervacia@, bar@, zariadenie@…) už pravidlá nepustia,
+// preto sa pri načítaní odhlási a ďalej to ide ako bez účtu (zariadenie sa prihlási uloženým heslom alebo si ho vypýta, vedúci dostane svoj formulár)
+const isOldAccount = u => !!u && ![MANAGER_EMAIL, DEVICE_EMAIL].includes((u.email || '').toLowerCase());
+const OLD_MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
 const devPw = () => { try { return localStorage.getItem('cp_devpw') || ''; } catch (e) { return ''; } };
 const BAD_PW = /wrong-password|invalid-credential|invalid-login|user-not-found|user-disabled|invalid-email/;
 let wantManagerLogin = false;   // true = zobraziť pôvodný formulár na prihlásenie vedúceho (e-mail/heslo)
 let deviceLoginFailed = false;  // automatické prihlásenie zariadenia zlyhalo (účet ešte nie je vo Firebase vytvorený)
 let deviceLoginAttempted = false;
 let uzavierkaUnlocked = false;   // niekto iný ako vedúci si toto zariadenie odomkol PIN-om pre Dennú uzávierku
+// (2026-11-05) Čas v Objednávkach = čas servera (.info/serverTimeOffset), keď ho poznáme. Zlé hodiny tabletu tak nezapíšu platbu do minulosti a nič nezmažú.
+// Firebase ho meria len pri nadviazaní spojenia: keď sa hodiny pohnú pri otvorenej stránke (zmena dátumu, uspaný tablet), nameraný offset už neplatí.
+// checkClock to zistí podľa performance.now (zmena hodín ho nepohne), čas je znova neznámy a nové spojenie ho nameria. Dovtedy nebeží žiadne mazanie.
+let serverOffset = null;   // o koľko ms je server napred pred hodinami zariadenia; null = ešte neznáme (kým sa zariadenie nepripojí, platia jeho hodiny)
+let lastOffset = null, offsetBase = 0;   // posledná nameraná hodnota a Date.now() - performance.now() v čase merania
+const clockDrift = () => Date.now() - performance.now() - offsetBase;   // o koľko sa hodiny pohli od merania
+function checkClock() {
+  if (serverOffset === null || Math.abs(clockDrift()) < 30e3) return;
+  serverOffset = null; showClockBar();
+  setTimeout(() => { db.goOffline(); db.goOnline(); }, 0);
+}
+const now = () => {
+  checkClock();
+  if (serverOffset !== null) return Date.now() + serverOffset;
+  // hodiny išli dozadu: to je vždy ich zmena (uspanie ich posúva len dopredu), takže správny čas vieme dopočítať
+  return lastOffset !== null && clockDrift() < 0 ? Date.now() + lastOffset - clockDrift() : Date.now();
+};
 // Pracovný deň začína a končí o 6:00 ráno - platba o 1:30 v noci patrí ešte k predošlému dňu (zmena cez polnoc).
 const DAY_START_H = 6;
-const bizTodayDate = () => new Date(Date.now() - DAY_START_H * 3600e3);   // "dnešný" pracovný deň ako Date
+const bizTodayDate = () => new Date(now() - DAY_START_H * 3600e3);   // "dnešný" pracovný deň ako Date
 let uzavDate = bizTodayDate();   // deň zobrazený v Dennej uzávierke
 let showHist = false;        // história platieb podľa dátumu, dostupná pre všetkých čašníkov (nielen vedúceho)
 let histDate = bizTodayDate();
 let showQueue = false;       // poradovník (napr. na biliard) - kto je ďalší na rade
 let showQueueHist = false;   // história poradovníka (kto čakal, ako dlho, či bol odbavený) - dostupné pre všetkých
 let showQuickCash = false;   // rýchla platba - len suma do tržby, bez viazania na stôl/položku
-let queueHistDate = new Date();
+let queueHistDate = new Date(now());
 // Nástenka "Chýba / Kúpiť" - zdieľaná s appkou Smeny (rovnaká Firebase), dostupná pre všetkých z hlavičky
 let showBoard = false;
 let boardType = 'missing';
@@ -309,9 +331,8 @@ if (!window.FIREBASE_CONFIG || String(window.FIREBASE_CONFIG.apiKey || '').inclu
 }
 firebase.initializeApp(window.FIREBASE_CONFIG);
 const auth = firebase.auth(), db = firebase.database();
-const now = () => Date.now();
 // dnešný dátum vo formáte YYYY-MM-DD podľa lokálneho času (nie UTC, ako by dal toISOString())
-const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const todayISO = () => { const d = new Date(now()); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 // dátum (Date objekt) -> YYYY-MM-DD, lokálny čas
 const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 // deň (YYYY-MM-DD), ku ktorému sa zaplatená objednávka počíta v Uzávierke/Histórii - buď ručne nastavený
@@ -538,7 +559,8 @@ function loadDelLog() {
   delLogLoading = true;
   db.ref('deletedLog').once('value').then(s => {
     const v = s.val() || {}, limit = now() - 60 * 864e5, old = {};
-    Object.keys(v).forEach(k => { if (!v[k] || (v[k].deletedAt || 0) < limit) { old[k] = null; delete v[k]; } });
+    // (2026-11-05) staré záznamy maže len so známym časom servera
+    if (serverOffset !== null) Object.keys(v).forEach(k => { if (!v[k] || (v[k].deletedAt || 0) < limit) { old[k] = null; delete v[k]; } });
     if (Object.keys(old).length) db.ref('deletedLog').update(old).catch(() => {});
     delLog = v;
   }).catch(() => { delLog = {}; }).finally(() => { delLogLoading = false; safeRender(); });
@@ -767,7 +789,7 @@ async function callInner(m, [col, id, action], body) {
         const arr = Array.isArray(body.noPctItems) ? body.noPctItems : [];
         u.noPctItems = [...new Set(arr.map(x => str(x, 60)).filter(Boolean))].slice(0, 300);
       }
-      // skupiny stolov: tableGroups = vytvorené skupiny (aj zatiaľ prázdne), hiddenGroups = skryté pre čašníkov
+      // skupiny stolov: tableGroups = vytvorené skupiny (aj zatiaľ prázdne), hiddenGroups = skryté (nevidí ich čašník ani vedúci, len v Nastaveniach)
       // % z tržby pre personál (spoločné pre všetky zariadenia) a zamestnanci, ktorí sa o percentá NEDELIA
       if (body.payPct !== undefined) { const p = num(body.payPct); u.payPct = p >= 0 && p <= 100 ? p : 0; }
       if (body.noShareEmps !== undefined) u.noShareEmps = [...new Set((Array.isArray(body.noShareEmps) ? body.noShareEmps : []).map(x => str(x, 60)).filter(Boolean))].slice(0, 200);
@@ -953,7 +975,7 @@ async function callInner(m, [col, id, action], body) {
       // ak sa čas nezadá, ide o bežný poradovník "teraz" (dátum bez času sa ignoruje, nemá čo kotviť)
       if (body.time && /^([01]\d|2[0-3]):[0-5]\d$/.test(body.time)) {
         const [h, mi] = body.time.split(':').map(Number);
-        let d = new Date();
+        let d = new Date(now());
         if (body.date && /^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
           const [y, mo, da] = body.date.split('-').map(Number);
           const chosen = new Date(y, mo - 1, da);
@@ -984,7 +1006,7 @@ async function callInner(m, [col, id, action], body) {
         const { id: _qid, ...full } = q;
         await db.ref('queueLog').push({
           name: q.name, type: q.type || '', tableId: q.tableId || null, ...(q.seat ? { seat: q.seat } : {}), ...(q.people ? { people: q.people } : {}),
-          createdAt: q.createdAt, endedAt: now(), action: served ? 'served' : 'removed', qid: id, q: full, ...(bk ? { bk } : {})
+          createdAt: q.createdAt || now(), endedAt: now(), action: served ? 'served' : 'removed', qid: id, q: full, ...(bk ? { bk } : {})
         });
       }
       await db.ref('queue/' + id).remove();
@@ -1111,7 +1133,7 @@ async function sendOrderLater() {
   if (v === null) return;
   const mt = String(v).trim().match(/^(\d{1,2})[:.,\s]?(\d{2})?$/);
   if (!mt || +mt[1] > 23 || +(mt[2] || 0) > 59) return toast('Zadaj čas, napr. 20:00');
-  const t = new Date(); t.setHours(+mt[1], +(mt[2] || 0), 0, 0);
+  const t = new Date(now()); t.setHours(+mt[1], +(mt[2] || 0), 0, 0);
   if (t.getTime() < now() - 60e3) t.setDate(t.getDate() + 1);   // čas, ktorý dnes už bol = zajtra (napr. po polnoci)
   try {
     await call('POST', '/api/orders', { tableId, items: cart, note: orderNote, waiter: store.get('waiter', ''), dueAt: t.getTime() });
@@ -1182,16 +1204,16 @@ async function seedIfEmpty() {
   await Promise.all([ db.ref('menu').update(um), db.ref('tables').update(ut), db.ref('categories').update(uc), db.ref('attractions').update(ua) ]);
 }
 // Zaplatené objednávky staršie ako 30 dní sa odmažú
+// (2026-11-05) upratovanie robí len vedúci a len so známym časom servera (tryRender)
 function prune() {
+  if (!isManager) return;
   const u = {}, limit = now() - 30 * 864e5;
   S.orders.forEach(o => { if (o.status === 'zaplatena' && o.paidAt < limit) u[o.id] = null; });
   if (Object.keys(u).length) db.ref('orders').update(u).catch(() => {});
-  // zdieľané výplaty (hodiny, trinkgeľ) staršie ako 120 dní sa zmažú (len vedúci)
-  if (isManager) {
-    const plimit = dateKey(new Date(now() - 120 * 864e5)), up = {};
-    Object.keys(sharedPay || {}).forEach(day => { if (day < plimit) up[day] = null; });
-    if (Object.keys(up).length) db.ref('meta/payroll').update(up).catch(() => {});
-  }
+  // zdieľané výplaty (hodiny, trinkgeľ) staršie ako 120 dní sa zmažú
+  const plimit = dateKey(new Date(now() - 120 * 864e5)), up = {};
+  Object.keys(sharedPay || {}).forEach(day => { if (day < plimit) up[day] = null; });
+  if (Object.keys(up).length) db.ref('meta/payroll').update(up).catch(() => {});
   // zabudnuté mená k účtom: stôl už neexistuje, alebo je bez účtu a meno je staršie ako 12 hodín
   const ug = {}, glimit = now() - 12 * 3600e3;
   Object.keys(tableGuests || {}).forEach(id => {
@@ -1203,20 +1225,16 @@ function prune() {
   const us = {}; Object.keys(soldOut || {}).forEach(id => { if (!soldOut[id] || soldOut[id].day !== bizTodayISO()) us[id] = null; });
   if (Object.keys(us).length) db.ref('meta/soldOut').update(us).catch(() => {});
   // dočasné stoly, ktoré už nie sú potrebné (zaplatené / nepoužité 3 h), zmaže vedúci (mazať stoly smie len on)
-  if (isManager) {
-    const ut = {};
-    S.tables.forEach(t => { if (t.temp && !tempTableAlive(t) && t.id !== tableId) ut[t.id] = null; });
-    if (Object.keys(ut).length) db.ref('tables').update(ut).catch(() => {});
-    const ugone = {};
-    Object.keys(tempGone || {}).forEach(id => { if (!S.tables.some(t => t.id === id) || ut[id] === null) ugone[id] = null; });
-    if (Object.keys(ugone).length) db.ref('meta/tempGone').update(ugone).catch(() => {});
-  }
+  const ut = {};
+  S.tables.forEach(t => { if (t.temp && !tempTableAlive(t) && t.id !== tableId) ut[t.id] = null; });
+  if (Object.keys(ut).length) db.ref('tables').update(ut).catch(() => {});
+  const ugone = {};
+  Object.keys(tempGone || {}).forEach(id => { if (!S.tables.some(t => t.id === id) || ut[id] === null) ugone[id] = null; });
+  if (Object.keys(ugone).length) db.ref('meta/tempGone').update(ugone).catch(() => {});
   // vybavené položky z nástenky staršie ako 7 dní sa potichu zmažú (mazanie smie len vedúci, preto len tu)
-  if (isManager) {
-    const ub = {}, blimit = now() - 7 * 864e5;
-    S.board.forEach(b => { if (b.done && b.doneAt && b.doneAt < blimit) ub[b.id] = null; });
-    if (Object.keys(ub).length) db.ref('board').update(ub).catch(() => {});
-  }
+  const ub = {}, blimit = now() - 7 * 864e5;
+  S.board.forEach(b => { if (b.done && b.doneAt && b.doneAt < blimit) ub[b.id] = null; });
+  if (Object.keys(ub).length) db.ref('board').update(ub).catch(() => {});
 }
 
 let listening = false;
@@ -1227,7 +1245,8 @@ let pruned = false;
 function tryRender() {
   if (live.tables === null || live.menu === null || live.orders === null || live.categories === null || live.employees === null || live.access === null || live.queue === null || live.attractions === null || live.sessions === null || live.queueLog === null || live.board === null) return;
   onData({ tables: live.tables, menu: live.menu, orders: live.orders, categories: live.categories, employees: live.employees, access: live.access, queue: live.queue, attractions: live.attractions, sessions: live.sessions, queueLog: live.queueLog, board: live.board });
-  if (!pruned) { pruned = true; prune(); }
+  checkClock();
+  if (!pruned && serverOffset !== null) { pruned = true; prune(); }
 }
 // Neskúša to znova dookola, ak to raz zlyhá (napr. spoločný účet ešte nie je vo Firebase vytvorený) -
 // vtedy sa automaticky ponúkne prihlásenie vedúceho namiesto donekonečna opakovaných neúspešných pokusov.
@@ -1243,6 +1262,8 @@ async function attemptDeviceLogin() {
 }
 function backToGate() {
   wantManagerLogin = false;
+  $('#lpass').value = '';
+  if ($('#lerr')) $('#lerr').textContent = '';
   if (!auth.currentUser) { deviceLoginAttempted = false; attemptDeviceLogin(); }
   render();
 }
@@ -1262,19 +1283,45 @@ function showOfflineBar(on) {
   }
   el.style.display = on && uiOn('offlineBar') ? 'block' : 'none';
 }
+// (2026-11-05) ⏰ výrazný pás v hlavičke, keď sa hodiny zariadenia líšia od servera o viac ako 5 minút
+function showClockBar() {
+  const el = $('#clockBar'); if (!el) return;
+  const bad = Math.abs(serverOffset || 0) > 5 * 60e3, min = Math.round(Math.abs(serverOffset || 0) / 60e3);
+  el.classList.toggle('hide', !bad);
+  if (bad) el.textContent = `⏰ Hodiny tohto zariadenia idú ${serverOffset > 0 ? 'pozadu' : 'napred'} o ${min >= 2880 ? Math.round(min / 1440) + ' dní' : min >= 120 ? Math.round(min / 60) + ' h' : min + ' min'}. Objednávky rátajú s časom servera, ale oprav to: v nastaveniach zariadenia zapni automatický dátum a čas.`;
+}
+// čas servera je nameraný: uzávierka a história sa pri zlých hodinách nastavia na správny deň, potom môže bežať prune
+function setServerOffset(v) {
+  const first = serverOffset === null;
+  serverOffset = lastOffset = v; offsetBase = Date.now() - performance.now(); showClockBar();
+  if (first && Math.abs(v) > 60e3) { uzavDate = bizTodayDate(); histDate = bizTodayDate(); queueHistDate = new Date(now()); }
+  tryRender();
+}
 function connect() {
+  // čas servera: prvá hodnota príde po pripojení (dovtedy nie je známy)
+  db.ref('.info/serverTimeOffset').on('value', s => { const v = s.val(); if (typeof v === 'number') setServerOffset(v); });
   db.ref('.info/connected').on('value', s => {
     $('#conn').className = s.val() ? 'conn' : 'conn off'; $('#conn').textContent = s.val() ? '● online' : '● offline';
     // (2026-10-19) 🔴 veľký pás "Bez internetu" – keď spojenie vypadne na viac ako 4 s (krátke výpadky neruší)
     isOnline = !!s.val(); clearTimeout(offlineTimer);
     if (isOnline) showOfflineBar(false);
     else offlineTimer = setTimeout(() => { if (!isOnline) showOfflineBar(true); }, 4000);
+    // nové spojenie = nové meranie, ale rovnakú hodnotu Firebase nenahlási (uspaný tablet so správnymi hodinami): vtedy platí tá posledná
+    if (isOnline && serverOffset === null && lastOffset !== null) setTimeout(() => { if (isOnline && serverOffset === null) setServerOffset(lastOffset); }, 1000);
   });
+  setInterval(checkClock, 5000);   // zmena hodín sa zistí do 5 s, aj keď sa práve nič neráta (pás, nové meranie)
   auth.onAuthStateChanged(async user => {
+    // (2026-11-05) starý účet sa odhlási (signOut sem príde znova s user = null a prihlási sa zariadenie); vedúcemu sa otvorí jeho formulár
+    if (isOldAccount(user)) {
+      if ((user.email || '').toLowerCase() === OLD_MANAGER_EMAIL) { wantManagerLogin = true; if ($('#lmail')) $('#lmail').value = MANAGER_EMAIL; }
+      if (wantManagerLogin && $('#lerr')) $('#lerr').textContent = 'Účty sa zmenili – prihlás sa novým e-mailom.';
+      try { if (localStorage.getItem('cp_viewAs')) ['cp_viewAs', 'cp_myname', 'waiter'].forEach(k => localStorage.removeItem(k)); } catch (e) {}   // režim 👁 bez vedúceho nesmie nechať cudzie meno
+      try { await auth.signOut(); return; } catch (e) { user = null; }
+    }
     const isMgrAuth = !!user && (user.email || '').toLowerCase() === MANAGER_EMAIL.toLowerCase();
     // (2026-10-16) "👁 zobrazenie ako zamestnanec" z úvodnej stránky (cp_viewAs): vedúci sa správa ako čašník
     let va = ''; try { va = localStorage.getItem('cp_viewAs') || ''; } catch (e) {}
-    if (!isMgrAuth && va) { try { localStorage.removeItem('cp_viewAs'); } catch (e) {} va = ''; }
+    if (!isMgrAuth && va) { try { ['cp_viewAs', 'cp_myname', 'waiter'].forEach(k => localStorage.removeItem(k)); } catch (e) {} va = ''; }   // režim 👁 bez vedúceho nesmie nechať cudzie meno
     isManager = isMgrAuth && !va;
     const vb = document.getElementById('viewAsBack');
     if (vb) { vb.classList.toggle('hide', !(isMgrAuth && va)); vb.textContent = '👁 ' + va.split(' ')[0] + ' · ⚡ späť'; }
@@ -1292,12 +1339,10 @@ function connect() {
       else render();
       return;
     }
-    deviceLoginAttempted = false; deviceLoginFailed = false; wantManagerLogin = false;
+    deviceLoginAttempted = false; deviceLoginFailed = false; wantManagerLogin = false; pruned = false;
     render();
     try { await seedIfEmpty(); } catch (e) { console.warn(e); }
     const errH = () => {
-      // (2026-10-31) ešte prihlásené starým účtom zariadenia, ktorý nové pravidlá nepustia → odhlásiť, vypýta sa nové heslo
-      if ((user.email || '').toLowerCase() === OLD_DEVICE_EMAIL) { auth.signOut(); return; }
       toast('Nemáte prístup k dátam – skontrolujte pravidlá databázy');
     };
     db.ref('tables').on('value', s => { live.tables = s.val() || {}; tryRender(); }, errH);
@@ -1334,10 +1379,14 @@ async function login(ev) {
     if (mail.toLowerCase() === DEVICE_EMAIL) { try { localStorage.setItem('cp_devpw', pass); } catch (e) {} }
   }
   catch { $('#lerr').textContent = 'Nesprávny e-mail alebo heslo'; }
+  $('#lpass').value = '';   // (2026-11-05) heslo nesmie ostať v políčku: po ⎋ by sa ďalší prihlásil jedným ťuknutím
 }
 function logout() {
   if (!confirm('Odhlásiť toto zariadenie?')) return;
   store.set('waiter', '');
+  // (2026-11-05) meno platí aj pre Úvod a Smeny; kód, meno v bráne ani heslo nesmú ostať pre ďalšieho človeka
+  try { localStorage.removeItem('cp_myname'); } catch (e) {}
+  $('#lpass').value = ''; $('#gatePin').value = ''; $('#gateName').innerHTML = '';
   wantManagerLogin = false;
   auth.signOut();
 }
@@ -1389,7 +1438,7 @@ function toast(msg) {
   const d = document.createElement('div'); d.className = 'toast'; d.textContent = msg;
   document.body.appendChild(d); setTimeout(() => d.remove(), 2200);
 }
-const ago = t => { const m = Math.floor((Date.now() - t) / 60000); return m < 1 ? 'teraz' : m + ' min'; };
+const ago = t => { const m = Math.floor((now() - t) / 60000); return m < 1 ? 'teraz' : m + ' min'; };
 const open = () => S.orders.filter(o => o.status !== 'zaplatena');
 const tableOrders = id => open().filter(o => o.tableId === id);
 const sumOrders = os => os.reduce((s, o) => s + o.items.reduce((a, i) => a + i.price * i.qty, 0), 0);
@@ -1428,6 +1477,7 @@ window.addEventListener('popstate', () => {
   navBackStep();
   render(); scrollTo(0, 0);         // render() podľa potreby pridá nový strážny záznam
 });
+let lmailFor = '';   // pre ktorý formulár je predvyplnený e-mail
 function render() {
   syncNavHistory();
   if (expireBizDay()) toast('🌙 Pracovný deň sa vrátil na automatický (dnešok)');
@@ -1447,13 +1497,18 @@ function render() {
   const devForm = showManagerForm && !user && deviceLoginFailed;
   if ($('#ltitle')) $('#ltitle').textContent = devForm ? '🔐 Prihlásenie zariadenia' : 'Prihlásenie vedúceho';
   if ($('#ldev')) $('#ldev').classList.toggle('hide', !devForm);
-  if (devForm && $('#lmail') && !$('#lmail').value && document.activeElement !== $('#lmail')) $('#lmail').value = DEVICE_EMAIL;
+  // (2026-11-05) pri prechode medzi formulárom vedúceho a zariadenia sa prepíše aj predvyplnený e-mail, nie však to, čo niekto napísal
+  const lWant = devForm ? DEVICE_EMAIL : MANAGER_EMAIL;
+  if (showManagerForm && $('#lmail') && lmailFor !== lWant && document.activeElement !== $('#lmail')) { if (!$('#lmail').value || $('#lmail').value === lmailFor) $('#lmail').value = lWant; lmailFor = lWant; }
   $('#employeeGate').classList.toggle('hide', !showGate);
   if (showGate) {
     const sel = $('#gateName');
     if (sel && document.activeElement !== sel) {
       const names = (S.employees || []).map(e => e.name).sort((a, b) => a.localeCompare(b, 'sk'));
+      // (2026-11-05) zoznam sa prepisuje pri každom prekreslení: vybrané meno musí ostať, inak správny kód hlási „Nesprávny kód“ (iPhone po výbere stratí fokus)
+      const cur = sel.value;
       sel.innerHTML = names.length ? names.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('') : '<option value="">(žiadni zamestnanci)</option>';
+      if (cur && names.includes(cur)) sel.value = cur;
     }
   }
   const canUzavierka = isManager || !!(S.access && S.access.uzavierkaPin);
@@ -1527,11 +1582,10 @@ async function moveTblGroup(enc, dir) {
   try { await call('PUT', '/api/access', { groupOrder: list }); } finally { render(); }
 }
 const hiddenGroupSet = () => new Set((S.access && S.access.hiddenGroups) || []);
-// stoly, ktoré vidí toto zariadenie: vedúci všetky; čašník nie stoly zo skrytých skupín - ALE stôl s
+// stoly, ktoré vidí toto zariadenie: čašník ani vedúci nie stoly zo skrytých skupín (vedúci ich má v Nastaveniach → Stoly) - ALE stôl s
 // otvoreným účtom ostane viditeľný vždy (nech sa nestratia peniaze), plus voliteľne konkrétny stôl (keepId)
 function visibleTables(keepId) {
   const alive = S.tables.filter(t => tempTableAlive(t) || t.id === keepId);
-  if (isManager) return alive;
   const h = hiddenGroupSet();
   if (!h.size) return alive;
   return alive.filter(t => !h.has(t.group || '') || t.id === keepId || tableOrders(t.id).length);
@@ -1619,7 +1673,7 @@ function tableGamesTag(tId) {
 // (2026-10-16) rezervácia stola na dlaždici: "📌 19:00 · Novák (4)" – dnešné (do 6:00 rána); hodinu pred časom
 // (a keď už meškajú) oranžovo, aby tam nikto neusadil iných ľudí. Rezervácia bez času = "📌 čaká: meno".
 function tableResTag(tId) {
-  const nowT = now(), end = new Date(); end.setHours(6, 0, 0, 0); if (end.getTime() <= nowT) end.setDate(end.getDate() + 1);
+  const nowT = now(), end = new Date(nowT); end.setHours(6, 0, 0, 0); if (end.getTime() <= nowT) end.setDate(end.getDate() + 1);
   const rs = S.queue.filter(q => q.tableId === tId && (!q.reserveAt || q.reserveAt < end.getTime()))
     .sort((a, b) => (a.reserveAt || a.createdAt || 0) - (b.reserveAt || b.createdAt || 0));
   if (!rs.length) return { html: '', soon: false };
@@ -1646,13 +1700,13 @@ function renderTables() {
   const groups = {};
   const allVisible = visibleTables();
   const busyOnly = onlyBusy && uiOn('onlyBusy');
-  const tables = busyOnly ? allVisible.filter(tableIsBusy) : allVisible;   // čašník nevidí stoly zo skrytých skupín
+  const tables = busyOnly ? allVisible.filter(tableIsBusy) : allVisible;   // bez stolov zo skrytých skupín
   const hidden = hiddenGroupSet();
   tables.forEach(t => { const g = t.group || ''; (groups[g] = groups[g] || []).push(t); });
   const names = sortGroups(Object.keys(groups).filter(g => g));
   if (groups['']) names.push('');
   const html = names.map(g => `
-    ${g ? `<h2 style="margin-top:18px">${esc(g)}${hidden.has(g) ? ' <small class="muted" style="font-size:12px;font-weight:400">🙈 skrytá pre čašníkov</small>' : ''}</h2>` : (names.length > 1 ? '<h2 style="margin-top:18px">Bez skupiny</h2>' : '')}
+    ${g ? `<h2 style="margin-top:18px">${esc(g)}${hidden.has(g) ? ' <small class="muted" style="font-size:12px;font-weight:400">🙈 skrytá</small>' : ''}</h2>` : (names.length > 1 ? '<h2 style="margin-top:18px">Bez skupiny</h2>' : '')}
     <div class="grid tgrid">${groups[g].map(tableTile).join('')}</div>`).join('');
   const busyCount = allVisible.filter(tableIsBusy).length;
   const freeCount = allVisible.length - busyCount;
@@ -1789,7 +1843,7 @@ const fmtQTime = t => { const d = new Date(t); return `${String(d.getHours()).pa
 const isSameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 // Ako fmtQTime, ale keď je rezervácia na iný deň ako dnes, pridá aj dátum (napr. "5.10. 18:00"), nech sa
 // budúca rezervácia nedá pomýliť s dnešnou v tom istom (chronologicky zoradenom) zozname.
-const fmtQDateTime = t => { const d = new Date(t); const time = fmtQTime(t); return isSameDay(d, new Date()) ? time : `${d.getDate()}.${d.getMonth() + 1}. ${time}`; };
+const fmtQDateTime = t => { const d = new Date(t); const time = fmtQTime(t); return isSameDay(d, new Date(now())) ? time : `${d.getDate()}.${d.getMonth() + 1}. ${time}`; };
 // (2026-10-31) rezervácie sa ukazujú len pre jeden pracovný deň (6:00–6:00) – budúce (napr. šípky o 2 týždne) až v ten deň.
 // V aktuálnom dni aj rezervácie bez času („teraz“) a staršie neodbavené (nech sa nestratia). V zozname Rezervácií sa
 // dá prepnúť deň (qDay, '' = aktuálny pracovný deň); dlaždice stolov, atrakcie a „Ďalší na rade“ berú vždy aktuálny deň.
@@ -1914,6 +1968,7 @@ async function queueAgreed(id) {
 // Bez internetu po 4 s ako pri laserBookingOfQ – zhodí sa aspoň tu, v Rezerváciách sa dá odkliknúť zvlášť.
 async function preLinkPatch(qid, q) {
   const u = {};
+  if (q.grp) S.queue.filter(x => x.grp === q.grp).forEach(x => { u['queue/' + x.id + '/pre'] = null; });   // celá skupina stolov platí naraz
   const find = async () => {
     if (q.rezAttr) {
       const all = (await db.ref('laser/live/attr').once('value')).val() || {}, a = all[q.rezAttr];
@@ -1980,6 +2035,12 @@ async function restoreQueue(logId) {
   const rec = L.q && typeof L.q === 'object' ? { ...L.q }
     : { name: L.name, type: L.type || '', createdAt: L.createdAt || now(), ...(L.tableId ? { tableId: L.tableId } : {}), ...(L.seat ? { seat: L.seat } : {}), ...(L.people ? { people: L.people } : {}) };
   const qid = L.qid && !S.queue.some(x => x.id === L.qid) ? L.qid : db.ref('queue').push().key;
+  // (2026-11-05) stôl sa vracia k aktuálnemu menu, času a počtu skupiny: skupinu mohli medzitým upraviť
+  const sibs = rec.grp ? S.queue.filter(x => x.grp === rec.grp && x.id !== qid) : [];
+  if (sibs.length) {
+    ['name', 'note', 'reserveAt', 'pre', 'pg'].forEach(k => { if (sibs[0][k] === undefined) delete rec[k]; else rec[k] = sibs[0][k]; });
+    if (!sibs.some(x => x.people) && rec.pg) rec.people = rec.pg; else delete rec.people;
+  }
   try { await db.ref().update({ ['queue/' + qid]: rec, ['queueLog/' + logId + '/restoredAt']: now() }); }
   catch (e) { return toast('Nepodarilo sa vrátiť, skús znova'); }
   // (2026-11-01) „Prišli“ označilo aj laser game v Rezerváciách → vrátiť jej pôvodný stav (ak ho medzitým nikto nezmenil)
@@ -2156,7 +2217,7 @@ function renderQueueHistory() {
   const selPos = wasFocused ? document.activeElement.selectionStart : null;
   const dayStart = new Date(queueHistDate.getFullYear(), queueHistDate.getMonth(), queueHistDate.getDate()).getTime();
   const dayEnd = dayStart + 86400000;
-  const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+  const t0 = new Date(now()), todayStart = new Date(t0.getFullYear(), t0.getMonth(), t0.getDate()).getTime();
   const isToday = dayStart === todayStart;
   let rows = S.queueLog.filter(q => q.endedAt >= dayStart && q.endedAt < dayEnd).sort((a, b) => b.endedAt - a.endedAt);
   const q2 = fold(queueHistFilter || '');
@@ -2168,7 +2229,7 @@ function renderQueueHistory() {
       <b style="text-align:center;flex:1">${fmtDay(queueHistDate)}</b>
       <button class="btn ghost" style="width:auto" onclick="shiftQueueHist(1)" ${isToday ? 'disabled' : ''}>Deň ›</button>
     </div>
-    ${!isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="queueHistDate=new Date();render()">Dnes</button></div>` : ''}
+    ${!isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="queueHistDate=new Date(now());render()">Dnes</button></div>` : ''}
     <input id="queueHistFilterInput" value="${esc(queueHistFilter)}" placeholder="🔍 Hľadať meno…" style="margin-bottom:10px" oninput="queueHistFilter=this.value;renderQueueHistory()">
     ${rows.length ? `<div class="card" style="padding:0">${rows.map(q => `<div class="line">
         <div class="n"><b>${fmtTime(q.endedAt)}</b> · ${esc(q.name)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}
@@ -2186,7 +2247,7 @@ async function doStartSession(stationId, tableId, mode, timeVal) {
   if (mode === 'custom') {
     if (!timeVal) { toast('Zadaj čas'); return false; }
     const [h, mnt] = timeVal.split(':').map(Number);
-    const d = new Date(); d.setHours(h, mnt, 0, 0);
+    const d = new Date(now()); d.setHours(h, mnt, 0, 0);
     if (d.getTime() > now()) d.setDate(d.getDate() - 1); // zadaný čas je v budúcnosti (napr. tesne po polnoci) - berieme včerajší deň
     startedAt = d.getTime();
   }
@@ -3230,7 +3291,7 @@ function renderServe() {
 // a ešte nie sú zaplatené (zaplatené sa z účtu stola presúvajú do platby).
 let servedOpen = false;
 function servedBlock() {
-  const since = Date.now() - 12 * 3600e3;
+  const since = now() - 12 * 3600e3;
   const list = S.orders.filter(o => o.status === 'vydana' && o.hotovaAt && (o.vydanaAt || 0) >= since).sort((a, b) => b.vydanaAt - a.vydanaAt).slice(0, 40);
   return `<details class="card" style="margin-top:16px;padding:12px 14px" ${servedOpen ? 'open' : ''} ontoggle="servedOpen=this.open">
     <summary style="cursor:pointer;font-weight:700">✓ Už odnesené <span class="muted" style="font-weight:400">(${list.length}${list.length ? ', najnovšie hore' : ''})</span></summary>
@@ -4139,10 +4200,10 @@ function renderSettings() {
     // farba skupiny = farba, ktorú majú všetky jej stoly (ak majú rôzne, nie je vybraná žiadna)
     const gColor = list.length && list.every(x => (x.color || '') === (list[0].color || '')) ? (list[0].color || '') : null;
     return `<details ${openTblGroups.has(g) ? 'open' : ''} ontoggle="toggleTblGroupOpen('${enc}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;${gColor ? `border-left:6px solid ${gColor};` : ''}${isHidden ? 'opacity:.8;border-style:dashed' : ''}">
-      <summary data-group-drop="${enc}" style="cursor:pointer;font-weight:700;border-radius:8px;padding:2px 4px">${g ? esc(g) : 'Bez skupiny'} <span class="muted" style="font-weight:400">(${list.length} ${list.length === 1 ? 'stôl' : (list.length >= 2 && list.length <= 4 ? 'stoly' : 'stolov')})</span>${isHidden ? ' <span class="muted" style="font-weight:400">· 🙈 skrytá pre čašníkov</span>' : ''}${g && g !== TEMP_GROUP ? `<span style="float:right;display:inline-flex;gap:4px">${['▲', '▼'].map((l, k) => `<button class="btn ghost" title="${k ? 'Skupinu nižšie' : 'Skupinu vyššie'}" style="width:36px;height:32px;padding:0" onclick="event.preventDefault();event.stopPropagation();moveTblGroup('${enc}',${k ? 1 : -1})">${l}</button>`).join('')}</span>` : ''}</summary>
+      <summary data-group-drop="${enc}" style="cursor:pointer;font-weight:700;border-radius:8px;padding:2px 4px">${g ? esc(g) : 'Bez skupiny'} <span class="muted" style="font-weight:400">(${list.length} ${list.length === 1 ? 'stôl' : (list.length >= 2 && list.length <= 4 ? 'stoly' : 'stolov')})</span>${isHidden ? ' <span class="muted" style="font-weight:400">· 🙈 skrytá</span>' : ''}${g && g !== TEMP_GROUP ? `<span style="float:right;display:inline-flex;gap:4px">${['▲', '▼'].map((l, k) => `<button class="btn ghost" title="${k ? 'Skupinu nižšie' : 'Skupinu vyššie'}" style="width:36px;height:32px;padding:0" onclick="event.preventDefault();event.stopPropagation();moveTblGroup('${enc}',${k ? 1 : -1})">${l}</button>`).join('')}</span>` : ''}</summary>
       ${g ? `<div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin:10px 0">
         <input value="${esc(g)}" maxlength="20" title="Premenovať skupinu (Enter = uložiť)" style="flex:1;min-width:120px" onkeydown="if(event.key==='Enter')this.blur()" onchange="renameTblGroup('${enc}',this.value)">
-        <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="setTblGroupHidden('${enc}',${!isHidden})">${isHidden ? '👁 Zobraziť čašníkom' : '🙈 Skryť pred čašníkmi'}</button>
+        <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="setTblGroupHidden('${enc}',${!isHidden})">${isHidden ? '👁 Zobraziť' : '🙈 Skryť'}</button>
         ${!list.length ? `<button class="del" onclick="delTblGroup('${enc}')">Zmazať skupinu</button>` : ''}
       </div>` : '<div style="height:8px"></div>'}
       ${list.length ? `<div class="row" style="gap:4px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><span class="muted" style="font-size:12px;margin-right:4px">Farba celej skupiny:</span>
@@ -4263,7 +4324,7 @@ function renderSettings() {
         <button class="btn ${tempTop ? 'ghost' : ''}" style="width:auto;padding:8px 14px" onclick="setTempPos('bottom')">⬇ Úplne dole</button></div>` : ''}
       <div class="row" style="gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px;padding-bottom:12px;border-bottom:1px solid var(--line)">
         <input id="newGroup" maxlength="20" placeholder="Nová skupina, napr. Terasa alebo P (Enter = vytvoriť)" style="flex:1;min-width:160px" onkeydown="if(event.key==='Enter'){event.preventDefault();createTblGroup()}">
-        <label class="muted" style="font-size:13px;display:flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" id="newGroupHidden"> skryť pred čašníkmi</label>
+        <label class="muted" style="font-size:13px;display:flex;align-items:center;gap:4px;white-space:nowrap"><input type="checkbox" id="newGroupHidden"> skryť</label>
         <button class="btn" style="width:auto" onclick="createTblGroup()">+ Vytvoriť skupinu</button>
       </div>
       ${Object.keys(colorUse).length ? `<div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;font-size:12px;margin-bottom:10px">
@@ -4272,7 +4333,7 @@ function renderSettings() {
         <span class="muted">· ✕ na farbe = už ju má iná skupina</span></div>` : ''}
       <div id="tableList">${t || '<p class="muted">Zatiaľ žiadne stoly ani skupiny.</p>'}</div>
       ${S.tables.length > 1 ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Ťukni na skupinu – rozbalí sa a uvidíš jej stoly. Podrž ⠿ a potiahni – zmení sa poradie stolov. Do inej skupiny stôl presunieš tak, že ho pustíš na jej stôl alebo na jej nadpis (ide to aj pri zbalenej skupine), prípadne výberom skupiny v riadku.</p>' : ''}
-      <p class="muted" style="font-size:12px;margin-top:6px">🙈 Skrytú skupinu čašníci na svojich zariadeniach nevidia (vedúci áno). Stôl zo skrytej skupiny, na ktorom je otvorený účet, sa im ukáže aj tak – nech sa nestratí nezaplatený účet. Nový stôl v skupine prevezme farbu skupiny.</p></div>`;
+      <p class="muted" style="font-size:12px;margin-top:6px">🙈 Skrytú skupinu v Objednávkach nevidí čašník ani vedúci, ostáva len tu v Nastaveniach. Stôl zo skrytej skupiny, na ktorom je otvorený účet, sa ukáže aj tak – nech sa nestratí nezaplatený účet. Nový stôl v skupine prevezme farbu skupiny.</p></div>`;
 
   // (2026-10-31) karta „🧊 Ľad a poháre podľa kategórie“ z Nastavení odstránená na želanie majiteľa (nič nebolo zaškrtnuté)
   const menuTab = `<h2>Kategórie</h2><div class="card">
@@ -4563,14 +4624,14 @@ async function createTblGroup() {
   if (hide) body.hiddenGroups = [...hiddenGroupSet(), g];
   openTblGroups.add(g);
   await call('PUT', '/api/access', body);
-  toast(hide ? `Skupina ${g} vytvorená a skrytá pred čašníkmi 🙈` : `Skupina ${g} vytvorená`);
+  toast(hide ? `Skupina ${g} vytvorená a skrytá 🙈` : `Skupina ${g} vytvorená`);
   render();
 }
 async function setTblGroupHidden(enc, hide) {
   const g = decodeURIComponent(enc), set = hiddenGroupSet();
   if (hide) set.add(g); else set.delete(g);
   await call('PUT', '/api/access', { hiddenGroups: [...set] });
-  toast(hide ? `${g}: skrytá pred čašníkmi 🙈` : `${g}: čašníci ju opäť vidia 👁`);
+  toast(hide ? `${g}: skrytá 🙈` : `${g}: znova viditeľná 👁`);
   render();
 }
 async function delTblGroup(enc) {
@@ -4716,7 +4777,7 @@ let gateLoginFails = 0;
 function confirmGateLogin() {
   const err = $('#gateErr');
   const lockUntil = Number(localStorage.getItem('cp_gate_lockuntil') || 0);
-  if (Date.now() < lockUntil) { if (err) err.textContent = `Príliš veľa pokusov. Skús to o ${Math.ceil((lockUntil - Date.now()) / 1000)} s.`; return; }
+  if (Date.now() < lockUntil) { $('#gatePin').value = ''; if (err) err.textContent = `Príliš veľa pokusov. Skús to o ${Math.ceil((lockUntil - Date.now()) / 1000)} s.`; return; }
   const name = $('#gateName')?.value || '';
   const pin = ($('#gatePin')?.value || '').trim();
   if (!name) { if (err) err.textContent = 'Vyber svoje meno'; return; }
@@ -4724,13 +4785,16 @@ function confirmGateLogin() {
   const emp = (S.employees || []).find(e => e.name === name);
   if (!emp || !emp.code || String(emp.code) !== pin) {
     gateLoginFails++;
+    $('#gatePin').value = '';
     if (gateLoginFails >= 5) { gateLoginFails = 0; localStorage.setItem('cp_gate_lockuntil', String(Date.now() + 60000)); if (err) err.textContent = 'Príliš veľa pokusov. Skús to o minútu.'; return; }
     if (err) err.textContent = 'Nesprávny kód';
     return;
   }
-  if (!hubAllowed(name, 'objednavky')) { if (err) err.textContent = 'Nemáš prístup do Objednávok. Ozvi sa vedúcemu.'; return; }
+  if (!hubAllowed(name, 'objednavky')) { $('#gatePin').value = ''; if (err) err.textContent = 'Nemáš prístup do Objednávok. Ozvi sa vedúcemu.'; return; }
   gateLoginFails = 0;
   if (err) err.textContent = '';
+  // (2026-11-05) meno a kód nesmú ostať v bráne: po ⎋ by sa ďalší človek jedným ťuknutím prihlásil ako tento zamestnanec
+  $('#gatePin').value = ''; $('#gateName').innerHTML = '';
   store.set('waiter', name);
   try { localStorage.setItem('cp_myname', name); } catch (e) {}   // jedno prihlásenie aj pre Smeny a úvod
   toast('Prihlásený ako ' + name + ' ✓');
@@ -4747,7 +4811,7 @@ setInterval(() => { if (role !== 'nastavenia') safeRender(); }, 30000); // obnov
 // ---------- upozornenie na blížiacu sa rezerváciu ----------
 function checkReservationReminders() {
   if (!S.queue || !S.queue.length) return;
-  const t = Date.now();
+  const t = now();
   S.queue.forEach(q => {
     if (!q.reserveAt) return;
     const diff = q.reserveAt - t;

@@ -89,14 +89,17 @@
   // ===== ÚVODNÁ STRÁNKA ChillPoint =====
   // Rozcestník + nástenka "Dnes" + odovzdávka smeny + jedno prihlásenie pre Smeny aj Objednávky
   // (nastaví cp_myname pre Smeny a waiter pre Objednávky) + vedúci nastavuje prístupy zamestnancov.
-  const MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
+  const MANAGER_EMAIL = 'chillpoint2015@gmail.com';
   // zdieľané zariadenie (rovnaké ako v Objednávkach) – (2026-10-31) bez prihláseného účtu personálu databáza nič nepustí
   // (ani zoznam zamestnancov na prihlásenie, smeny, nákupy…), takže zariadenie sa prihlási skôr, než sa čokoľvek načíta.
   // (2026-10-31) Heslo UŽ NIE JE v kóde (stránky sú verejné na GitHube): zadá sa raz na každom zariadení (🔐 karta nižšie)
   // a uloží sa len v tomto prehliadači (localStorage cp_devpw) – po odhlásení vedúceho sa zariadenie prihlási samo ako doteraz.
   // Čítajú ho aj Objednávky, Rezervácie a Odpovede (rovnaká adresa = rovnaké úložisko).
-  const DEVICE_EMAIL = 'rezervacia@chillpoint.sk';
-  const OLD_DEVICE_EMAIL = 'zariadenie@chillpoint-smeny.sk';   // do 2026-10-31 (heslo bolo verejné) – už ho pravidlá nepustia
+  const DEVICE_EMAIL = 'chillpoint2015+zariadenie@gmail.com';
+  // (2026-11-05) účty sa presunuli na skutočnú schránku: každý iný účet (staré vedouci@, rezervacia@, bar@, zariadenie@…) už pravidlá nepustia,
+  // preto sa pri načítaní odhlási a ďalej to ide ako bez účtu (zariadenie sa prihlási uloženým heslom alebo si ho vypýta, vedúci sa prihlási bežne)
+  const isOldAccount = u => !!u && ![MANAGER_EMAIL, DEVICE_EMAIL].includes((u.email || '').toLowerCase());
+  const OLD_MANAGER_EMAIL = 'vedouci@chillpoint-smeny.sk';
   const BAD_PW = /wrong-password|invalid-credential|invalid-login|user-not-found|user-disabled|invalid-email/;
   // časti, ku ktorým vedúci nastavuje prístup (settings/hubAccess/e/<meno>/<kľúč> = false -> nemá prístup)
   const AREAS = [['smeny', '📅 Smeny'], ['objednavky', '🍹 Objednávky'], ['kupit', '📦 Kúpiť'], ['odovzdavka', '📝 Odovzdávka'], ['rezervacie', '📆 Rezervácie']];
@@ -128,7 +131,7 @@
   let isMgrAuth = false, viewAs = ls.get('cp_viewAs') || '';
   function applyView() {
     if (isMgrAuth && viewAs) { isMgr = false; me = viewAs; }
-    else { isMgr = isMgrAuth; if (!isMgrAuth && viewAs && authReady) { viewAs = ''; ls.del('cp_viewAs'); } }
+    else { isMgr = isMgrAuth; if (!isMgrAuth && viewAs && authReady) { viewAs = ''; me = ''; ls.del('cp_viewAs'); ls.del('cp_myname'); ls.set('waiter', JSON.stringify('')); } }   // režim 👁 bez vedúceho nesmie nechať cudzie meno
   }
   function viewAsEmp(name) {
     if (!isMgrAuth || !name) return;
@@ -220,7 +223,7 @@
   function empLogin() {
     ui.lName = $('lName').value; ui.lCode = $('lCode').value; blurNow();   // inak by render() (guard na fokus) neukázal chybu
     const lock = Number(ls.get('cp_lockuntil') || 0);
-    if (Date.now() < lock) { ui.err = `Príliš veľa pokusov. Skús to o ${Math.ceil((lock - Date.now()) / 1000)} s.`; return render(); }
+    if (Date.now() < lock) { ui.lCode = ''; if ($('lCode')) $('lCode').value = ''; ui.err = `Príliš veľa pokusov. Skús to o ${Math.ceil((lock - Date.now()) / 1000)} s.`; return render(); }
     const name = $('lName').value, code = $('lCode').value.trim();
     const e = emps.find(x => x.name === name);
     if (!e) { ui.err = 'Vyber svoje meno.'; return render(); }
@@ -230,7 +233,7 @@
       else ui.err = 'Nesprávny kód.';
       return render();
     }
-    if (((access.e || {})[enc(name)] || {}).smeny === false && ((access.e || {})[enc(name)] || {}).objednavky === false) { ui.err = 'Nemáš prístup. Ozvi sa vedúcemu.'; return render(); }
+    if (((access.e || {})[enc(name)] || {}).smeny === false && ((access.e || {})[enc(name)] || {}).objednavky === false) { ui.lCode = ''; $('lCode').value = ''; ui.err = 'Nemáš prístup. Ozvi sa vedúcemu.'; return render(); }
     fails = 0; ui.err = ''; ui.lCode = ''; me = name;
     ls.set('cp_myname', name); ls.set('waiter', JSON.stringify(name));   // Smeny + Objednávky naraz
     toast(`Vitaj, ${name.split(' ')[0]}!`); render();
@@ -243,7 +246,7 @@
       await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
       await firebase.auth().signInWithEmailAndPassword(MANAGER_EMAIL, pw);
       ui.err = ''; ui.mgrForm = false; toast('Prihlásený ako vedúci ⚡');
-    } catch (e) { ui.err = 'Nesprávne heslo.'; render(); }
+    } catch (e) { ui.err = 'Nesprávne heslo.'; if ($('mPass')) $('mPass').value = ''; render(); }
   }
   // 🔐 prihlásenie zariadenia (2026-10-31): devNeed = nikto nie je prihlásený a uložené heslo chýba / neplatí
   let devNeed = false, devErr = '';
@@ -264,9 +267,9 @@
       await firebase.auth().setPersistence(firebase.auth.Auth.Persistence.LOCAL);
       await firebase.auth().signInWithEmailAndPassword(DEVICE_EMAIL, pw);
       ls.set('cp_devpw', pw); devNeed = false; devErr = ''; toast('🔐 Zariadenie prihlásené ✓');
-    } catch (e) { devErr = BAD_PW.test((e && e.code) || '') ? 'Nesprávne heslo zariadenia.' : 'Nepodarilo sa prihlásiť – skontroluj internet.'; render(); }
+    } catch (e) { const bad = BAD_PW.test((e && e.code) || ''); if (bad && $('dPass')) $('dPass').value = ''; devErr = bad ? 'Nesprávne heslo zariadenia.' : 'Nepodarilo sa prihlásiť – skontroluj internet.'; render(); }
   }
-  const devCard = () => !authReady || !devNeed || (user && (user.email || '').toLowerCase() !== OLD_DEVICE_EMAIL) ? '' : `<div class="card" style="border-color:var(--yellow)">
+  const devCard = () => !authReady || !devNeed || user ? '' : `<div class="card" style="border-color:var(--yellow)">
       <h3 style="margin:0 0 6px">🔐 Prihlásiť toto zariadenie</h3>
       <p style="margin:0 0 8px;color:var(--muted);font-size:13px">Stačí raz na každom mobile / tablete – heslo zariadenia povie vedúci, prehliadač si ho zapamätá. Bez toho sa nenačíta nič (ani zoznam mien na prihlásenie, Smeny či Objednávky).</p>
       <form onsubmit="return false" style="margin:0"><input type="text" name="username" autocomplete="username" value="${DEVICE_EMAIL}" hidden><input type="password" id="dPass" placeholder="Heslo zariadenia" autocomplete="current-password" onkeydown="if(event.key==='Enter')devLogin()"></form>
@@ -446,7 +449,14 @@
   }
 
   // ---- vykreslenie ----
-  let loginHtml = '';   // čo je práve vykreslené na prihlasovacej obrazovke
+  let loginHtml = '', homeHtml = '';   // čo je práve vykreslené na prihlasovacej a na hlavnej obrazovke
+  // (2026-11-05) prekreslenie nesmie zmazať rozpísané heslo: po skrytí klávesnice políčko nemá fokus a živá zmena dát by ho vymazala
+  function writeApp(app, html) {
+    const d = ($('dPass') || {}).value, m = ($('mPass') || {}).value;
+    app.innerHTML = html;
+    if (d && $('dPass')) $('dPass').value = d;
+    if (m && $('mPass')) $('mPass').value = m;
+  }
   function render() {
     // nerušiť písanie odovzdávky / prihlasovacích údajov pri živej zmene dát
     const ae = document.activeElement && document.activeElement.id;
@@ -466,11 +476,12 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" oninput="ui.lCode=this.value" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-04</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-05</footer>`;
       // (2026-11-04) Rovnaký obsah sa neprekresľuje: iPhone po výbere zo zoznamu stratí fokus, focusout zavolá render() a nové políčka
       // by zmazali vybrané meno aj rozpísaný kód či heslo – zamestnanec sa potom nevedel prihlásiť. Keď sa obsah naozaj zmení, meno a kód vráti ui.
+      homeHtml = '';
       if (html !== loginHtml) {
-        app.innerHTML = loginHtml = html;
+        writeApp(app, html); loginHtml = html;
         const n = $('lName');
         if (n) { n.value = ui.lName || ''; if (n.selectedIndex < 0) n.value = ''; $('lCode').value = ui.lCode || ''; }
       }
@@ -623,8 +634,8 @@
         + link('rezervacie.html#nastavenia', '🎯', 'Nastavenia rezervácií', 'Balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe');
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-11-04</footer>`;
-    app.innerHTML = html;
+      <footer>🏠 Úvod (index.html) · verzia 2026-11-05</footer>`;
+    if (html !== homeHtml) { writeApp(app, html); homeHtml = html; }   // rovnaký obsah sa neprekresľuje (ťuknutie po skrytí klávesnice by sa stratilo)
   }
 
   // ---- Firebase ----
@@ -639,7 +650,7 @@
       appId: "1:251580957782:web:801f838e4cd65abb4027f7"
     });
     const db = firebase.database();
-    // (2026-10-31) Dáta čítajú LEN prihlásené účty personálu (vedúci, bar, zariadenie) – cudzí ich už nevidí. Odbery sa
+    // (2026-10-31) Dáta čítajú LEN prihlásené účty personálu (vedúci, zariadenie) – cudzí ich už nevidí. Odbery sa
     // preto pripoja až po prihlásení; po odhlásení ich Firebase zruší, preto ich zrušíme aj my a pri ďalšom prihlásení
     // (napr. zariadenie po odhlásení vedúceho) sa pripoja znova.
     let subs = [];
@@ -651,7 +662,9 @@
     setInterval(() => { watchDay(); render(); }, 60000);
     function startData() {
       if (subs.length) return;
-      on('employees/list', v => { emps = (Array.isArray(v) ? v : Object.values(v || {})).filter(e => e && e.name).sort((a, b) => a.name.localeCompare(b.name, 'sk')); });
+      on('employees/list', v => { emps = (Array.isArray(v) ? v : Object.values(v || {})).filter(e => e && e.name).sort((a, b) => a.name.localeCompare(b.name, 'sk'));
+        if (me && !viewAs && emps.length && !emps.some(e => e.name === me)) { me = ''; ls.del('cp_myname'); ls.set('waiter', JSON.stringify('')); }   // odstránený zo zoznamu sa odhlási (prázdny zoznam = nenačítaný)
+      });
       on('todos', v => { todos = v || {}; });
       on('board', v => { board = v || {}; });
       on('notices', v => { notices = v || {}; });
@@ -668,12 +681,17 @@
       laserBk = {}; watch(db.ref(`laser/${laserEnv}/bookings`), s => { laserBk = s.val() || {}; render(); }, () => { laserBk = null; });
     }
     function stopData() { subs.forEach(f => f()); subs = []; dayKey = ''; }
-    // bez prihláseného účtu (alebo so starým účtom zariadenia, ktorý už nič nesmie) sa prihlási zariadenie uloženým heslom
+    // bez prihláseného účtu sa prihlási zariadenie uloženým heslom; starý účet sa najprv odhlási (signOut sem príde znova s u = null)
     firebase.auth().onAuthStateChanged(async u => {
-      user = u; isMgrAuth = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL; authReady = true; applyView();
-      if (!u || (u.email || '').toLowerCase() === OLD_DEVICE_EMAIL) {
+      if (isOldAccount(u)) {
         stopData();
-        if (u) devErr = 'Toto zariadenie je ešte prihlásené starým účtom – zadaj nové heslo zariadenia.';
+        if ((u.email || '').toLowerCase() === OLD_MANAGER_EMAIL) { ui.mgrForm = true; ui.err = 'Účet vedúceho sa zmenil – prihlás sa heslom nového účtu.'; me = ''; ls.del('cp_myname'); ls.set('waiter', JSON.stringify('')); }   // formulár vedúceho je len na neprihlásenej obrazovke
+        if (viewAs) { me = ''; viewAs = ''; ls.del('cp_viewAs'); ls.del('cp_myname'); ls.set('waiter', JSON.stringify('')); }   // režim 👁 bez vedúceho nesmie nechať cudzie meno
+        try { await firebase.auth().signOut(); return; } catch (e) { u = null; }
+      }
+      user = u; isMgrAuth = !!u && (u.email || '').toLowerCase() === MANAGER_EMAIL; authReady = true; applyView();
+      if (!u) {
+        stopData();
         devAutoLogin(); return;
       }
       devNeed = false;
