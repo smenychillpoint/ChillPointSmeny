@@ -153,6 +153,7 @@
     .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
     .day{font-size:13px;letter-spacing:.08em;color:var(--yellow);margin:18px 0 6px;text-transform:uppercase;font-weight:800}
     .ov{position:fixed;inset:0;background:rgba(0,0,0,.72);z-index:5;display:flex;align-items:flex-start;justify-content:center;overflow:auto;padding:max(12px,env(safe-area-inset-top)) 10px 30px}
+    @media (pointer:coarse){.ov{padding-bottom:calc(30px + 45vh)}}
     .box{background:var(--panel);border:1px solid var(--yellow);width:min(560px,100%);padding:16px;position:relative}
     .box.mc{border-color:var(--purple)}
     .box .x{position:sticky;top:0;float:right;background:#26292d;border:1px solid var(--line);color:#fff;font-size:18px;width:36px;height:36px;cursor:pointer;margin:-6px -6px 0 8px}
@@ -215,6 +216,9 @@
     .hrow{display:grid;grid-template-columns:120px minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;padding:5px 0;border-top:1px solid #2b2e33}
     .hrow:first-child{border-top:0}
     .hrow select{margin:0;padding:7px}
+    /* (2026-11-08) 🌙 koniec po polnoci a ⚠ inak uložené hodiny – riadok cez celú šírku dňa */
+    .hrow .hn{grid-column:1/-1;font-size:12px;line-height:1.4;color:#5cc8ff}
+    .hrow .hn.w{color:var(--yellow)}
     label.chk{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:14px}
     label.chk input{width:20px;height:20px;margin:0;flex:none}
     /* (2026-10-28) 🏁 odohraté hry, 🪑 stôl, 👥 kto vidí rezervácie */
@@ -300,6 +304,8 @@
   // Nastavenia rezervácií = laser/<env>/config (plugin ich načíta a prepíšu jeho WordPress nastavenia).
   // DEF = predvolené hodnoty pluginu; kým config nie je uložený, web berie hodiny z WordPressu (tu sa ukážu tieto).
   // hours: kľúč = deň v týždni (0 = nedeľa), chýbajúci deň = zatvorené; "24:00" = polnoc
+  // (2026-11-08) hours[dow] = [od, do] alebo [od, '24:00', 'HH:MM'] = koniec po polnoci (00:15–02:00, patrí ešte k tomuto dňu);
+  // plugin 1.9.4 číta len prvé dva prvky (deň mu končí o polnoci), 1.9.5 aj tretí. Appka nikdy nezapíše [od, do ≤ od] ani [od, '26:00'].
   const DEF = { hours: { 0: ['13:00', '22:00'], 1: ['15:00', '22:00'], 2: ['15:00', '22:00'], 3: ['15:00', '22:00'], 4: ['15:00', '22:00'], 5: ['15:00', '24:00'], 6: ['13:00', '24:00'] },
     daysOff: [], step: 20, game: 15, change: 5, rest: 40, minPlayers: 2, maxPlayers: 16, maxGames: 8, leadMinutes: 15, offers: [{ minPlayers: 8, paid: 3, free: 1 }], offerStep: 'off',
     stepOrder: 'players', webPkgs: {}, mailCustomer: true, mailNote: 'Príďte prosím aspoň 10 minút pred prvou hrou.', mailUs: '', selfHours: 3 };
@@ -377,7 +383,7 @@
   // balíček rezervácie (null = len laser game); neznámy balíček (zmazaný v nastaveniach) → predvolené hodnoty s jeho id
   const pkgOf = b => (b && b.pkg && b.pkg !== 'laser' && b.pkg !== CLOSED_PKG) ? (pkgs()[b.pkg] || pkgNorm({ name: b.pkg === 'monster' ? 'Monster Chill' : b.pkg })) : null;
   // 🔒 uzavretá spoločnosť (2026-10-29) = rezervácia s pkg 'uzavreta', ktorá zaberie všetky hry od–do (na webe sú obsadené)
-  const CLOSED_PKG = 'uzavreta';
+  const CLOSED_PKG = 'uzavreta', CLOSED_NAME = 'Uzavretá spoločnosť';   // (2026-11-09) názov, keď ho vedúci nenapíše
   // (2026-10-29) počet hráčov 0 = neuviedli („?“) – zapisuje len personál, web posiela vždy číslo
   const plTxt = b => (+(b && b.players) > 0 ? String(b.players) : '?');
   const isClosed = b => !!b && b.pkg === CLOSED_PKG;
@@ -392,6 +398,8 @@
   // 🚪 (2026-11-02) arrive = kedy prídu, ak to nie je čas prvej hry ('HH:MM', po polnoci 24:xx); zapisuje len personál. Bez neho ako doteraz.
   const arrOf = b => b && !isClosed(b) && hhmm(b.arrive) ? b.arrive : '';
   const DAY_NAMES = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
+  // (2026-11-08) „v noci na sobotu“ (akuzatív) a krátke názvy dní – rovnaké ako v plugine 1.9.5
+  const NOC_NA = ['nedeľu', 'pondelok', 'utorok', 'stredu', 'štvrtok', 'piatok', 'sobotu'], DAY_SHORT = ['Ne', 'Po', 'Ut', 'St', 'Št', 'Pi', 'So'];
 
   const $ = id => document.getElementById(id);
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -406,6 +414,8 @@
   const DAY_START = 6 * 60, LATE_END = 26 * 60;   // po polnoci sa dá zapisovať do 02:00
   const showM = m => toTime(((m % 1440) + 1440) % 1440);
   const showT = t => showM(toMin(t));
+  // (2026-11-08) čas hry s 🌙, keď je po polnoci (24:00+ = ešte tento deň 6–6) – len na zobrazenie
+  const nightT = t => (toMin(t) >= 1440 ? '🌙 ' : '') + showT(t);
   const bizOf = (date, time) => toMin(time) < DAY_START ? { date: addDays(date, -1), time: toTime(toMin(time) + 1440) } : { date, time };
   const rawOf = (date, time) => toMin(time) >= 1440 ? { date: addDays(date, 1), time: toTime(toMin(time) - 1440) } : { date, time };
   const rawKey = (date, time) => { const r = rawOf(date, time); return r.date + '_' + r.time.replace(':', ''); };
@@ -417,13 +427,25 @@
   const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
   function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
   const blurNow = () => { try { document.activeElement && document.activeElement.blur(); } catch (e) {} };
-  // otváracie hodiny dňa v minútach [od, do] alebo null = zatvorené (ako hoursFor v plugine)
+  // (2026-11-08) hodiny dňa h = hours[dow] → [od, do] v minútach dňa 6–6 (po polnoci 1440+) alebo null = zatvorené.
+  // Spoločné pravidlo – ROVNAKÉ ako cpr_day_min (PHP) a dayMin (rezervacia.js) v plugine 1.9.5: „do“ najviac 24:00 (00:00 = polnoc),
+  // koniec po polnoci len z 3. prvku pri „do“ = polnoc; starý tvar [od, do ≤ od] s „do“ pred 06:00 len pre istotu; strop 02:00 (LATE_END).
+  // Iný typ alebo tvar (čísla, chýbajúci prvok) = zatvorené, nikdy chyba.
+  const isHm = t => typeof t === 'string' && /^\d{1,2}:[0-5]\d$/.test(t);
+  const nocOk = t => typeof t === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(t) && toMin(t) > 0 && toMin(t) < DAY_START;
+  function dayHoursMin(h) {
+    if (!h || typeof h !== 'object' || !isHm(h[0]) || !isHm(h[1])) return null;
+    const a = toMin(h[0]); if (a >= 1440) return null;
+    const b0 = toMin(h[1]), noc = nocOk(h[2]) ? toMin(h[2]) : 0;
+    let b = b0 === 0 ? 1440 : Math.min(b0, 1440);
+    if (b === 1440 && noc > 0) b = 1440 + Math.min(noc, LATE_END - 1440);
+    else if (b <= a && b0 > 0 && b0 < DAY_START) b = 1440 + Math.min(b0, LATE_END - 1440);   // starý tvar, napr. ['15:00', '02:00']
+    return b > a ? [a, b] : null;
+  }
+  // otváracie hodiny dňa (6–6) v minútach [od, do] alebo null = zatvorené (deň voľna, chýbajúci deň) – ako hoursFor v plugine 1.9.5
   function hoursFor(date) {
     if ((B.daysOff || []).includes(date)) return null;
-    const h = (B.hours || {})[new Date(date + 'T12:00:00').getDay()];
-    if (!(h && h[0] && h[1])) return null;
-    const a = toMin(h[0]), b = toMin(h[1]);
-    return [a, b > a ? b : b + 1440];   // „02:00“ (menej ako otvorenie) = do 2:00 po polnoci
+    return dayHoursMin((B.hours || {})[new Date(date + 'T12:00:00').getDay()]);
   }
   // začiatky hier podľa nastavení (ako timesFor v plugine, bez odrátania minulých)
   function dayTimes(date) {
@@ -712,14 +734,17 @@
     busyAct = false;
   }
   function openDetail(id) { sel = id; render(); }
-  function closeOv() { sel = ''; f = null; af = null; tf = null; cf = null; more = null; render(); }
+  // (2026-11-09) ťuk vedľa okna: formulár (rezervácia, stôl, atrakcia, uzavretá) sa nezavrie a rozpísané údaje sa nestratia – na mobile sa tam ťuká,
+  // keď treba schovať klávesnicu (zmizne len nepridaný „+ Vlastný čas“); zavrie ho ✕ alebo spodné tlačidlo. Okná bez formulára (detail, ponuka) sa zavrú ako doteraz.
+  function ovBg(e) { if (e.target !== e.currentTarget) return; if (f || af || tf || cf) blurNow(); else closeOv(); }
+  function closeOv() { blurNow(); sel = ''; f = null; af = null; tf = null; cf = null; more = null; render(); }
   // ⋯ ďalšie akcie k rezervácii v tabuľke dňa (2026-10-30) – v riadku ostáva len Potvrdiť a Odohratá
   let more = null;   // {id, t}
   function openMore(id, t) { if (bookings[id]) { more = { id, t }; render(); } }
   function moreGo(fn) { more = null; render(); fn(); }
   function moreHtml() {
     const b = { id: more.id, ...bookings[more.id] }, st = stOf(b);
-    return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box menu">
+    return `<div class="ov" onclick="ovBg(event)"><div class="box menu">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${esc(b.name)} <span class="mut" style="font-size:14px;font-weight:400">${esc(showT(more.t))}</span></h3>
       ${b.note ? `<div class="info" style="margin-bottom:4px">📝 ${esc(b.note)}</div>` : ''}
@@ -854,7 +879,7 @@
     const tk = todayKey(), out = [], seen = new Set();
     live().filter(isPre).forEach(b => {
       const g = gamesOf(b).filter(x => x.date >= tk); if (!g.length) return;
-      const d = g[0].date, gm = g.filter(x => x.date === d).map(x => showT(x.time)).join(' · '), P = pkgOf(b);
+      const d = g[0].date, gm = g.filter(x => x.date === d).map(x => nightT(x.time)).join(' · '), P = pkgOf(b);   // (2026-11-08) 🌙 po polnoci
       out.push({ k: 'b', id: b.id, date: d, time: arrOf(b) || (P && b.mStart) || g[0].time, name: b.name, people: isClosed(b) ? '' : plTxt(b), ts: b.createdAt, go: `openDetail('${b.id}')`,
         what: isClosed(b) ? `${IC('closed')} Uzavretá spoločnosť ${esc(closedRange(b).join('–'))}` : `${P ? pIc(b) + ' ' + esc(P.name) + ' · ' : ''}🔫 ${esc(gm)}` });
     });
@@ -876,7 +901,7 @@
     const it = preItems(); if (!it.length) return '';
     const tk = todayKey(), dayTxt = d => d === tk ? 'Dnes' : d === addDays(tk, 1) ? 'Zajtra' : dayTitle(d);
     return `<details class="card pre2" ${preOpen ? 'open' : ''} ontoggle="preOpen=this.open"><summary>⏳ Predbežné – čakáme na vyjadrenie (${it.length})</summary>
-      ${it.map(x => `<div class="pr"><div class="pn${x.go ? ' go' : ''}"${x.go ? ` onclick="${x.go}"` : ''}><b>${esc(dayTxt(x.date))}${x.time ? ' ' + esc(showT(x.time)) : ''}</b> · <b>${esc(x.name)}</b>${x.people ? ` (${esc(x.people)})` : ''}<br><small>${x.what}${agoTxt(x.ts) ? ' · ' + agoTxt(x.ts) : ''}</small></div>
+      ${it.map(x => `<div class="pr"><div class="pn${x.go ? ' go' : ''}"${x.go ? ` onclick="${x.go}"` : ''}><b>${esc(dayTxt(x.date))}${x.time ? ' ' + esc(nightT(x.time)) : ''}</b> · <b>${esc(x.name)}</b>${x.people ? ` (${esc(x.people)})` : ''}<br><small>${x.what}${agoTxt(x.ts) ? ' · ' + agoTxt(x.ts) : ''}</small></div>
         <div class="pa"><button class="btn sm" onclick="preYes('${x.k}','${x.id}')">✓ Súhlasia</button><button class="btn sm red" onclick="preNo('${x.k}','${x.id}')">✕ Nesúhlasia</button></div></div>`).join('')}
     </details>`;
   }
@@ -972,7 +997,7 @@
   function pickTfTable(id) { if (!tf) return; blurNow(); tf.grpName = null; tf.tableId = tf.tableId === id ? '' : id; render(); }
   function pickTfWhole(i) { if (!tf) return; blurNow(); const n = tblGroups().names[i]; tf.tableId = ''; tf.grpName = tf.grpName === n ? null : n; render(); }
   function tblFormHtml() {
-    return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box">
+    return `<div class="ov" onclick="ovBg(event)"><div class="box">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${tf.ids ? '✎ Upraviť rezerváciu celej skupiny' : tf.id ? '✎ Upraviť rezerváciu stola' : '🪑 Rezervovať stôl'}</h3>
       <div class="row2"><div><label class="f">Deň</label><input id="tDate" type="date" value="${esc(tf.date)}" oninput="tfSet('date',this.value)"></div>
@@ -1007,6 +1032,7 @@
     const hit = (wholeT ? wholeT.map(t => tblPreHit(t.id, rec.reserveAt, '')) : liveIds ? liveIds.map(x => tblPreHit(queueMap[x].tableId, rec.reserveAt, x)) : [tblPreHit(tf.tableId, rec.reserveAt, tf.id)]).find(Boolean);
     if (hit) return fail(tblPreMsg(hit));
     busyAct = true;
+    const t0 = tf;   // okno sa môže počas ukladania zavrieť
     try {
       if (wholeT) {
         // počet osôb (people) len na prvom stole, nech sa pri každom nezdá, že je tam celá partia; pg = počet celej skupiny pre prehľad a úpravu
@@ -1020,8 +1046,8 @@
         await firebase.database().ref('queue').update(u);
       } else if (tf.id) await firebase.database().ref(`queue/${tf.id}`).update(queueMap[tf.id].grp ? { ...rec, pg: rec.people } : rec);
       else { if (!people) delete rec.people; if (!tf.pre) delete rec.pre; await firebase.database().ref('queue').push({ ...rec, type: '', createdAt: Date.now() }); }
-      busyAct = false; toast(wholeT || tf.ids ? (tf.pre ? '⏳ Skupina predbežne rezervovaná – je aj v Objednávkach ✓' : '🪑 Skupina rezervovaná – je aj v Objednávkach ✓') : tf.pre ? '⏳ Stôl predbežne rezervovaný – je aj v Objednávkach ✓' : '🪑 Stôl rezervovaný – je aj v Objednávkach ✓'); sheetDay = tf.date; calMonth = tf.date.slice(0, 7); tf = null; render();
-    } catch (e) { busyAct = false; console.error('[stoly]', e); fail('Nepodarilo sa uložiť, skús znova.'); }
+      busyAct = false; toast(wholeT || t0.ids ? (t0.pre ? '⏳ Skupina predbežne rezervovaná – je aj v Objednávkach ✓' : '🪑 Skupina rezervovaná – je aj v Objednávkach ✓') : t0.pre ? '⏳ Stôl predbežne rezervovaný – je aj v Objednávkach ✓' : '🪑 Stôl rezervovaný – je aj v Objednávkach ✓'); sheetDay = t0.date; calMonth = t0.date.slice(0, 7); if (tf === t0) tf = null; render();
+    } catch (e) { busyAct = false; console.error('[stoly]', e); if (tf === t0) fail('Nepodarilo sa uložiť, skús znova.'); else toast('Nepodarilo sa uložiť, skús znova.'); }
   }
   // zruší záznam v Objednávkach (stôl z formulára, ✕ Nesúhlasia v ⏳ Predbežných); true = zrušené
   async function delQRec(id) {
@@ -1098,7 +1124,7 @@
           <div><label class="f">Do</label><input id="aTo${i}" type="time" step="300" value="${esc(r.to)}" oninput="afRow(${i},'to',this.value)"></div></div>
       </div>`;
     };
-    return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box">
+    return `<div class="ov" onclick="ovBg(event)"><div class="box">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${af.ids.length ? '✎ Upraviť atrakcie' : '🎮 Rezervovať atrakcie'}</h3>
       <div class="row2"><div><label class="f">Deň</label><input id="aDate" type="date" value="${esc(af.date)}" oninput="afSet('date',this.value)"></div>
@@ -1160,14 +1186,16 @@
     // atrakcie odobraté z rezervácie zmazať (aj z Objednávok)
     af.ids.filter(id => !ids.includes(id)).forEach(id => { u[`${base()}/attr/${id}`] = null; const q = env === 'live' ? qOfAttr(id) : null; if (q) u[`queue/${q.id}`] = null; });
     busyAct = true;
+    const a0 = af;   // okno sa môže počas ukladania zavrieť
     try {
       await db.ref().update(u); busyAct = false;
-      toast(af.ids.length ? 'Atrakcie upravené ✓' : `${af.pre ? '⏳ Predbežne' : '🎮'} ${rows.length > 1 ? rows.length + ' atrakcie rezervované' : 'Atrakcia rezervovaná'}${env === 'live' ? ' – sú aj v Objednávkach' : ''} ✓`);
-      sheetDay = af.date; calMonth = af.date.slice(0, 7); af = null; render();
+      toast(a0.ids.length ? 'Atrakcie upravené ✓' : `${a0.pre ? '⏳ Predbežne' : '🎮'} ${rows.length > 1 ? rows.length + ' atrakcie rezervované' : 'Atrakcia rezervovaná'}${env === 'live' ? ' – sú aj v Objednávkach' : ''} ✓`);
+      sheetDay = a0.date; calMonth = a0.date.slice(0, 7); if (af === a0) af = null; render();
     } catch (e) {
       busyAct = false; console.error('[atrakcie]', e);
-      fail(isPerm(e) && (grp || af.pre || rows.some(x => x.st))
-        ? 'Firebase to nedovolil – treba vložiť nové pravidlá (firebase-rules.json): pribudla predbežná rezervácia, konkrétna atrakcia a viac atrakcií naraz.' : 'Nepodarilo sa uložiť, skús znova.');
+      const m = isPerm(e) && (grp || a0.pre || rows.some(x => x.st))
+        ? 'Firebase to nedovolil – treba vložiť nové pravidlá (firebase-rules.json): pribudla predbežná rezervácia, konkrétna atrakcia a viac atrakcií naraz.' : 'Nepodarilo sa uložiť, skús znova.';
+      if (af === a0) fail(m); else toast(m);
     }
   }
   async function delAttr() {
@@ -1213,9 +1241,10 @@
     if (!confirm(`Zrušiť rezerváciu ${b.name}? Časy sa na webe uvoľnia.`)) return;
     busyAct = true;
     const u = {}; u[`${base()}/bookings/${id}/status`] = 'cancelled'; freeSlotsPatch(u, id, b); tablePatch(u, id, b, true);
-    try { await firebase.database().ref().update(u); toast('Rezervácia zrušená, časy sú voľné'); }
+    let ok = false;
+    try { await firebase.database().ref().update(u); toast('Rezervácia zrušená, časy sú voľné'); ok = true; }
     catch (e) { toast('Nepodarilo sa zrušiť.'); }
-    busyAct = false;
+    busyAct = false; return ok;
   }
   async function deleteBooking(id) {
     const b = bookings[id]; if (!b || busyAct || !isMgr) return;
@@ -1236,15 +1265,24 @@
     for (let m = Math.ceil((fromM - g + 1) / st) * st; m < toM; m += st) out.push(toTime(m));
     return out;
   }
-  const closedRange = b => { const g = gamesOf(b); return g.length ? [showT(g[0].time), showM(toMin(g[g.length - 1].time) + BLOCK)] : ['', '']; };
+  // (2026-11-08) „do“ = posledná hra + min(hra + výmena, krok): uloženie bez zmeny vráti tie isté hry (pri kroku 15 už nepribudne hra navyše).
+  // V noci najviac 02:00, keď posledná hra začína pred 02:00; staršia spoločnosť s hrou od 02:00 ukáže svoj koniec (uloženie ohlási strop).
+  const closedRange = b => {
+    const g = gamesOf(b); if (!g.length) return ['', ''];
+    const last = toMin(g[g.length - 1].time), to = last + Math.min(BLOCK, Math.max(5, (B && +B.step) || 20));
+    return [showT(g[0].time), showM(to > LATE_END && last < LATE_END ? LATE_END : to)];
+  };
   function openClosed(id, preset) {
+    blurNow();
     const b = id && bookings[id];
-    if (b) { const [from, to] = closedRange(b); cf = { id, date: (firstGame(b) || {}).date || sheetDay, from, to, name: b.name || '', note: b.note || '', pre: isPre(b), err: '', warn: '' }; }
+    if (b) { const [from, to] = closedRange(b); cf = { id, date: (firstGame(b) || {}).date || sheetDay, from, to, name: b.name && b.name !== CLOSED_NAME ? b.name : '', note: b.note || '', pre: isPre(b), err: '', warn: '' }; }
     else {
       const d = (preset && preset.day) || sheetDay, h = hoursFor(d);
-      cf = { id: '', date: d, from: h ? showM(h[0]) : '18:00', to: h ? showM(h[1]) : '22:00', name: 'Uzavretá spoločnosť', note: '', pre: false, err: '', warn: '' };
+      cf = { id: '', date: d, from: h ? showM(h[0]) : '18:00', to: h ? showM(h[1]) : '22:00', name: '', note: '', pre: false, err: '', warn: '' };
     }
-    sel = ''; f = null; af = null; tf = null; render();
+    sel = ''; f = null; af = null; tf = null;
+    const ov0 = document.querySelector('.ov'); if (ov0) ov0.scrollTop = 0;
+    render();
   }
   function cfSet(k, v) { if (cf) { cf[k] = v; cf.warn = ''; } }
   // čo už v tom čase je: iné partie (ich časy ostanú im), stoly a atrakcie
@@ -1258,16 +1296,16 @@
     return { times, busy: Object.values(byB).flat(), list: parties.concat(tbl, at) };
   }
   function closedFormHtml() {
-    return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box">
+    return `<div class="ov" onclick="ovBg(event)"><div class="box">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${cf.id ? '✎ Upraviť uzavretú spoločnosť' : '🔒 Uzavretá spoločnosť'}</h3>
       <p class="hint" style="margin:0 0 8px">Zaberie všetky hry laser game od – do, na webe budú tieto časy obsadené.</p>
       <label class="f">Deň</label><input id="cDate" type="date" value="${esc(cf.date)}" oninput="cfSet('date',this.value)">
       <div class="row2"><div><label class="f">Od</label><input id="cFrom" type="time" step="300" value="${esc(cf.from)}" oninput="cfSet('from',this.value)"></div>
         <div><label class="f">Do</label><input id="cTo" type="time" step="300" value="${esc(cf.to)}" oninput="cfSet('to',this.value)"></div></div>
-      <label class="f">Kto / názov</label><input id="cName" maxlength="80" value="${esc(cf.name)}" placeholder="napr. Firma XY – teambuilding" oninput="cfSet('name',this.value)">
+      <label class="f">Názov akcie (nepovinné)</label><input id="cName" maxlength="80" enterkeyhint="done" value="${esc(cf.name)}" placeholder="napr. narodeniny, Firma XY" oninput="cfSet('name',this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur()}">
       <label class="f">Poznámka</label><textarea id="cNote" maxlength="400" oninput="cfSet('note',this.value)" placeholder="napr. počet ľudí, kontakt, záloha…">${esc(cf.note)}</textarea>
-      <p class="hint" style="margin:6px 0">Čas „do“ 00:00–05:59 = po polnoci.</p>
+      <p class="hint" style="margin:6px 0">Bez názvu sa uloží ako „Uzavretá spoločnosť“. Čas „do“ 00:00–02:00 = po polnoci, neskôr sa nedá.</p>
       ${preSegHtml('cf', cf.pre, true)}
       ${cf.warn ? `<div class="warn" style="margin:8px 0">${cf.warn}</div>` : ''}
       <div class="err">${esc(cf.err)}</div>
@@ -1277,13 +1315,14 @@
   async function saveClosed() {
     blurNow();
     if (!cf || busyAct) return;
-    const name = String(cf.name || '').trim().slice(0, 80), note = String(cf.note || '').trim().slice(0, 400), d = cf.date;
+    const name = (String(cf.name || '').trim() || CLOSED_NAME).slice(0, 80), note = String(cf.note || '').trim().slice(0, 400), d = cf.date;
     const fail = m => { cf.err = m; cf.warn = ''; render(); };
     if (!/^20\d\d-\d\d-\d\d$/.test(d)) return fail('Vyber deň.');
     if (!/^[0-2]\d:[0-5]\d$/.test(cf.from || '') || !/^[0-2]\d:[0-5]\d$/.test(cf.to || '')) return fail('Zadaj čas od – do.');
-    if (name.length < 3) return fail('Napíš, kto to je (aspoň 3 znaky).');
+    if (name.length < 3) return fail('Názov akcie musí mať aspoň 3 znaky, alebo ho nechaj prázdny.');
     const fromM = toMin(bizTime(cf.from)); let toM = toMin(bizTime(cf.to)); if (toM <= fromM) toM += 1440;
     if (toM - fromM > 18 * 60) return fail('„Do“ musí byť po „od“.');
+    if (toM > LATE_END) return fail('Uzavretá spoločnosť môže byť najneskôr do 02:00.');   // (2026-11-08) ako hry (saveForm) a pravidlá Firebase
     const c = closedConflicts(d, fromM, toM, cf.id);
     if (!c.times.length) return fail('V tomto čase nie je žiadna hra.');
     // ⚠ v tom čase už niečo je (hra, stôl, atrakcia) → uzavretá sa NEULOŽÍ, kým sa to nepresunie alebo nezruší
@@ -1299,12 +1338,15 @@
     if (old) gamesOf(old).forEach(g => { if (!games[g.key]) { const rd = g.key.slice(0, 10), hm = g.key.slice(11); if ((slots[rd] || {})[hm] === id) u[`${base()}/slots/${rd}/${hm}`] = null; } });
     Object.keys(games).forEach(k => { u[`${base()}/slots/${k.slice(0, 10)}/${k.slice(11)}`] = id; });
     busyAct = true;
-    try { await db.ref().update(u); busyAct = false; toast(`${cf.pre ? '⏳ Predbežne vyrezervované' : '🔒 Vyrezervované'} ${showT(free[0])}–${showM(toMin(free[free.length - 1]) + BLOCK)} ✓`); sheetDay = d; calMonth = d.slice(0, 7); cf = null; render(); }
-    catch (e) { busyAct = false; console.error('[uzavretá]', e); fail(isPerm(e) && cf.pre ? 'Firebase to nedovolil – treba vložiť nové pravidlá (firebase-rules.json): pribudla predbežná rezervácia.' : 'Nepodarilo sa uložiť, skús znova.'); }
+    const c0 = cf;   // okno sa môže počas ukladania zavrieť
+    try { await db.ref().update(u); busyAct = false; toast(`${c0.pre ? '⏳ Predbežne vyrezervované' : '🔒 Vyrezervované'} ${closedRange({ games }).join('–')} ✓`); sheetDay = d; calMonth = d.slice(0, 7); if (cf === c0) cf = null; render(); }
+    catch (e) { busyAct = false; console.error('[uzavretá]', e); const m = isPerm(e) && c0.pre ? 'Firebase to nedovolil – treba vložiť nové pravidlá (firebase-rules.json): pribudla predbežná rezervácia.' : 'Nepodarilo sa uložiť, skús znova.'; if (cf === c0) fail(m); else toast(m); }
   }
   async function cancelClosed() {
-    const id = cf && cf.id; if (!id) return;
-    cf = null; await cancelBooking(id); render();
+    blurNow();
+    const c0 = cf, id = c0 && c0.id; if (!id) return;
+    if (await cancelBooking(id) && cf === c0) cf = null;
+    render();
   }
   // preset = {day, time} pri ťuknutí na prázdny riadok hárku
   function openForm(id, preset) {
@@ -1325,6 +1367,7 @@
         tableId: '', tableAt: '', arrive: '', pre: false, items: time ? [{ date: day, time }] : [], err: '' };
     }
     tblPickG = tblGrpOf(f.tableId);
+    const ov0 = document.querySelector('.ov'); if (ov0) ov0.scrollTop = 0;
     render();
   }
   const fPkg = () => f && f.pkg !== 'laser' ? pkgOf({ pkg: f.pkg }) : null;
@@ -1443,9 +1486,10 @@
     else if (old.tableQ) u[bp + '/tableQ'] = null;   // stôl v Objednávkach už bol odbavený / zmazaný
     Object.keys(games).forEach(g => { u[`${base()}/slots/${g.slice(0, 10)}/${g.slice(11)}`] = id; });
     busyAct = true;
-    try { await db.ref().update(u); toast(f.id ? 'Rezervácia upravená ✓' : f.pre ? '⏳ Predbežná rezervácia pridaná ✓' : 'Rezervácia pridaná ✓'); sheetDay = f.day; f = null; }
-    catch (e) { console.error(e); f.err = isPerm(e)
-      ? 'Firebase to nedovolil. Treba vložiť aktuálne pravidlá (firebase-rules.json) – pribudla v nich predbežná rezervácia a čas príchodu.' : 'Nepodarilo sa uložiť, skús znova.'; }
+    const ff = f;   // okno sa môže počas ukladania zavrieť (✕, Zrušiť, Escape)
+    try { await db.ref().update(u); toast(ff.id ? 'Rezervácia upravená ✓' : ff.pre ? '⏳ Predbežná rezervácia pridaná ✓' : 'Rezervácia pridaná ✓'); sheetDay = ff.day; if (f === ff) f = null; }
+    catch (e) { console.error(e); ff.err = isPerm(e)
+      ? 'Firebase to nedovolil. Treba vložiť aktuálne pravidlá (firebase-rules.json) – pribudla v nich predbežná rezervácia a čas príchodu.' : 'Nepodarilo sa uložiť, skús znova.'; if (f !== ff) toast(ff.err); }
     busyAct = false; render();
   }
 
@@ -1632,6 +1676,8 @@
     act.forEach(b => gamesOf(b).filter(g => g.date === d).forEach(g => { (starts[g.time] = starts[g.time] || []).push(b); }));
     const times = [...new Set(gridTimes(d).concat(Object.keys(starts)))].sort();
     const ppl = act.reduce((s, b) => s + (isClosed(b) ? 0 : +b.players || 0), 0), hrs = hoursFor(d);
+    // (2026-11-08) otvorené do polnoci = „24:00“, koniec po polnoci = „02:00 (po polnoci)“
+    const hrsTxt = hrs ? `${showM(hrs[0])}–${hrs[1] === 1440 ? '24:00' : showM(hrs[1]) + (hrs[1] > 1440 ? ' (po polnoci)' : '')}` : '';
     const isPast = t => d < tk || (d === tk && toMin(t) + (+B.step || 20) <= nowMin);
     // (2026-10-30) riadok s rezerváciou je rovnako nízky ako voľný: všetko v 1–2 riadkoch, telefón a e-mail len pre vedúceho,
     // v akciách len ✓ Potvrdiť (nová) a 🏁 Odohratá – poznámka, ešte neprišli, upraviť a zrušiť sú pod ⋯
@@ -1668,7 +1714,7 @@
     };
     return `<div class="dayhead" style="margin-top:14px">
         <button class="btn ghost sm" onclick="goDay(addDays(sheetDay,-1))">‹</button>
-        <div class="ttl">${d === tk ? 'Dnes · ' : ''}${esc(dayTitle(d))}<small>${hrs ? `otvorené ${showM(hrs[0])}–${showM(hrs[1])} · ` : ''}${act.length ? `${act.length} ${plural(act.length, 'rezervácia', 'rezervácie', 'rezervácií')} · ${ppl} ${plural(ppl, 'hráč', 'hráči', 'hráčov')}` : 'zatiaľ bez rezervácií'}</small></div>
+        <div class="ttl">${d === tk ? 'Dnes · ' : ''}${esc(dayTitle(d))}<small>${hrs ? `otvorené ${hrsTxt} · ` : ''}${act.length ? `${act.length} ${plural(act.length, 'rezervácia', 'rezervácie', 'rezervácií')} · ${ppl} ${plural(ppl, 'hráč', 'hráči', 'hráčov')}` : 'zatiaľ bez rezervácií'}</small></div>
         <button class="btn ghost sm" onclick="goDay(addDays(sheetDay,1))">›</button></div>
       <div class="addrow"><button class="btn" onclick="openForm('',{day:sheetDay})">➕ Pridať rezerváciu (z telefónu)</button><button class="btn ghost" onclick="openClosed('',{day:sheetDay})">🔒 Uzavretá spoločnosť</button></div>
       ${closedNote(d)}
@@ -1712,11 +1758,22 @@
 
   // ---- ⚙ nastavenia rezervácií (laser/<env>/config) ----
   const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0];
-  const HOUR_OPTS = []; for (let m = 6 * 60; m <= 1440; m += 15) HOUR_OPTS.push(toTime(m));   // 24:00 = polnoc
+  // (2026-11-08) „od“ 06:00 … 23:45; „do“ 06:15 … 24:00 (polnoc) a po polnoci 24:15 … 26:00 (ukáže sa 00:15 … 02:00, patrí k tomuto dňu)
+  const HOUR_FROM = [], HOUR_TO = [], HOUR_LATE = [];
+  for (let m = DAY_START; m < 1440; m += 15) HOUR_FROM.push(toTime(m));
+  for (let m = DAY_START + 15; m <= 1440; m += 15) HOUR_TO.push(toTime(m));   // 24:00 = polnoc
+  for (let m = 1455; m <= LATE_END; m += 15) HOUR_LATE.push(toTime(m));
   function cfgFromB(o) {
     return {
+      // (2026-11-08) deň s „od“ aj „do“ (reťazce) je otvorený; „do“ v tvare dňa 6–6 (po polnoci 24:15 … 26:00 – z 3. prvku), aby ho
+      // ďalšie uloženie ani 📋 Prevziať nezahodili. warn = uložené inak, než to appka teraz ukladá (starý tvar [od, do ≤ od],
+      // „do“ nad 24:00, neplatný alebo orezaný 3. prvok, 3. prvok pri „do“ inom ako polnoc) – pri uložení sa zapíše opravené
       hours: [0, 1, 2, 3, 4, 5, 6].map(i => { const h = (o.hours || {})[i];
-        return h && h[0] && h[1] ? { open: true, from: h[0], to: h[1] } : { open: false, from: DEF.hours[i][0], to: DEF.hours[i][1] }; }),
+        if (!(h && typeof h === 'object' && typeof h[0] === 'string' && h[0] && typeof h[1] === 'string' && h[1])) return { open: false, from: DEF.hours[i][0], to: DEF.hours[i][1] };
+        const m = dayHoursMin(h), b0 = isHm(h[1]) ? toMin(h[1]) : NaN, x = h[2] !== undefined && h[2] !== null;
+        const warn = !m || (b0 > 0 && b0 < DAY_START && b0 <= m[0]) || b0 > 1440
+          || (x && (!nocOk(h[2]) || toMin(h[2]) > LATE_END - 1440 || !['24:00', '00:00'].includes(h[1])));
+        return { open: true, from: /^\d:[0-5]\d$/.test(h[0]) ? '0' + h[0] : h[0], to: m ? toTime(m[1]) : h[1], warn }; }),
       daysOff: [...(o.daysOff || [])].filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k)).sort(),
       step: o.step, game: o.game, change: o.change, rest: o.rest, minPlayers: o.minPlayers, maxPlayers: o.maxPlayers, maxGames: o.maxGames, leadMinutes: o.leadMinutes,
       offers: offersNorm(o.offers).map(x => ({ ...x })),
@@ -1734,7 +1791,10 @@
   // ---- ✉️ ukážka e-mailov z webu – rovnaký text skladá WordPress (chillpoint-rezervacie.php, cpr_mail_texts) ----
   let mailSample = 'laser';
   const MAIL_DAYS = ['nedeľa', 'pondelok', 'utorok', 'streda', 'štvrtok', 'piatok', 'sobota'];
-  const mailDay = k => { const d = new Date(k + 'T12:00:00'); return `${MAIL_DAYS[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}. ${d.getFullYear()}`; };
+  const mailDay = (k, y = true) => { const d = new Date(k + 'T12:00:00'); return `${MAIL_DAYS[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}.${y ? ' ' + d.getFullYear() : ''}`; };
+  // (2026-11-08) nočný dovetok k dňu 6–6 pri hre po polnoci – ROVNAKÝ ako v plugine 1.9.5: „ (v noci na sobotu 14. 11.)“, cez Nový rok aj s rokom
+  const mailNight = k => { const n = new Date(addDays(k, 1) + 'T12:00:00');
+    return ` (v noci na ${NOC_NA[n.getDay()]} ${n.getDate()}. ${n.getMonth() + 1}.${n.getFullYear() !== +k.slice(0, 4) ? ' ' + n.getFullYear() : ''})`; };
   // (2026-10-31) celé texty e-mailov sa píšu v Nastaveniach; značky {…} nahradí WordPress údajmi z rezervácie
   const MAIL_NOTE_DEF = 'Príďte prosím aspoň 10 minút pred prvou hrou.';
   const MAIL_TPL_KEYS = ['mailCustSubj', 'mailCustBody', 'mailUsSubj', 'mailUsBody'];
@@ -1807,18 +1867,30 @@
   const WEB_TEXT_DEF = Object.fromEntries(WEB_TEXTS.map(([k, , d]) => [k, d]));
   const WEB_TAG_INFO = { od: 'najmenej', do: 'najviac', hra: 'dĺžka hry v minútach', balicek: 'názov balíčka', popis: 'čo balíček obsahuje', email: 'e-mail zákazníka', telefon: 'váš telefón' };
   // údaje ukážkovej rezervácie → značky (ako cpr_mail_parts a mapa v plugine)
+  // (2026-11-08) hry podľa dňa 6–6 so skutočným časom a nočným dovetkom – ROVNAKO ako cpr_mail_parts v plugine 1.9.5 (bez hry po polnoci
+  // presne ako doteraz). s.keys = skutočné kľúče hier (ako vo Firebase, môžu byť aj z viacerých dní), inak s.games = časy dňa s.date (po polnoci 24:xx)
   function mailMap(c, s) {
     const P = s.pkg ? pkgs()[s.pkg] || pkgNorm({}) : null;
     const sh = c.selfOn === false ? 0 : Math.max(0, parseInt(c.selfHours, 10) || 0), link = sh ? 'https://chillpoint.sk/rezervacia/#cpr=k8Fq2xZ…' : '';
-    const lines = s.games.map(t => `  • ${mailDay(s.date)} o ${t}`);
-    let block;
+    const its = gamesOf({ games: Object.fromEntries((s.keys || s.games.map(t => rawKey(s.date, t))).map(k => [k, true])) }), D = its[0].date;
+    const late = x => toMin(x.time) >= 1440, at = x => showT(x.time) + (late(x) ? mailNight(x.date) : '');
+    const lines = its.map(x => `  • ${mailDay(x.date)} o ${at(x)}`);
+    // {hry}: skupina = deň 6–6, dovetok raz na konci skupiny s hrou po polnoci; skupiny spojené „; “
+    const hry = [...new Set(its.map(x => x.date))].map(d => { const g = its.filter(x => x.date === d);
+      return `${mailDay(d)} o ${g.map(x => showT(x.time)).join(', ')}${g.some(late) ? mailNight(d) : ''}`; }).join('; ');
+    let block, cas = at(its[0]);
     if (P) {
-      const a = mcAttr({ games: Object.fromEntries(s.games.map(t => [rawKey(s.date, t), true])), mStart: s.mStart, mOrder: s.mOrder }, P);
-      block = `Balíček: ${P.name}\nPríchod: ${mailDay(s.date)} o ${s.mStart}\nLaser game: ${s.games.join(', ')}\n`
-        + (P.attrMin ? `${P.attrText || 'Atrakcie'}: cca ${showM(a.from)} – ${showM(a.to)}\n` : '') + `Počet osôb: ${s.players}`;
+      // balíček: príchod a hry dňa balíčka (dovetok raz na konci), hra iného dňa ako „sobota 14. 11. o 18:00“; atrakcie cez polnoc „ (po polnoci)“
+      const st = bizTime(s.mStart || its[0].time), g = its.filter(x => x.date === D);
+      const a = mcAttr({ games: Object.fromEntries(its.map(x => [x.key, true])), mStart: st, mOrder: s.mOrder }, P);
+      cas = showT(st) + (toMin(st) >= 1440 ? mailNight(D) : '');
+      const lg = [g.map(x => showT(x.time)).join(', ') + (g.some(late) ? mailNight(D) : '')]
+        .concat(its.filter(x => x.date !== D).map(x => `${mailDay(x.date, false)} o ${at(x)}`)).join(', ');
+      block = `Balíček: ${P.name}\nPríchod: ${mailDay(D)} o ${cas}\nLaser game: ${lg}\n`
+        + (P.attrMin ? `${P.attrText || 'Atrakcie'}: cca ${showM(a.from)} – ${showM(a.to)}${a.to > 1440 || a.from >= 1440 ? ' (po polnoci)' : ''}\n` : '') + `Počet osôb: ${s.players}`;
     } else block = `Počet hráčov: ${s.players}\n${lines.length > 1 ? 'Hry' : 'Hra'}:\n${lines.join('\n')}`;
-    return { meno: s.name, telefon: s.phone || '—', email: s.email, pocet: String(s.players), co: P ? P.name : 'laser game', datum: mailDay(s.date),
-      cas: P ? s.mStart : s.games[0], hry: `${mailDay(s.date)} o ${s.games.join(', ')}`, rezervacia: block, stav_potvrdenia: '', zmena: selfTxt(link, sh), odkaz: link };
+    return { meno: s.name, telefon: s.phone || '—', email: s.email, pocet: String(s.players), co: P ? P.name : 'laser game', datum: mailDay(D),
+      cas, hry, rezervacia: block, stav_potvrdenia: '', zmena: selfTxt(link, sh), odkaz: link };
   }
   function mailTexts(c, env0, s) {
     const T = env0 === 'test' ? '[TEST] ' : '', D = mailDefs(c.mailNote);
@@ -1844,6 +1916,8 @@
   function mailSampleData() {
     const d = addDays(todayKey(), ((5 - new Date(todayKey() + 'T12:00:00').getDay() + 7) % 7) || 7);   // najbližší piatok
     const pk = Object.keys(pkgs())[0];
+    // (2026-11-08) 🌙 po polnoci: piatok 23:20 a 24:40 (= sobota 00:40, vo Firebase pod sobotou)
+    if (mailSample === 'night') return { name: 'Ján Novák', phone: '+421 910 123 456', email: 'jan.novak@example.com', players: 6, date: d, games: ['23:20', '24:40'] };
     return mailSample === 'pkg' && pk ? { name: 'Lucia Kováčová', phone: '+421 905 111 222', email: 'lucia@example.com', players: 10, date: d, pkg: pk, mStart: '16:00', mOrder: 'games', games: mcGames('16:00', 'games', pkgs()[pk]) }
       : { name: 'Ján Novák', phone: '+421 910 123 456', email: 'jan.novak@example.com', players: 6, date: d, games: ['18:00', '18:40'] };
   }
@@ -1859,8 +1933,10 @@
     const m = chgMailTexts(c, env, s, chgKind === 'can'), off = !c.selfOn;
     return mailBox('📨 Zákazníkovi', m.cust, off || !c.mailCustomer) + mailBox('📥 Nám', m.us, off || !c.mailUs);
   }
+  const MAIL_NIGHT_NOTE = '<p class="hint" style="margin:0 0 8px">Takto to píše plugin 1.9.5. Kým je na webe 1.9.4, pri hre po polnoci píše rovno ďalší deň (napr. „sobota … o 00:40“).</p>';
   function mailPreviewHtml(c) {
-    return `<div class="seg" style="margin:10px 0 8px"><button class="${mailSample !== 'pkg' ? 'on' : ''}" onclick="mailSample='laser';render()">Ukážka: laser game</button><button class="${mailSample === 'pkg' ? 'on' : ''}" onclick="mailSample='pkg';render()">Ukážka: balíček</button></div>
+    return `<div class="seg" style="margin:10px 0 8px"><button class="${mailSample !== 'pkg' && mailSample !== 'night' ? 'on' : ''}" onclick="mailSample='laser';render()">Ukážka: laser game</button><button class="${mailSample === 'pkg' ? 'on' : ''}" onclick="mailSample='pkg';render()">Ukážka: balíček</button><button class="${mailSample === 'night' ? 'on' : ''}" onclick="mailSample='night';render()">Ukážka: 🌙 po polnoci</button></div>
+      ${mailSample === 'night' ? MAIL_NIGHT_NOTE : ''}
       <div class="mails" id="mailPrev">${mailBoxesHtml(c)}</div>`;
   }
   // písanie textu → ukážka sa prepíše hneď (bez prekreslenia, políčko ostane otvorené)
@@ -1955,8 +2031,14 @@
     out.hours = {};
     for (const i of DAY_ORDER) {
       const h = c.hours[i]; if (!h.open) continue;
-      if (toMin(h.from) >= (toMin(h.to) || 1440)) return fail(`${DAY_NAMES[i]}: koniec musí byť po začiatku.`);
-      out.hours[i] = [h.from, h.to];
+      // (2026-11-08) a, b = od, do v minútach dňa 6–6 (24:15 … 26:00 = po polnoci). Zápis: do ≤ 24:00 → [od, do], po polnoci →
+      // [od, '24:00', 'HH:MM'] – plugin 1.9.4 ho berie ako „do polnoci“. NIKDY [od, do ≤ od] ani [od, '>24:00']: 1.9.4 by taký deň
+      // zavrel alebo ponúkol časy pod iným dátumom ako appka. Neplatný čas (NaN) neprejde žiadnou kontrolou.
+      const a = isHm(h.from) ? toMin(h.from) : NaN, b = isHm(h.to) ? toMin(h.to) || 1440 : NaN;
+      if (!(a < 1440)) return fail(`${DAY_NAMES[i]}: začiatok môže byť najneskôr 23:45.`);
+      if (!(b > a)) return fail(`${DAY_NAMES[i]}: koniec musí byť po začiatku.`);
+      if (b > LATE_END) return fail(`${DAY_NAMES[i]}: po polnoci sa dá rezervovať najneskôr do 02:00.`);
+      out.hours[i] = b > 1440 ? [toTime(a), '24:00', toTime(b - 1440)] : [toTime(a), toTime(b)];
     }
     if (!Object.keys(out.hours).length) return fail('Aspoň jeden deň musí byť otvorený (na zatvorenie konkrétnych dní použi Dni voľna).');
     // prázdne pole by Firebase vynechal a web by vzal dni voľna z WordPressu → "" (plugin z neho spraví [])
@@ -2038,19 +2120,27 @@
     if (!cfgLoaded) return who + pkgSettingsHtml() + iconsSettingsHtml() + '<p class="empty">Načítavam nastavenia…</p>';
     if (!cfgF) { cfgF = cfgFromB(B); cfgDirty = false; }
     const c = cfgF, K = chgKind === 'can' ? 'mailCan' : 'mailChg';
-    const opts = v => (HOUR_OPTS.includes(v) ? HOUR_OPTS : HOUR_OPTS.concat(v).sort()).map(t => `<option ${t === v ? 'selected' : ''}>${t}</option>`).join('');
-    const hours = DAY_ORDER.map(i => { const h = c.hours[i];
+    // (2026-11-08) každá možnosť má value (po polnoci value 24:15 … 26:00, text 00:15 … 02:00); uložená hodnota mimo zoznamu sa doplní
+    const opt = v => t => `<option value="${esc(t)}"${t === v ? ' selected' : ''}>${esc(isHm(t) && toMin(t) > 1440 ? showT(t) : t)}</option>`;
+    const withV = (list, v) => list.includes(v) ? list : list.concat(v).sort((x, y) => (isHm(x) ? toMin(x) : 1e9) - (isHm(y) ? toMin(y) : 1e9) || String(x).localeCompare(String(y)));
+    const optsFrom = v => withV(HOUR_FROM, v).map(opt(v)).join('');
+    const optsTo = v => { const all = withV(HOUR_TO.concat(HOUR_LATE), v), late = t => isHm(t) && toMin(t) > 1440;
+      return all.filter(t => !late(t)).map(opt(v)).join('') + `<optgroup label="🌙 po polnoci – patrí k tomuto dňu">${all.filter(late).map(opt(v)).join('')}</optgroup>`; };
+    const hours = DAY_ORDER.map(i => { const h = c.hours[i], night = h.open && isHm(h.to) && toMin(h.to) > 1440;
       return `<div class="hrow"><label class="chk"><input type="checkbox" ${h.open ? 'checked' : ''} onchange="cfgHour(${i},'open',this.checked)"><b>${DAY_NAMES[i]}</b></label>
-        ${h.open ? `<select id="cH${i}f" onchange="cfgHour(${i},'from',this.value)">${opts(h.from)}</select><span>–</span><select id="cH${i}t" onchange="cfgHour(${i},'to',this.value)">${opts(h.to)}</select>` : '<span class="mut" style="grid-column:2/5">zatvorené</span>'}</div>`; }).join('');
+        ${h.open ? `<select id="cH${i}f" onchange="cfgHour(${i},'from',this.value)">${optsFrom(h.from)}</select><span>–</span><select id="cH${i}t" onchange="cfgHour(${i},'to',this.value)">${optsTo(h.to)}</select>` : '<span class="mut" style="grid-column:2/5">zatvorené</span>'}
+        ${night ? `<div class="hn">🌙 do ${esc(showT(h.to))} – v noci na ${NOC_NA[(i + 1) % 7]}</div>` : ''}${h.open && h.warn ? '<div class="hn w">⚠ uložené inak, než to appka teraz ukladá – skontroluj a ulož znova</div>' : ''}</div>`; }).join('');
+    // (2026-11-08) 🌙 dni s koncom po polnoci v uloženom configu – keď noc zmizne (napr. ju pri uložení zahodila stará kópia appky), hneď to vidno
+    const nights = DAY_ORDER.map(i => [i, dayHoursMin(((cfgRaw && cfgRaw.hours) || {})[i])]).filter(([, m]) => m && m[1] > 1440);
     const num = (k, label, hint) => `<div><label class="f">${label}</label><input id="c_${k}" type="number" inputmode="numeric" value="${esc(c[k])}" oninput="cfgSet('${k}',this.value)">${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
     const tk = todayKey(), offs = c.daysOff.filter(k => k >= addDays(tk, -1)), oldOffs = c.daysOff.length - offs.length;
     return who + pkgSettingsHtml() + iconsSettingsHtml() + `<h2>🌐 Rezervácia na webe</h2><div class="${cfgRaw ? 'card' : 'warn'}" style="font-size:13px;line-height:1.5">${cfgRaw
-        ? `✓ Web (${env === 'test' ? '🧪 test' : '🟢 ostrý'}) používa tieto nastavenia z appky.${cfgRaw.updatedAt ? ` Uložené ${new Date(cfgRaw.updatedAt).toLocaleString('sk-SK')}.` : ''}`
+        ? `✓ Web (${env === 'test' ? '🧪 test' : '🟢 ostrý'}) používa tieto nastavenia z appky.${cfgRaw.updatedAt ? ` Uložené ${new Date(cfgRaw.updatedAt).toLocaleString('sk-SK')}.` : ''}<br>🌙 Po polnoci: ${nights.length ? nights.map(([i, m]) => `${DAY_SHORT[i]} do ${showM(m[1])}`).join(' · ') + ' (na webe až s pluginom 1.9.5)' : 'žiadny deň (najneskôr do 24:00)'}`
         : `⚠ Pre ${env === 'test' ? '🧪 test' : '🟢 ostrý web'} zatiaľ nie sú nastavenia uložené – web berie nastavenia z WordPressu. Nižšie sú predvolené hodnoty; po uložení ich web začne používať.`}
         <br><span class="mut">Test a Ostré majú nastavenia zvlášť.</span></div>
       ${cfgDirty ? '<div class="warn">✎ Máš neuložené zmeny.</div>' : ''}
       <h2>🕐 Otváracie hodiny (kedy sa dá rezervovať)</h2>
-      <div class="card">${hours}<p class="hint" style="margin:6px 0 0">Posledná hra začína tak, aby skončila do zatvorenia (hra ${esc(c.game)} min).</p></div>
+      <div class="card">${hours}<p class="hint" style="margin:6px 0 0">Koniec 00:15–02:00 patrí ešte k tomuto dňu (piatok 15:00–02:00 = aj noc z piatka na sobotu). Posledná hra začína tak, aby skončila do zatvorenia (hra ${esc(c.game)} min). Na webe sa časy po polnoci ukážu až s pluginom 1.9.5, dovtedy web ponúka najviac do polnoci. V appke môžeš po polnoci zapisovať do 02:00 vždy, keď je deň otvorený aspoň do polnoci.</p></div>
       <h2>📅 Dni voľna (zatvorené)</h2>
       <div class="card">
         <div class="chips">${offs.length ? offs.map(k => `<button class="chip" onclick="cfgDelOff('${k}')">${esc(dayTitle(k))} ${k.slice(0, 4)} ✕</button>`).join('') : '<span class="mut" style="font-size:14px">žiadne</span>'}</div>
@@ -2129,6 +2219,7 @@
         <textarea id="c_${K}UsBody" rows="10" maxlength="3000" onfocus="mailFocus=this.id" oninput="cfgMail('${K}UsBody',this.value)">${esc(c[K + 'UsBody'])}</textarea>
         <button class="btn ghost sm" style="margin:6px 0 4px" onclick="chgReset('Us')">↺ Pôvodný text nám</button>
         <label class="f" style="margin-top:10px"><b>👀 Ukážka</b> <span class="mut">(${chgKind === 'can' ? 'zrušenie' : 'zmena'})</span></label>
+        ${mailSample === 'night' ? MAIL_NIGHT_NOTE : ''}
         <div class="mails" id="chgPrev">${chgBoxesHtml(c)}</div>
       </div>
       <h2>📝 Texty na webe</h2>
@@ -2167,7 +2258,7 @@
   // ---- zoznam nadchádzajúcich ----
   function cardHtml(b) {
     const st = stOf(b), g = gamesOf(b);
-    const times = g.map(x => x.date === firstGame(b).date ? showT(x.time) : `${dayTitle(x.date)} ${showT(x.time)}`).join(' · ');
+    const times = g.map(x => x.date === firstGame(b).date ? nightT(x.time) : `${dayTitle(x.date)} ${nightT(x.time)}`).join(' · ');   // (2026-11-08) 🌙 po polnoci
     return `<div class="card bk st-${st}${isMc(b) ? ' mc' : ''}" onclick="openDetail('${b.id}')">
       <b style="font-size:16px">${esc(b.name)}</b> <span class="tag ${st}">${STATUS[st]}</span>${custMoved(b) ? '<span class="tag new">✎ zmenil zákazník</span>' : ''}${isMc(b) ? `<span class="tag mc">${pIc(b)} ${esc(pkgOf(b).name)}</span>` : ''}
       <div class="times">${arrOf(b) ? `🚪 ${esc(showT(arrOf(b)))} · ` : ''}🕹 ${esc(times)} · 👥 ${esc(plTxt(b))}${b.seat ? ` · 📍 ${esc(b.seat)}` : ''}</div></div>`;
@@ -2198,7 +2289,7 @@
     const st = stOf(b), g = gamesOf(b), mc = isMc(b);
     const created = typeof b.createdAt === 'number' ? new Date(b.createdAt) : null;
     const a = mc ? mcAttr(b) : null;
-    return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box${mc ? ' mc' : ''}">
+    return `<div class="ov" onclick="ovBg(event)"><div class="box${mc ? ' mc' : ''}">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${esc(b.name)}</h3>
       <div><span class="tag ${st}" style="margin-left:0">${STATUS[st]}</span>${allPlayed(b) ? '<span class="tag played">🏁 všetko odohraté</span>' : ''}${mc ? `<span class="tag mc">${pIc(b)} ${esc(pkgOf(b).name)}</span>` : isClosed(b) ? `<span class="tag" style="background:${CLOSED_COLOR};color:#fff">🔒 Uzavretá spoločnosť ${closedRange(b).join('–')}</span>` : '<span class="tag src">🔫 Laser game</span>'}${b.source === 'admin' ? '<span class="tag src">zapísali sme my</span>' : '<span class="tag src">z webu</span>'}</div>
@@ -2208,8 +2299,8 @@
       <div class="info" style="margin-top:10px">
         ${isClosed(b) ? '🔒 celý laser game je v tom čase len pre nich<br>' : `👥 ${+b.players > 0 ? `<b>${esc(b.players)}</b> ${plural(+b.players, 'osoba', 'osoby', 'osôb')}` : '<b>?</b> počet osôb neuviedli'}${b.seat ? ` · 📍 <b>${esc(b.seat)}</b>` : ''}<br>`}
         ${!mc && arrOf(b) ? `🚪 príchod <b>${esc(showT(arrOf(b)))}</b><br>` : ''}
-        🕹 ${[...new Set(g.map(x => x.date))].map(dd => `${esc(dayTitle(dd))}: <b>${g.filter(x => x.date === dd).map(x => showT(x.time)).join(' · ')}</b>`).join('; ')} <span style="color:var(--muted)">(${g.length} ${plural(g.length, 'hra', 'hry', 'hier')}${g.some(x => isPlayed(b, x.key)) ? `, odohraté ${g.filter(x => isPlayed(b, x.key)).length}` : ''})</span>
-        ${st !== 'cancelled' ? `<div class="games">${g.map(x => `<button class="gm${isPlayed(b, x.key) ? ' on' : ''}" onclick="togglePlayed('${b.id}','${x.key}')">${g.some(y => y.date !== x.date) ? esc(dayTitle(x.date)) + ' ' : ''}${showT(x.time)} ${isPlayed(b, x.key) ? '🏁 odohratá' : '· ťukni = odohratá'}</button>`).join('')}</div>` : ''}
+        🕹 ${[...new Set(g.map(x => x.date))].map(dd => `${esc(dayTitle(dd))}: <b>${g.filter(x => x.date === dd).map(x => nightT(x.time)).join(' · ')}</b>`).join('; ')} <span style="color:var(--muted)">(${g.length} ${plural(g.length, 'hra', 'hry', 'hier')}${g.some(x => isPlayed(b, x.key)) ? `, odohraté ${g.filter(x => isPlayed(b, x.key)).length}` : ''})</span>
+        ${st !== 'cancelled' ? `<div class="games">${g.map(x => `<button class="gm${isPlayed(b, x.key) ? ' on' : ''}" onclick="togglePlayed('${b.id}','${x.key}')">${g.some(y => y.date !== x.date) ? esc(dayTitle(x.date)) + ' ' : ''}${nightT(x.time)} ${isPlayed(b, x.key) ? '🏁 odohratá' : '· ťukni = odohratá'}</button>`).join('')}</div>` : ''}
         ${tableQOf(b) ? `🪑 Stôl <b>${esc(tableName(tableQOf(b).tableId))}</b>${tableQOf(b).reserveAt ? ' od <b>' + new Date(tableQOf(b).reserveAt).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' }) + '</b>' : ''} <span style="color:var(--muted)">(rezervovaný v Objednávkach)</span><br>` : b.tableQ ? '<span style="color:var(--muted)">🪑 stôl už bol v Objednávkach odbavený</span><br>' : ''}
         ${b.offerPick ? `<br>🎁 Na webe si vybrali: <b>${b.offerPick === 'none' ? 'len laser game (bez ponuky)' : 'ponuku ' + esc(b.offerPick)}</b>${b.offerPick !== 'none' && !offerFor(b) ? ' <span style="color:var(--red)">(málo hráčov – ponuka neplatí)</span>' : ''}` : ''}
         ${[...new Set(g.map(x => x.date))].map(dd => { const oi = offerInfo(b, dd); return oi ? `<br>🎁 Ponuka ${oi.name}${g.some(x => x.date !== dd) ? ` (${esc(dayTitle(dd))})` : ''}: zadarmo hra o <b>${oi.free.map(showT).join(', ')}</b>` : ''; }).join('')}
@@ -2284,7 +2375,7 @@
           ${clash ? `<div class="err" style="margin-top:6px">⚠ ${esc(mcClashMsg(clash, P))}</div>` : ''}
           ${busyG.length ? `<div class="err" style="margin-top:6px">⚠ Obsadené inou partiou: ${busyG.map(it => showT(it.time)).join(', ')} – posuň začiatok alebo uprav časy nižšie.</div>` : ''}</div>`;
     }
-    return `<div class="ov" onclick="if(event.target===this)closeOv()"><div class="box${mc ? ' mc' : ''}">
+    return `<div class="ov" onclick="ovBg(event)"><div class="box${mc ? ' mc' : ''}">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${f.id ? '✎ Upraviť rezerváciu' : '➕ Rezervovať'}</h3>
       <label class="f">Deň</label>
@@ -2347,7 +2438,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? preBoxHtml() + calHtml() : view === 'sheet' ? preBoxHtml() + sheetHtml() : view === 'play' ? playHtml() : preBoxHtml() + listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-05</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-08</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
