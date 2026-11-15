@@ -673,7 +673,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-11-15· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-11-15b· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -2036,7 +2036,10 @@
     const {ym,label}=rosterYM();
     $('smLabel').textContent=label; $('smClosed').checked=rosterOnlyClosed;
     $('statsSummary').textContent=`📊 Prehľad za mesiac (${label})`;
-    const rows=employees.list.map(e=>({name:e.name, rating:getRating(e.name), target:getTarget(e.name), want:getWeekWant(e.name), ...empStats(e.name, ym, rosterOnlyClosed)}));
+    const av=feat('avail');   // (2026-11-15) stĺpec ZAKLIKOL: ✓ môže · ★ chce · ✗ nemôže (avStats), triedi sa podľa počtu zakliknutých dní
+    const rows=employees.list.map(e=>({name:e.name, rating:getRating(e.name), target:getTarget(e.name), want:getWeekWant(e.name), ...empStats(e.name, ym, rosterOnlyClosed), av:av?avStats(e.name, ym):null}));
+    rows.forEach(r=>{ r.marked=r.av?r.av.marked:0; });
+    const avCell=r=>!r.av ? '' : `<td>${r.av.marked ? `<span style="color:#7fdc9b">✓${r.av.can}</span> <span style="color:#ffd11a">★${r.av.want}</span> <span style="color:#ff7b7b">✗${r.av.cant}</span>` : '<span style="color:#ffb347">nič</span>'}</td>`;
     const {key,dir}=statsSort;
     const val=r=>(r[key]===null||r[key]===undefined) ? -1 : r[key];
     rows.sort((a,b)=> key==='name' ? dir*a.name.localeCompare(b.name,'sk') : ((dir*(val(a)-val(b))) || a.name.localeCompare(b.name,'sk')));
@@ -2045,9 +2048,9 @@
     const badge=r=> r.target===null ? '' : (r.days<r.target ? `<em class="tgt-low">−${r.target-r.days}</em>` : (r.days===r.target ? '<em class="tgt-ok">✓</em>' : `<em class="tgt-high">+${r.days-r.target}</em>`));
     const arrow=k=> statsSort.key===k ? (statsSort.dir<0?' ▼':' ▲') : '';
     const th=(k,t)=>`<th data-sort="${k}">${t}${arrow(k)}</th>`;
-    $('statsTable').innerHTML=`<table class="stbl"><thead><tr>${th('name','ZAMESTNANEC')}${th('wkndDays','DNI VÍKEND')}<th>CHCE VÍKEND</th>${th('weekDays','DNI TÝŽDEŇ')}<th>CHCE TÝŽDEŇ</th>${th('days','SPOLU')}${feat('targets')?th('target','CIEĽ'):''}</tr></thead><tbody>${
-      rows.map(r=>`<tr class="${r.days?'':'zero'}"><td>${r.rating?`<i class="rd ${r.rating}" style="margin-right:6px"></i>`:''}${esc(r.name)}</td><td>${r.wkndDays}</td><td class="sub">${r.want&&r.want.we!==null?r.want.we:'—'}</td><td>${r.weekDays}</td><td class="sub">${r.want&&r.want.wd!==null?r.want.wd:'—'}</td><td>${r.days}</td>${feat('targets')?`<td><input class="tgt" type="number" min="0" max="31" placeholder="—" data-target="${esc(r.name)}" value="${r.target===null?'':r.target}">${badge(r)}</td>`:''}</tr>`).join('')
-    }</tbody><tfoot><tr><td>Spolu</td><td>${tot.wkndDays}</td><td></td><td>${tot.weekDays}</td><td></td><td>${tot.days}</td>${feat('targets')?`<td>${anyT?totT:''}</td>`:''}</tr></tfoot></table>`;
+    $('statsTable').innerHTML=`<table class="stbl"><thead><tr>${th('name','ZAMESTNANEC')}${th('wkndDays','DNI VÍKEND')}<th>CHCE VÍKEND</th>${th('weekDays','DNI TÝŽDEŇ')}<th>CHCE TÝŽDEŇ</th>${th('days','SPOLU')}${av?th('marked','ZAKLIKOL'):''}${feat('targets')?th('target','CIEĽ'):''}</tr></thead><tbody>${
+      rows.map(r=>`<tr class="${r.days?'':'zero'}"><td>${r.rating?`<i class="rd ${r.rating}" style="margin-right:6px"></i>`:''}${esc(r.name)}</td><td>${r.wkndDays}</td><td class="sub">${r.want&&r.want.we!==null?r.want.we:'—'}</td><td>${r.weekDays}</td><td class="sub">${r.want&&r.want.wd!==null?r.want.wd:'—'}</td><td>${r.days}</td>${avCell(r)}${feat('targets')?`<td><input class="tgt" type="number" min="0" max="31" placeholder="—" data-target="${esc(r.name)}" value="${r.target===null?'':r.target}">${badge(r)}</td>`:''}</tr>`).join('')
+    }</tbody><tfoot><tr><td>Spolu</td><td>${tot.wkndDays}</td><td></td><td>${tot.weekDays}</td><td></td><td>${tot.days}</td>${av?'<td></td>':''}${feat('targets')?`<td>${anyT?totT:''}</td>`:''}</tr></tfoot></table>`;
     document.querySelectorAll('#statsTable [data-sort]').forEach(x=>x.onclick=()=>{
       const k=x.dataset.sort;
       statsSort = statsSort.key===k ? {key:k, dir:-statsSort.dir} : {key:k, dir:(k==='name'?1:-1)};
@@ -5170,6 +5173,25 @@
     if(!st.days) return 'V tomto mesiaci bez smien';
     return `<b>${st.wkndDays}</b> ${plural(st.wkndDays,'deň','dni','dní')} cez víkend · <b>${st.weekDays}</b> ${plural(st.weekDays,'deň','dni','dní')} cez týždeň · <b>${st.days}</b> spolu`;
   }
+  // (2026-11-15) čo zamestnanec v mesiaci zaklikol: ✓ môžem / ★ chcem / ✗ nemôžem (+ kedy naposledy) – vedúci hneď vidí,
+  // kto ešte nič nezaklikol, a nemusí to hľadať po dňoch. Rátajú sa výslovné kliknutia na dni (pravidelné sú v riadkoch nižšie).
+  function avStats(name, ym){
+    let can=0, want=0, cant=0, last=0; const rk=ratingKey(name);
+    Object.keys(schedule.days||{}).forEach(k=>{
+      if(ym && !k.startsWith(ym+'-')) return;
+      const d=schedule.days[k]||{}, v=(d.av||{})[rk];
+      if((d.na||[]).includes(name)) cant++;
+      else if(v==='want') want++;
+      else if(v==='can') can++;
+      const t=(d.avt||{})[rk]; if(typeof t==='number' && t>last) last=t;
+    });
+    return { can, want, cant, marked: can+want+cant, last };
+  }
+  function avStatsHTML(name, ym){
+    const a=avStats(name, ym);
+    if(!a.marked) return '<span style="color:#ffb347">⚠ zatiaľ nič nezaklikol/a (môžem / chcem / nemôžem)</span>';
+    return `<span style="color:#7fdc9b">✓ môže <b>${a.can}</b></span> · <span style="color:#ffd11a">★ chce <b>${a.want}</b></span> · <span style="color:#ff7b7b">✗ nemôže <b>${a.cant}</b></span>${a.last?` · naposledy ${esc(fmtAvWhen(a.last))}`:''}`;
+  }
 
   function renderRoster(){
     if(!manager){ $('rosterSection').style.display='none'; $('rosterList').innerHTML=''; return; }
@@ -5193,6 +5215,7 @@
           <button class="icon-btn danger" data-remove-emp="${esc(e.name)}" title="Odstrániť">×</button>
         </div>
         <div class="rstats">${statsHTML(e.name, ym)}</div>
+        ${feat('avail')?`<div class="rstats">${avStatsHTML(e.name, ym)}</div>`:''}
         ${recSummary(e.name)?`<div class="rstats">🔁 pravidelne nemôže: ${esc(recSummary(e.name))}</div>`:''}
         ${canSummary(e.name)?`<div class="rstats">✓ stále môže: ${esc(canSummary(e.name))}</div>`:''}
         ${getPNote(e.name)?`<div class="rstats">📝 ${esc(getPNote(e.name).slice(0,90))}${getPNote(e.name).length>90?'…':''}</div>`:''}
