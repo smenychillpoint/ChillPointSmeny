@@ -140,7 +140,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-15</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-15c</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -4860,7 +4860,9 @@ setInterval(checkReservationReminders, 20000);
 // z úvodnej stránky "objednavky.html#rezervacie" -> rovno zoznam rezervácií
 if (location.hash === '#rezervacie') { role = 'casnik'; showQueue = true; try { history.replaceState(null, '', location.pathname); } catch (e) {} }
 // z úvodnej stránky "objednavky.html#nastavenia" -> rovno Nastavenia (zobrazia sa, keď je prihlásený vedúci) – 2026-10-19
-if (location.hash === '#nastavenia') { role = 'nastavenia'; store.set('role', role); try { history.replaceState(null, '', location.pathname); } catch (e) {} }
+// (2026-11-15) ⚙ Nastavenia na úvode: „#nastavenia/zamestnanci“ → rovno tá záložka (neznáma záložka = Stoly)
+{ const m = /^#nastavenia(?:\/([a-z]+))?$/.exec(location.hash);
+  if (m) { role = 'nastavenia'; store.set('role', role); if (m[1]) settingsTab = m[1]; try { history.replaceState(null, '', location.pathname); } catch (e) {} } }
 connect();
 // (2026-10-19) offline/rýchle načítanie – rovnaký service worker ako úvod a Smeny (uložené knižnice a stránky)
 if ('serviceWorker' in navigator) window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });

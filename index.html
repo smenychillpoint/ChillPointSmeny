@@ -194,6 +194,43 @@
   }
   let ui = { mgrForm: false, err: '', shopOpen: false, accOpen: false, handDraft: '' };
 
+  // ---- ⚙ Nastavenia na jednom mieste (2026-11-15, len vedúci) ----
+  // Želanie majiteľa: otvorí Nastavenia na úvode a ťukne rovno na časť (Objednávky → Zamestnanci, Smeny → Zoznam zamestnancov…),
+  // bez preklikávania v appke. Odkaz otvorí appku priamo na tom mieste: objednavky.html#nastavenia/<záložka>,
+  // smeny.html#nastavenia/<id rozbaľovacej časti>. Stránka má #nastavenia v adrese, aby ju vrátilo tlačidlo Späť v mobile.
+  const SET_OBJ = [['stoly', '🪑', 'Stoly', 'skupiny, farby, poradie, dočasné stoly'], ['menu', '📋', 'Menu', 'kategórie, položky a ceny'],
+    ['obrazovka', '📱', 'Obrazovka stola', 'čo čašník uvidí po ťuknutí na stôl'], ['atrakcie', '🎮', 'Atrakcie', 'biliard, PlayStation, šípky… a ich ceny'],
+    ['zamestnanci', '👥', 'Zamestnanci', 'mzda €/h, percentá z tržby, zamestnanecké zľavy'], ['funkcie', '🧩', 'Funkcie', 'zapnúť / vypnúť časti appky'],
+    ['zariadenie', '🔑', 'Prístup do uzávierky', 'PIN pre niekoho iného ako vedúci']];
+  const SET_SMENY = [['featBox', '🧩', 'Funkcie a prihlasovanie', 'zapnúť / vypnúť časti Smien'], ['limitBox', '👥', 'Limit a minimum ľudí na deň', ''],
+    ['weekBox', '📅', 'Minimum a limit podľa dňa v týždni', 'leto / zima'], ['periodBox', '🎄', 'Obdobia', 'Vianoce, prázdniny… s vlastným minimom'],
+    ['ckCfgBox', '✅', 'Checklisty', 'otvorenie / zatvorenie'], ['rosterBox', '👥', 'Zoznam zamestnancov', 'pridať, premenovať, hodnotenie'],
+    ['statsBox', '📊', 'Prehľad za mesiac', 'počty smien, cieľ'], ['historyBox', '📜', 'História zmien', ''], ['backupBox', '💾', 'Záloha a obnova dát', '']];
+  if (location.hash === '#nastavenia') ui.page = 'set';
+  function openSet() { ui.page = 'set'; try { if (location.hash !== '#nastavenia') history.pushState(null, '', '#nastavenia'); } catch (e) {} render(); window.scrollTo(0, 0); }
+  function closeSet() { if (location.hash === '#nastavenia') { try { history.back(); return; } catch (e) {} } ui.page = ''; render(); }
+  window.addEventListener('popstate', () => { ui.page = location.hash === '#nastavenia' ? 'set' : ''; render(); });
+  function setPageHtml() {
+    const row = (key, ic, title, sub, body) => `<div class="card" style="padding:0;margin-bottom:8px">
+        <button class="tile" style="border-left-color:var(--muted);padding:12px 14px;margin:0" onclick="ui.setOpen=ui.setOpen==='${key}'?'':'${key}';render()"><span class="ic" style="font-size:22px">${ic}</span><span class="tx"><b style="font-size:15px">${title}</b><span>${sub}</span></span><span class="arr">${ui.setOpen === key ? '▴' : '▾'}</span></button>
+        ${ui.setOpen === key ? `<div style="padding:0 14px 14px">${body}</div>` : ''}</div>`;
+    const grp = (ic, title, href, items) => `<h2>${ic} ${title}</h2><div class="card" style="padding:0;overflow:hidden">
+        ${items.map(([k, ic2, t, sub], i) => `<a href="${href}${k}" style="display:flex;gap:12px;align-items:center;padding:12px 14px;${i ? 'border-top:1px solid #26292d;' : ''}color:inherit;text-decoration:none">
+          <span style="font-size:21px;width:28px;text-align:center">${ic2}</span><span style="flex:1"><b style="font-size:15px">${t}</b>${sub ? `<br><small style="color:var(--muted)">${sub}</small>` : ''}</span><span style="color:var(--yellow);font-size:20px">›</span></a>`).join('')}</div>`;
+    return `<div style="display:flex;align-items:center;gap:10px;margin:2px 0 6px"><button class="link" style="font-size:15px" onclick="closeSet()">‹ Úvod</button></div>
+      <h1 style="margin:0 0 4px">⚙ Nastavenia</h1><p class="empty" style="margin:0 0 12px">Ťukni na časť – otvorí sa rovno v appke. Späť sa vrátiš tlačidlom Späť v mobile.</p>
+      ${row('view', '👁', 'Pozrieť appku ako zamestnanec', 'Uvidíš úvod, Smeny aj Objednávky presne ako on',
+        `<p class="empty" style="margin:0 0 8px">Vyber zamestnanca – bez jeho kódu. Späť sa dostaneš tlačidlom „⚡ Späť ako vedúci“. Čo v tomto režime urobíš, sa naozaj zapíše.</p>
+         <select style="margin:0" onchange="viewAsEmp(this.value)"><option value="">— vyber zamestnanca —</option>${emps.map(e => `<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('')}</select>`)}
+      ${row('access', '🔐', 'Prístupy zamestnancov', 'Kto čo vidí na úvode a kam sa dostane',
+        `<p class="empty" style="margin:0 0 10px">Odškrtni, kam zamestnanec nemá mať prístup. Platí pre úvodnú stránku aj pre prihlásenie do Smien a Objednávok. Vedúci vidí vždy všetko.</p>
+        <table class="acc"><tr><th>Zamestnanec</th>${AREAS.map(a => `<th>${a[1]}</th>`).join('')}</tr>
+        ${emps.map(e => { const a = (access.e || {})[enc(e.name)] || {}; return `<tr><td>${esc(e.name)}</td>${AREAS.map(([k]) => `<td><input type="checkbox" ${(k === 'rezervacie' ? !rezAllowed(e.name) : a[k] === false) ? '' : 'checked'} onchange="setAccess('${esc(e.name).replace(/'/g, "\\'")}','${k}',this.checked)"></td>`).join('')}</tr>`; }).join('')}</table>`)}
+      ${grp('🍹', 'Objednávky', 'objednavky.html#nastavenia/', SET_OBJ)}
+      ${grp('📅', 'Smeny', 'smeny.html#nastavenia/', SET_SMENY)}
+      ${grp('🎯', 'Rezervácie laser game', 'rezervacie.html#nastavenia', [['', '🎯', 'Nastavenia rezervácií', 'balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe']])}`;
+  }
+
   const allowed = key => isMgr || !me || ((access.e || {})[enc(me)] || {})[key] !== false;
   // 🎯 Rezervácie: zoznam konkrétnych ľudí (rezWho); kým nie je uložený, platí staré „Aj zamestnanci“ + Prístupy
   const rezAllowed = name => {
@@ -466,7 +503,7 @@
     const head = `<div class="top"><div class="logo">CP</div><div class="brand"><b>CHILL POINT</b><small>Laser aréna Trnava</small></div>
       ${logged ? `<div class="who"><b>${isMgr ? '⚡ Vedúci' : '👤 ' + esc(me)}</b>${isMgrAuth && viewAs
         ? '<button onclick="backToMgr()">⚡ späť ako vedúci</button>'   // (2026-10-20) v režime 👁 len jedno tlačidlo – späť, nie odhlásenie
-        : '<button onclick="logout()">odhlásiť</button>'}</div>` : ''}</div>`;
+        : `${isMgr ? '<button onclick="openSet()">⚙ nastavenia</button> · ' : ''}<button onclick="logout()">odhlásiť</button>`}</div>` : ''}</div>`;
     if (!logged) {
       const html = head + `<h1>Prihlás sa</h1>${devCard()}<div class="card">
         ${ui.mgrForm ? `<form onsubmit="return false" style="margin:0"><input type="text" name="username" autocomplete="username" value="${MANAGER_EMAIL}" hidden><input type="password" id="mPass" placeholder="Heslo vedúceho" autocomplete="current-password" onkeydown="if(event.key==='Enter')mgrLogin()"></form>
@@ -476,7 +513,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" oninput="ui.lCode=this.value" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-05</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-15</footer>`;
       // (2026-11-04) Rovnaký obsah sa neprekresľuje: iPhone po výbere zo zoznamu stratí fokus, focusout zavolá render() a nové políčka
       // by zmazali vybrané meno aj rozpísaný kód či heslo – zamestnanec sa potom nevedel prihlásiť. Keď sa obsah naozaj zmení, meno a kód vráti ui.
       homeHtml = '';
@@ -488,6 +525,12 @@
       return;
     }
     loginHtml = '';
+    // (2026-11-15) ⚙ Nastavenia – samostatná stránka, len vedúci (openSet)
+    if (isMgr && ui.page === 'set') {
+      const html = head + setPageHtml() + `<footer>🏠 Úvod (index.html) · verzia 2026-11-15</footer>`;
+      if (html !== homeHtml) { writeApp(app, html); homeHtml = html; }
+      return;
+    }
     const bd = bizDate(), key = iso(bd), ppl = (day && !day.off ? (day.employees || []) : []).filter(Boolean);
     const hubTd = hubTodos(), tdLeft = hubTd.filter(t => !tdDone(t)).length;
     const td = todayTodos(key), resN = todayReservations(key), miss = boardOpen(), notice = latestNotice(key);
@@ -616,25 +659,12 @@
     }
     html += `</div>` + installTile();
     if (isMgr) {
-      // (2026-10-19) ⚙ Nastavenia len pre vedúceho – zbalené riadky, ktoré sa rozkliknú (ako v appke na zbrane)
-      const row = (key, ic, title, sub, body) => `<div class="card" style="padding:0;margin-bottom:8px">
-        <button class="tile" style="border-left-color:var(--muted);padding:12px 14px;margin:0" onclick="ui.setOpen=ui.setOpen==='${key}'?'':'${key}';render()"><span class="ic" style="font-size:22px">${ic}</span><span class="tx"><b style="font-size:15px">${title}</b><span>${sub}</span></span><span class="arr">${ui.setOpen === key ? '▴' : '▾'}</span></button>
-        ${ui.setOpen === key ? `<div style="padding:0 14px 14px">${body}</div>` : ''}</div>`;
-      const link = (href, ic, title, sub) => `<a class="tile" href="${href}" style="border-left-color:var(--muted);padding:12px 14px;margin-bottom:8px"><span class="ic" style="font-size:22px">${ic}</span><span class="tx"><b style="font-size:15px">${title}</b><span>${sub}</span></span><span class="arr">›</span></a>`;
-      html += `<h2>⚙ Nastavenia <small style="font-size:12px;color:var(--muted);font-weight:400">(vidí len vedúci)</small></h2>`
-        + row('view', '👁', 'Pozrieť appku ako zamestnanec', 'Uvidíš úvod, Smeny aj Objednávky presne ako on',
-          `<p class="empty" style="margin:0 0 8px">Vyber zamestnanca – bez jeho kódu. Späť sa dostaneš tlačidlom „⚡ Späť ako vedúci“. Čo v tomto režime urobíš, sa naozaj zapíše.</p>
-           <select style="margin:0" onchange="viewAsEmp(this.value)"><option value="">— vyber zamestnanca —</option>${emps.map(e => `<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('')}</select>`)
-        + row('access', '🔐', 'Prístupy zamestnancov', 'Kto čo vidí na úvode a kam sa dostane',
-          `<p class="empty" style="margin:0 0 10px">Odškrtni, kam zamestnanec nemá mať prístup. Platí pre úvodnú stránku aj pre prihlásenie do Smien a Objednávok. Vedúci vidí vždy všetko.</p>
-          <table class="acc"><tr><th>Zamestnanec</th>${AREAS.map(a => `<th>${a[1]}</th>`).join('')}</tr>
-          ${emps.map(e => { const a = (access.e || {})[enc(e.name)] || {}; return `<tr><td>${esc(e.name)}</td>${AREAS.map(([k]) => `<td><input type="checkbox" ${(k === 'rezervacie' ? !rezAllowed(e.name) : a[k] === false) ? '' : 'checked'} onchange="setAccess('${esc(e.name).replace(/'/g, "\\'")}','${k}',this.checked)"></td>`).join('')}</tr>`; }).join('')}</table>`)
-        + link('smeny.html#nastavenia', '📅', 'Nastavenia Smien', 'Prihlasovanie, Môžem/Nemôžem, limity, checklisty, funkcie')
-        + link('objednavky.html#nastavenia', '🍹', 'Nastavenia Objednávok', 'Stoly, menu, atrakcie, zamestnanci a zľavy, funkcie')
-        + link('rezervacie.html#nastavenia', '🎯', 'Nastavenia rezervácií', 'Balíčky (Monster Chill…), kto vidí rezervácie, otváracie hodiny a ponuka na webe');
+      // (2026-11-15) všetky nastavenia sú na samostatnej stránke ⚙ Nastavenia (setPageHtml) – tu len vstup do nej
+      html += `<h2>⚙ Nastavenia <small style="font-size:12px;color:var(--muted);font-weight:400">(vidí len vedúci)</small></h2>
+        <button class="tile" style="border-left-color:var(--muted)" onclick="openSet()"><span class="ic">⚙</span><span class="tx"><b>Nastavenia</b><span>Objednávky, Smeny, Rezervácie a prístupy zamestnancov – všetko na jednom mieste</span></span><span class="arr">›</span></button>`;
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-11-05</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-11-15</footer>`;
     if (html !== homeHtml) { writeApp(app, html); homeHtml = html; }   // rovnaký obsah sa neprekresľuje (ťuknutie po skrytí klávesnice by sa stratilo)
   }
 

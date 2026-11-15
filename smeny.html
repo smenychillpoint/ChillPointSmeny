@@ -673,7 +673,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-11-05· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-11-15· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -1459,6 +1459,19 @@
   let srvOffset=null, srvBase=0;
   const clockOk=()=>srvOffset!==null && Math.abs(srvOffset)<=5*60e3 && Math.abs(Date.now()-performance.now()-srvBase)<30e3;
 
+  // (2026-11-15) otvorí ⚙ Nastavenia a v nich rozbalí časť sec (id <details>: featBox, limitBox, weekBox, periodBox, ckCfgBox),
+  // alebo rozbalí časť pod kalendárom (rosterBox, statsBox, historyBox, backupBox) a posunie ju na obrazovku
+  function openSettingsSec(sec){
+    let el=/^[A-Za-z]+$/.test(sec) ? $(sec) : null;
+    // skrytá časť (podľa dní / obdobia bez limitu a minima, vypnuté checklisty) → otvorí sa tá, kde sa zapína
+    if(el && el.style.display==='none'){
+      const alt=(sec==='weekBox'||sec==='periodBox') ? 'limitBox' : 'featBox';
+      showToast(alt==='limitBox' ? 'Najprv zapni limit alebo minimum ľudí na deň.' : 'Táto časť je vypnutá – zapni ju vo Funkciách.', 4000);
+      el=$(alt);
+    }
+    if(!el || $('settingsModal').contains(el)){ fillViewAsSel(); $('settingsModal').classList.add('open'); }
+    if(el && el.tagName==='DETAILS'){ el.open=true; setTimeout(()=>{ try{ el.scrollIntoView({behavior:'smooth', block:'start'}); }catch(e){} }, 120); }
+  }
   async function initDb(){
     try{
       firebase.initializeApp(firebaseConfig);
@@ -1515,7 +1528,8 @@
           if(viewAsActive) myName = viewAsName;
           else if(viewAsName){ viewAsName=''; myName=''; try{ ['cp_viewAs','cp_myname','waiter'].forEach(k=>localStorage.removeItem(k)); }catch(e){} }   // režim 👁 bez vedúceho nesmie nechať cudzie meno
           // z úvodnej stránky "smeny.html#nastavenia" -> rovno okno ⚙ Nastavenia (len vedúci) – 2026-10-19
-          if(manager && location.hash==='#nastavenia'){ try{ window.history.replaceState(null,'',location.pathname); }catch(e){} setTimeout(()=>{ fillViewAsSel(); $('settingsModal').classList.add('open'); }, 300); }
+          // (2026-11-15) aj „#nastavenia/rosterBox“ a pod. z ⚙ Nastavení na úvode → rovno tá časť (openSettingsSec)
+          if(manager && /^#nastavenia(\/|$)/.test(location.hash)){ const sec=location.hash.split('/')[1]||''; try{ window.history.replaceState(null,'',location.pathname); }catch(e){} setTimeout(()=>openSettingsSec(sec), 300); }
           resetIdle();
           if(manager){ attachRatings(); attachHistory(); attachTargets(); attachPNotes(); if(latestRaw) migrateWrite(latestRaw,true); } else { detachRatings(); detachHistory(); detachTargets(); detachPNotes(); }
           renderAll();
