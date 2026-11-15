@@ -673,7 +673,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-11-15b· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-11-15c· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -2445,7 +2445,7 @@
       case 'approved': return '✓ schválené vedúcim';
       case 'declined': return '✗ zamietnuté vedúcim';
       case 'declined_peer': return `✗ ${sw.to} odmietol/a`;
-      case 'cancelled': return 'zrušené';
+      case 'cancelled': return sw.mgr ? 'zrušené vedúcim' : 'zrušené';
       default: return '';
     }
   }
@@ -2470,7 +2470,7 @@
       if(!pend.length && !wait && !opens.length){ sec.style.display='none'; list.innerHTML=''; return; }
       $('swapTitle').textContent=(pend.length||wait) ? 'VÝMENY NA SCHVÁLENIE' : 'VÝMENY SMIEN';
       html=pend.map(x=>`<div class="swap-item"><div class="swap-text"><b>${esc(x.from)}</b> → <b>${esc(x.to)}</b>${x.sub?' (náhradník)':''}<br><span>${what(x)}</span></div><div class="swap-btns"><button class="primary small" data-swap-approve="${x.id}">Schváliť</button><button class="outline" data-swap-reject="${x.id}">Zamietnuť</button></div></div>`).join('');
-      html+=opens.map(x=>`<div class="swap-item"><div class="swap-text">🙋 <b>${esc(x.from)}</b> hľadá náhradu za smenu <b>${esc(fmtDay(x.day))}</b>${x.note?` (${esc(x.note)})`:''}<br><span>zatiaľ sa nikto neprihlásil</span></div><div class="swap-btns"><button class="outline" data-sub-msg="${x.id}">📨 Osloviť ľudí</button></div></div>`).join('');
+      html+=opens.map(x=>`<div class="swap-item"><div class="swap-text">🙋 <b>${esc(x.from)}</b> hľadá náhradu za smenu <b>${esc(fmtDay(x.day))}</b>${x.note?` (${esc(x.note)})`:''}<br><span>zatiaľ sa nikto neprihlásil</span></div><div class="swap-btns"><button class="outline" data-sub-msg="${x.id}">📨 Osloviť ľudí</button><button class="outline" data-sub-cancel="${x.id}">✕ Zrušiť</button></div></div>`).join('');
       if(wait) html+=`<p class="sub" style="margin:4px 0 0;">Ďalších ${wait} ${plural(wait,'žiadosť čaká','žiadosti čakajú','žiadostí čaká')} na súhlas kolegu.</p>`;
     } else if(myName){
       const recent=x=>!x.ts || (Date.now()-x.ts)<14*86400000;
@@ -2486,7 +2486,7 @@
          + outgoing.map(x=>x.status==='open'
              ? `<div class="swap-item"><div class="swap-text">🙋 Hľadáš náhradu za smenu <b>${esc(fmtDay(x.day))}</b>${x.note?` (${esc(x.note)})`:''}<br><span>${esc(swapStatusText(x))}. Kým sa niekto neprihlási, ostávaš na smene ty.</span></div><div class="swap-btns"><button class="outline" data-sub-wa="${x.id}">💬 Poslať do skupiny</button><button class="outline" data-swap-cancel="${x.id}">Zrušiť</button></div></div>`
              : `<div class="swap-item"><div class="swap-text">Tvoja žiadosť pre <b>${esc(x.to)}</b>: ${what(x)}<br><span>${esc(swapStatusText(x))}</span></div><div class="swap-btns"><button class="outline" data-swap-cancel="${x.id}">Zrušiť</button></div></div>`).join('')
-         + done.map(x=>`<div class="swap-item" style="opacity:.75"><div class="swap-text"><b>${esc(x.from)}</b> → <b>${esc(x.to)}</b>: ${what(x)}<br><span>${esc(swapStatusText(x))}</span></div></div>`).join('');
+         + done.map(x=>`<div class="swap-item" style="opacity:.75"><div class="swap-text">${x.to===SWAP_ANY ? `🙋 Hľadanie náhrady za smenu <b>${esc(fmtDay(x.day))}</b>` : `<b>${esc(x.from)}</b> → <b>${esc(x.to)}</b>: ${what(x)}`}<br><span>${esc(swapStatusText(x))}</span></div></div>`).join('');
     } else { sec.style.display='none'; list.innerHTML=''; return; }
     sec.style.display='block'; list.innerHTML=html;
     document.querySelectorAll('[data-swap-yes]').forEach(x=>x.onclick=()=>swapRespond(x.dataset.swapYes,true));
@@ -2496,6 +2496,7 @@
     document.querySelectorAll('[data-sub-hide]').forEach(x=>x.onclick=()=>hideSub(x.dataset.subHide));
     document.querySelectorAll('[data-sub-wa]').forEach(x=>x.onclick=()=>{ const sw=swaps[x.dataset.subWa]; if(!sw) return; try{ window.open('https://wa.me/?text='+encodeURIComponent(subRequestText(sw)),'_blank'); }catch(e){ showToast('Nepodarilo sa otvoriť WhatsApp.'); } });
     document.querySelectorAll('[data-sub-msg]').forEach(x=>x.onclick=()=>{ const sw=swaps[x.dataset.subMsg]; if(sw) openCall('days',[sw.day]); });
+    document.querySelectorAll('[data-sub-cancel]').forEach(x=>x.onclick=()=>mgrCancelSub(x.dataset.subCancel));
     document.querySelectorAll('[data-swap-approve]').forEach(x=>x.onclick=()=>approveSwap(x.dataset.swapApprove));
     document.querySelectorAll('[data-swap-reject]').forEach(x=>x.onclick=()=>rejectSwap(x.dataset.swapReject));
   }
@@ -2557,6 +2558,19 @@
     if(!x || x.from!==myName || !(x.status==='open'||x.status==='pending_peer'||x.status==='pending_manager')) return;
     try{ await swapsRef.child(id).update({status:'cancelled'}); seenTouchSwap(id,'cancelled'); showToast('Žiadosť zrušená'); logEvent(x.day, `${myName} zrušil/a žiadosť o výmenu`, myName); }
     catch(e){ showToast('Nepodarilo sa uložiť.'); }
+  }
+  // (2026-11-15) vedúci zruší „hľadá náhradu“ (napr. sa to vyriešilo inak): zamestnanec ostáva na smene, kolegom žiadosť zmizne.
+  // Transakcia – keď ju medzitým niekto zobral, nezruší sa (je potom vyššie na schválenie). mgr:true = zrušil vedúci (texty správ).
+  async function mgrCancelSub(id){
+    const x=swaps[id];
+    if(!manager||!dbAvailable||!x||x.status!=='open') return;
+    if(!confirm(`Zrušiť hľadanie náhrady?\n${x.from} – smena ${fmtDay(x.day)}\n\n${x.from} ostáva na smene, kolegom žiadosť zmizne.`)) return;
+    try{
+      const res=await swapsRef.child(id).transaction(cur=>{ if(cur===null) return cur; if(cur.status!=='open') return; cur.status='cancelled'; cur.mgr=true; return cur; });
+      if(!res || !res.committed){ showToast('Medzitým ju niekto zobral – nájdeš ju vyššie na schválenie.', 4000); return; }
+      showToast('Hľadanie náhrady zrušené');
+      logEvent(x.day, `Vedúci zrušil hľadanie náhrady: ${x.from}`);
+    }catch(e){ showToast('Nepodarilo sa uložiť.'); }
   }
   async function approveSwap(id){
     const x=swaps[id];
@@ -3254,10 +3268,11 @@
         else if(st==='approved') text=`Tvoja výmena smeny ${day} bola schválená ✓`;
         else if(st==='declined') text=`Vedúci zamietol tvoju výmenu smeny ${day}.`;
         else if(st==='declined_peer') text=`${x.to} odmietol/a výmenu smeny ${day}.`;
+        else if(st==='cancelled' && x.mgr) text=`Vedúci zrušil tvoje hľadanie náhrady za smenu ${day} – ostávaš na smene.`;
       } else {
         if(st==='approved') text=`Výmena schválená: preberáš smenu ${day} ✓`;
         else if(st==='declined') text=`Vedúci zamietol výmenu smeny ${day}.`;
-        else if(st==='cancelled') text=`${x.from} zrušil/a žiadosť o výmenu smeny ${day}.`;
+        else if(st==='cancelled') text = x.mgr ? `Vedúci zrušil hľadanie náhrady (${x.from}) za smenu ${day}.` : `${x.from} zrušil/a žiadosť o výmenu smeny ${day}.`;
       }
       if(text) out.push({ text });
     });
