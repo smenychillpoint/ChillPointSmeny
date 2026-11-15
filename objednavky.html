@@ -140,7 +140,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-15c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-15e</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -3309,12 +3309,8 @@ function servedBlock() {
 // (2026-10-30) 💶 detail zaplateného účtu – ťuknutím na platbu (Uzávierka, História) sa otvorí veľký prehľad
 // položiek, nech sa to dá ľahko prepísať do pokladne; ‹ › prechádza platby toho dňa po poradí.
 let paidViewId = null, paidViewList = [], uzPaidIds = [], histPaidIds = [];
-function openPaid(id, ids) { paidViewId = id; paidViewList = ids || []; paidCatRow = null; render(); }
-function closePaid() { paidViewId = null; paidCatRow = null; render(); }
-// (2026-11-15) 🏷 zaplatenú položku dodatočne zaradiť do kategórie (napr. rýchla platba šípkarov → Šípky): vedúci ťukne
-// v detaile platby na 🏷 a vyberie kategóriu z menu. Zapíše sa do položky (cat) – Uzávierka ju potom ráta v tej kategórii
-// („Podľa kategórií“ aj v sektoroch). Zaplatené smie meniť len vedúci (aj podľa pravidiel Firebase).
-let paidCatRow = null, paidCatSaving = false;   // index riadku v detaile platby, pri ktorom je otvorený výber kategórie
+function openPaid(id, ids) { paidViewId = id; paidViewList = ids || []; render(); }
+function closePaid() { paidViewId = null; render(); }
 // rovnaké položky (názov + cena + poznámka) spolu
 function paidRows(o) {
   const rows = [];
@@ -3322,24 +3318,36 @@ function paidRows(o) {
     if (r) r.qty += it.qty; else rows.push({ ...it }); });
   return rows;
 }
-// kategória položky ako ju ráta Uzávierka (najprv zapísaná v položke, potom z menu)
-const paidItemCat = it => { const mi = it.menuId ? S.menu.find(m => m.id === it.menuId) : null; return it.cat || (mi && mi.category) || 'Ostatné'; };
-function paidCatHtml(o, r, ri) {
+// (2026-11-15) 📍 zaplatený účet dodatočne priradiť k sektoru („tento účet boli Šípkari, tento Quiz…“): vedúci v detaile
+// platby ťukne na sektor, prípadne si rovno pridá nový. Zapíše sa o.sec (ako pri rýchlej platbe „📍 pre koho“) – Uzávierka
+// účet potom ráta v tom sektore („z toho 📍 …“, prehľad sektora, CSV), nie podľa stola. Zaplatené smie meniť len vedúci (aj pravidlá).
+let paidSecSaving = false;
+function paidSecHtml(o) {
   if (!isManager || o.status !== 'zaplatena') return '';
-  const cur = paidItemCat(r), open = paidCatRow === ri, cats = [...new Set([...allCategories(), cur])];
-  return `<div style="margin-top:6px"><button class="btn ghost" style="width:auto;padding:4px 10px;font-size:13px" onclick="paidCatRow=${open ? 'null' : ri};render()">🏷 ${esc(cur)} ${open ? '▴' : '▾'}</button>
-    ${open ? `<div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">${cats.map(c => `<button class="btn ${c === cur ? '' : 'ghost'}" style="width:auto;padding:6px 12px;font-size:14px" onclick="setPaidCat(${ri},decodeURIComponent('${grpArg(c)}'))">${esc(c)}</button>`).join('')}</div>
-      <div class="muted" style="font-size:12px;margin-top:4px">Vyber kategóriu – Uzávierka to potom ráta v nej.</div>` : ''}</div>`;
+  const secs = uzSectors(), byTable = o.sec ? null : secs.find(s => inSector(o, s));
+  return `<div style="margin-top:14px;padding-top:10px;border-top:1px solid var(--line)">
+    <div class="muted" style="font-size:13px;margin-bottom:6px">📍 Sektor tohto účtu: ${o.sec ? `<b>${esc(o.sec)}</b>` : byTable ? `podľa stola <b>${esc(byTable.n)}</b>` : 'žiadny'} – ťukni, kam patrí</div>
+    <div class="row" style="flex-wrap:wrap;gap:6px">${secs.map(s => `<button class="btn ${o.sec === s.n ? '' : 'ghost'}" style="width:auto;padding:8px 14px" onclick="setPaidSec(decodeURIComponent('${grpArg(s.n)}'))">📍 ${esc(s.n)}</button>`).join('')}
+      <button class="btn ghost" style="width:auto;padding:8px 14px" onclick="addPaidSec()">➕ Nový sektor</button>
+      ${o.sec ? `<button class="btn ghost" style="width:auto;padding:8px 14px" onclick="setPaidSec('')">✕ Bez sektora</button>` : ''}</div></div>`;
 }
-async function setPaidCat(ri, cat) {
-  const o = paidViewId && S.orders.find(x => x.id === paidViewId), r = o && paidRows(o)[ri];
-  if (!r || !isManager || o.status !== 'zaplatena' || paidCatSaving) return;
-  if (cat === paidItemCat(r)) { paidCatRow = null; return render(); }
-  const items = o.items.map(it => it.name === r.name && it.price === r.price && (it.note || '') === (r.note || '') ? { ...it, cat } : it);
-  paidCatSaving = true;
-  try { await db.ref('orders/' + o.id + '/items').set(items); paidCatRow = null; toast(`🏷 ${r.name} → ${cat} ✓`); }
+async function setPaidSec(n) {
+  const o = paidViewId && S.orders.find(x => x.id === paidViewId);
+  if (!o || !isManager || o.status !== 'zaplatena' || paidSecSaving || (o.sec || '') === n) return;
+  paidSecSaving = true;
+  try { await db.ref('orders/' + o.id + '/sec').set(n || null); toast(n ? `📍 #${o.no} → ${n} ✓` : `📍 #${o.no} – bez sektora ✓`); }
   catch (e) { toast('Nepodarilo sa uložiť – zaplatené smie meniť len vedúci'); }
-  paidCatSaving = false; render();
+  paidSecSaving = false; render();
+}
+// nový sektor rovno z detailu platby – bez stolov (ako „Šípkari“); stoly mu vedúci pridá v Uzávierke → ✎ Upraviť sektory
+async function addPaidSec() {
+  if (!isManager) return;
+  const n = String(prompt('Názov nového sektora (napr. Šípkari, Quiz):', '') || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+  if (!n) return;
+  const secs = uzSectors(), same = secs.find(s => s.n.toLowerCase() === n.toLowerCase());
+  if (same) return setPaidSec(same.n);
+  try { await call('PUT', '/api/access', { uzSectors: [...secs, { n, g: [], t: [] }] }); } catch (e) { return; }
+  await setPaidSec(n);
 }
 function paidOverlay() {
   const o = paidViewId && S.orders.find(x => x.id === paidViewId);
@@ -3354,11 +3362,12 @@ function paidOverlay() {
         <div><div style="font-size:20px;font-weight:800">${esc(o.tableName)}${o.sec ? ' · 📍 ' + esc(o.sec) : ''}${o.guest ? ' · 👤 ' + esc(o.guest) : ''}</div>
           <div class="muted">💶 zaplatené ${tm} · #${o.no}${o.waiter ? ' · ' + esc(o.waiter) : ''}${o.staff ? ' · 👤 zamestnanec' + (o.staffName ? ' ' + esc(o.staffName) : '') + ' (mimo tržby)' : ''}</div></div>
         <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="closePaid()">✕</button></div>
-      <div style="margin-top:10px">${rows.map((r, ri) => `<div class="row" style="justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-top:1px solid var(--line)">
+      <div style="margin-top:10px">${rows.map(r => `<div class="row" style="justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-top:1px solid var(--line)">
         <div style="flex:1;min-width:0;font-size:18px"><b style="font-size:22px">${r.qty}×</b> ${esc(r.name)}
-          <div class="muted" style="font-size:13px">${eur(r.price)} / ks${r.origPrice != null && r.origPrice !== r.price ? ` <s>${eur(r.origPrice)}</s> zľava` : ''}${r.note ? ' · 📝 ' + esc(r.note) : ''}</div>${paidCatHtml(o, r, ri)}</div>
+          <div class="muted" style="font-size:13px">${eur(r.price)} / ks${r.origPrice != null && r.origPrice !== r.price ? ` <s>${eur(r.origPrice)}</s> zľava` : ''}${r.note ? ' · 📝 ' + esc(r.note) : ''}</div></div>
         <b style="font-size:18px;white-space:nowrap">${eur(r.price * r.qty)}</b></div>`).join('')}</div>
       <div class="total" style="border-top:2px solid var(--ink);padding-top:10px;margin-top:4px;font-size:22px"><b>Spolu</b><b>${eur(sumOrders([o]))}</b></div>
+      ${paidSecHtml(o)}
       ${paidViewList.length > 1 ? `<div class="row" style="justify-content:space-between;margin-top:12px">${nav(prev, '‹ Predošlá')}<span class="muted" style="align-self:center">${i + 1} / ${paidViewList.length}</span>${nav(next, 'Ďalšia ›')}</div>` : ''}
     </div></div>`;
 }
