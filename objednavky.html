@@ -81,6 +81,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .order li:last-child{border:0}
 .order li b{display:inline-block;min-width:36px;color:var(--accent)}
 .order li i{display:block;font-size:14px;color:var(--warn);margin-left:36px}
+.paidtag{align-self:flex-start;background:var(--ok);color:var(--card);font-size:19px;font-weight:900;letter-spacing:.4px;padding:4px 12px;border-radius:8px}
 .note{background:var(--warnbg);color:var(--warn);padding:8px 10px;border-radius:8px;font-size:15px}
 .bar-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
 .ready{position:sticky;top:106px;z-index:4;display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
@@ -140,7 +141,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-15e</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-15f</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -352,7 +353,7 @@ const isSplitPart = o => o.items.length === 1 && /^Podiel účtu \(\d+\/\d+\)$/.
 function splitDupFilter(paid) {
   const parts = paid.filter(isSplitPart);
   if (!parts.length) return paid;
-  return paid.filter(o => isSplitPart(o) || !parts.some(p => p.tableId === o.tableId && Math.abs((p.paidAt || 0) - (o.paidAt || 0)) < 15000));
+  return paid.filter(o => isSplitPart(o) || o.upfront || !parts.some(p => p.tableId === o.tableId && Math.abs((p.paidAt || 0) - (o.paidAt || 0)) < 15000));
 }
 // "YYYY-MM-DD" -> Date objekt (lokálny čas, nie UTC ako by dal new Date(string))
 const parseISODate = s => { const [y, mo, da] = s.split('-').map(Number); return new Date(y, mo - 1, da); };
@@ -360,7 +361,7 @@ const parseISODate = s => { const [y, mo, da] = s.split('-').map(Number); return
 const dayShort = s => { const [y, mo, da] = s.split('-').map(Number); return `${da}.${mo}.`; };
 const str = (v, max = 100) => String(v ?? '').trim().slice(0, max);
 const num = v => Math.round(Number(String(v ?? '').replace(',', '.')) * 100) / 100;
-function fail(msg) { toast(msg); throw new Error(msg); }
+function fail(msg) { toast(msg); const e = new Error(msg); e.shown = true; throw e; }
 // ---------- 🎯 Laser game – rozdelím pri platení (2026-10-26) ----------
 // Pri objednávaní sa zadá len počet hráčov × hier → na účet ide jeden riadok LG_NAME s cenou dospelého
 // (menuId dospelého, lg: {p: hráči, g: hry}, qty = vstupy). Pri platení / na účte stola sa rozdelí na dospelých /
@@ -547,9 +548,11 @@ function logDeleted(o) {
   try {
     const who = isManager ? 'Vedúci' : (store.get('waiter', '') || 'neznámy');
     const paid = o.status === 'zaplatena';
+    // (2026-11-07) 💶 zaplatený lístok z baru: označiť ho a dať ho ku dňu jeho platby (peniaze sú v tržbe toho dňa)
+    const tkPay = !paid && isTicket(o) ? S.orders.find(x => x.id === o.paidIn && x.status === 'zaplatena') : null;
     const rec = { no: Number(o.no) || 0, tableName: str(o.tableName, 40), total: Math.round(sumOrders([o]) * 100) / 100,
-      items: str((o.items || []).map(i => `${i.qty}× ${i.name}`).join(', '), 400), status: str(o.status, 20),
-      day: paid ? orderDayKey(o) : (bizDay || bizTodayISO()), deletedAt: now(), by: str(who, 60) };
+      items: str((o.items || []).map(i => `${i.qty}× ${i.name}`).join(', '), 400), status: str(isTicket(o) ? 'zaplateny-listok' : o.status, 20),
+      day: paid ? orderDayKey(o) : tkPay ? orderDayKey(tkPay) : (bizDay || bizTodayISO()), deletedAt: now(), by: str(who, 60), ...((paid ? o.staff : tkPay && tkPay.staff) ? { staff: true } : {}), ...(!paid && isTicket(o) && !tkPay ? { noPay: true } : {}) };
     db.ref('deletedLog').push(rec).then(() => { if (!delLogLoading) { delLog = null; safeRender(); } }).catch(() => {});
   } catch (e) {}
 }
@@ -569,7 +572,7 @@ function loadDelLog() {
 // Rovnaké rozhranie ako pri verzii so serverom, len namiesto servera sa zapisuje do Firebase
 async function call(method, url, body = {}) {
   try { return await callInner(method, url.split('/').filter(Boolean).slice(1), body); }
-  catch (e) { if (e.code) toast('Chyba: ' + (e.code.includes('permission') ? 'nemáte prístup' : e.message)); throw e; }
+  catch (e) { if (e.code) toast('Chyba: ' + (/permission/i.test(e.code) ? 'nedá sa uložiť – medzitým sa to zmenilo alebo na to nemáte prístup. Skús znova.' : e.message)); throw e; }
 }
 async function callInner(m, [col, id, action], body) {
   if (col === 'tables') {
@@ -606,14 +609,19 @@ async function callInner(m, [col, id, action], body) {
     if (m === 'POST' && action === 'paySome') {
       const need = {};
       (body.items || []).forEach(i => { const k = i.name + '|' + i.price; need[k] = (need[k] || 0) + Math.max(0, i.qty | 0); });
-      const os = tableOrders(id).sort((a, b) => a.createdAt - b.createdAt);
+      // (2026-11-07) najprv sa platí to, čo už hostia majú (vydana), potom hotova, nakoniec nova – zaplatené z baru sa tak delí len zriedka
+      const os = tableOrders(id).sort((a, b) => payRank(a) - payRank(b) || a.createdAt - b.createdAt);
       const u = {}; const paidItems = [];
+      const keepBar = [];   // (2026-11-07) 💶 zaplatené časti objednávok, ktoré ešte nie sú u hostí → ostanú na bare ako lístok
       let leftOnTable = false;   // ostane po platbe na stole ešte niečo? (ak nie, meno k účtu zmizne)
       os.forEach(o => {
-        let changed = false;
+        let changed = false; const took = [];
         const items = o.items.map(it => {
           const k = it.name + '|' + it.price; const take = Math.min(need[k] || 0, it.qty);
           if (take > 0) { need[k] -= take; changed = true;
+            // (2026-11-07) „+N pridané“ sa rozdelí so súčtom: platia sa najprv pôvodné kusy, pridané ostávajú na pôvodnej karte
+            const { plus: pl0, ...rest } = it, pl = pl0 || 0, tkPlus = Math.max(0, take - (it.qty - pl));
+            took.push({ ...rest, qty: take, ...(tkPlus ? { plus: tkPlus } : {}) });
             // POZOR: položky z ukončenej atrakcie nemajú menuId (Firebase pri zápise "null" hodnotu úplne
             // vynechá, takže sa pri čítaní späť správa ako undefined) - nikdy sem nedávaj "menuId: it.menuId"
             // natvrdo, lebo zápis objektu s explicitnou hodnotou undefined do Firebase rovno zlyhá (a keďže
@@ -622,13 +630,17 @@ async function callInner(m, [col, id, action], body) {
             paidItems.push({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: take, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}),
               ...(it.staffPct ? { staffPct: it.staffPct, origPrice: it.origPrice } : {}),
               ...(typeof (it.at || o.createdAt) === 'number' ? { at: it.at || o.createdAt } : {}) });
-            return { ...it, qty: it.qty - take }; }
+            return { ...rest, qty: it.qty - take, ...(pl - tkPlus > 0 ? { plus: pl - tkPlus } : {}) }; }
           return it;
         }).filter(it => it.qty > 0);
         if (changed) {
+          // (2026-11-07) 💶 zaplatené z objednávky, ktorá je ešte na bare / na odnesenie, ostane na bare ako lístok k platbe:
+          // celá objednávka sa len označí (paidIn), pri čiastočnej sa zaplatené kusy oddelia na nový lístok (nižšie)
+          const keep = o.status === 'nova' || o.status === 'hotova';
+          if (keep) keepBar.push({ o, took, whole: !items.length });
           // úplne vyprázdnená pôvodná objednávka sa ZMAŽE - všetky jej položky sú už v novej platbe nižšie.
           // (predtým sa označila ako zaplatená s 0 položkami a v Uzávierke strašila ako riadok "0,00 €")
-          if (!items.length) u[o.id] = null;
+          if (!items.length) { if (!keep) u[o.id] = null; }
           else { u[o.id + '/items'] = items; leftOnTable = true; }
         } else if (o.items.length) leftOnTable = true;
       });
@@ -636,13 +648,28 @@ async function callInner(m, [col, id, action], body) {
       const guest = guestOf(id);
       // pri 🌙 pracovnom dni sa platba rozdelí na dve: nahodené do toho dňa → pod pracovný deň, nahodené neskôr → podľa času platby
       const groups = bizDay ? [paidItems.filter(it => toBizDay(it.at)), paidItems.filter(it => !toBizDay(it.at))].filter(g => g.length) : [paidItems];
+      let kB = null, kL = null;   // (2026-11-07) kľúč platby pod 🌙 pracovný deň / platby podľa času platby
       for (const items of groups) {
         const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
         const newKey = db.ref('orders').push().key;
+        if (bizDay && !toBizDay(items[0].at)) kL = newKey; else kB = newKey;
         u[newKey] = { no: r.snapshot.val(), tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30), ...(guest ? { guest } : {}),
           note: '', items, status: 'zaplatena', createdAt: now(), paidAt: now(), ...(toBizDay(items[0].at) ? { businessDay: bizDay } : {}),
           ...(isStaffTable(id) ? { staff: true, staffName: str(staffNameOf(id), 40) } : {}) };
       }
+      // 💶 ostáva na bare: lístok nemá tableId (nie je na účte stola ani v starej verzii appky), cieľ je v dest, meno v guest.
+      // paidIn = platba, do ktorej padli jeho kusy (rovnaké pravidlo ako rozdelenie paidItems vyššie).
+      // staff: true len kvôli zariadeniam so starou verziou appky – ich Uzávierka by lístok rátala ako „ešte nezaplatené“
+      // (nová ho vynechá podľa paidIn; o.staff na nezaplatenom zázname inde nečíta ani stará, ani nová verzia).
+      keepBar.forEach(({ o, took, whole }) => {
+        const pk = (!bizDay || toBizDay(took[0].at || o.createdAt)) ? (kB || kL) : (kL || kB);
+        if (whole) {
+          u[o.id + '/paidIn'] = pk; u[o.id + '/staff'] = true;
+          u[o.id + '/items'] = took;   // lístok = presne to, čo sa zaplatilo (neskoré „➕ Pridať“ z iného zariadenia nebude zadarmo)
+          if (o.tableId) { u[o.id + '/dest'] = o.tableId; u[o.id + '/tableId'] = null; }
+          if (guest) u[o.id + '/guest'] = str(guest, 40);
+        } else u[db.ref('orders').push().key] = ticketOf(S.orders.find(x => x.id === o.id) || o, took, pk, guest);
+      });
       await db.ref('orders').update(u);
       if (!leftOnTable && guest) clearGuest(id);   // celý účet vyplatený -> meno zmizne
       if (!leftOnTable && isStaffTable(id)) db.ref('meta/staffTables/' + id).remove().catch(() => {});   // aj označenie zamestnanca
@@ -663,7 +690,15 @@ async function callInner(m, [col, id, action], body) {
       const u = {};
       // pôvodné objednávky sa ZMAŽÚ - nahradia ich podiely nižšie. (Predtým sa označili ako zaplatené a v Uzávierke
       // sa tak tržba rátala DVAKRÁT: pôvodný účet + podiely. Staré takéto dvojice odfiltruje splitDupFilter.)
-      os.forEach(o => { u[o.id] = null; });
+      const shareKeys = Array.from({ length: parts }, () => db.ref('orders').push().key), tkGuest = guestOf(id);
+      // (2026-11-07) 💶 objednávka, ktorá ešte nie je u hostí (nova / hotova), ostane na bare ako zaplatený lístok (paidIn = prvý podiel)
+      // staff: true a položky – rovnako ako v paySome (stará Uzávierka; neskoré „➕ Pridať“ nebude zadarmo)
+      os.forEach(o => {
+        if (o.status !== 'nova' && o.status !== 'hotova') { u[o.id] = null; return; }
+        u[o.id + '/paidIn'] = shareKeys[0]; u[o.id + '/staff'] = true; u[o.id + '/items'] = o.items;
+        if (o.tableId) { u[o.id + '/dest'] = o.tableId; u[o.id + '/tableId'] = null; }
+        if (tkGuest) u[o.id + '/guest'] = str(tkGuest, 40);
+      });
       // ord = z čoho sa účet skladal podľa času objednania (pre ⏰ % čašníka, ktorý tu bol len časť dňa)
       const ord = os.filter(o => typeof o.createdAt === 'number').map(o => ({ t: o.createdAt, v: sumOrders([o]) })).filter(x => x.v > 0).slice(0, 50);
       const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
@@ -678,7 +713,7 @@ async function callInner(m, [col, id, action], body) {
         const isLast = i === parts - 1;
         const amountCents = isLast ? remainingCents : baseCents;
         remainingCents -= amountCents;
-        const key = db.ref('orders').push().key;
+        const key = shareKeys[i];
         u[key] = { no: ((n0 - 1 + i) % 999) + 1, tableId: t.id, tableName: t.name, waiter: str(body.waiter, 30), note: '', ...(guest ? { guest } : {}),
           items: [{ name: `Podiel účtu (${i + 1}/${parts})`, price: Math.round(amountCents) / 100, qty: 1 }], ...(ord.length ? { ord } : {}),
           status: 'zaplatena', createdAt: now(), paidAt: now(), ...(splitBiz ? { businessDay: bizDay } : {}),
@@ -756,6 +791,8 @@ async function callInner(m, [col, id, action], body) {
       const u = {};
       const targetHad = tableOrders(target.id).length, srcStaff = staffTables[id];
       os.forEach(o => { u[o.id + '/tableId'] = target.id; u[o.id + '/tableName'] = target.name; });
+      // (2026-11-07) 💶 zaplatené, čo ešte čaká na bare / na odnesenie, sa nosí k tým istým hosťom
+      open().filter(o => o.paidIn && o.dest === id && o.status !== 'vydana').forEach(o => { u[o.id + '/dest'] = target.id; u[o.id + '/tableName'] = target.name; });
       await db.ref('orders').update(u);
       // zamestnanecký účet ide so svojím účtom (na prázdny stôl); na stôl s iným účtom sa označenie neprenáša
       if (srcStaff) { try { if (!targetHad) await db.ref('meta/staffTables/' + target.id).set(srcStaff); await db.ref('meta/staffTables/' + id).remove(); } catch (e) {} }
@@ -900,12 +937,16 @@ async function callInner(m, [col, id, action], body) {
       return db.ref('orders').push(rec);
     }
     const o = S.orders.find(x => x.id === id); if (!o) fail('Objednávka neexistuje');
-    if (m === 'POST' && action === 'status') return db.ref('orders/' + id).update({ status: body.status, [body.status + 'At']: now() });
+    if (m === 'POST' && action === 'status') {
+      if (!['nova', 'hotova', 'vydana'].includes(body.status)) fail('Neplatný stav');   // (2026-11-07) zaplatené vzniká len platbou
+      return db.ref('orders/' + id).update({ status: body.status, [body.status + 'At']: now() });
+    }
     // Pridanie ďalších položiek k objednávke, ktorá je ešte NA BARE (barman ju ešte nepripravil) - nech barman
     // dostane jeden lístok namiesto dvoch. Rovnaká položka (rovnaká cena aj poznámka) sa len navýši; pridané kusy
     // sa označia "plus", aby ich barman videl ako novo pridané.
     if (m === 'POST' && action === 'addItems') {
       if (o.status !== 'nova') fail('Objednávka už nie je na bare – pošli novú');
+      if (o.paidIn) fail('Táto objednávka je už zaplatená – pošli novú');
       const add = isStaffTable(o.tableId) ? staffItems(buildOrderItems(body.items)) : buildOrderItems(body.items);
       if (!add.length) fail('Nič na pridanie');
       const items = o.items.map(x => ({ ...x }));
@@ -921,7 +962,10 @@ async function callInner(m, [col, id, action], body) {
     if (m === 'POST' && action === 'moveTo') {
       if (o.status === 'zaplatena') fail('Zaplatenú objednávku už nejde presunúť');
       const target = S.tables.find(x => x.id === body.targetId); if (!target) fail('Cieľový stôl neexistuje');
-      if (target.id === o.tableId) return;
+      if (target.id === (o.paidIn ? o.dest : o.tableId)) return;
+      // (2026-11-07) 💶 zaplatený lístok: mení sa len, kam sa nesie (dest) – na účet stola nejde
+      // tableId: null opraví lístok, ktorému tableId zapísala stará verzia appky ešte pred novými pravidlami
+      if (o.paidIn) return db.ref('orders/' + id).update({ dest: target.id, tableName: target.name, tableId: null });
       return db.ref('orders/' + id).update({ tableId: target.id, tableName: target.name });
     }
     // Odobratie 1 kusu položky z objednávky, ktorá je ešte na bare / čaká na odnesenie (zákazník si to rozmyslel).
@@ -959,6 +1003,39 @@ async function callInner(m, [col, id, action], body) {
         items: [{ name: note || 'Rýchla platba', price, qty: 1, note: '', cat: 'Rýchla platba', ...(body.noPct ? { noPct: true } : {}) }],
         status: 'zaplatena', createdAt: now(), paidAt: now(), ...(bizDay ? { businessDay: bizDay } : {}), ...(sec ? { sec } : {})
       });
+    }
+  }
+  // (2026-11-07) 💶 Zaplatené hneď: zákazník zaplatil hneď pri objednaní, no bar to ešte musí pripraviť → dva záznamy jedným zápisom:
+  // platba (zaplatena – do Uzávierky rovnako ako pri paySome) a lístok na bar (nova, paidIn = kľúč platby; do tržby ani na účet nejde).
+  // Cieľ (nepovinný): stôl (tableId), meno (name) alebo nič = vyzdvihne si na bare; bez stola sa dá vybrať 📍 sektor ako pri rýchlej platbe.
+  // Lístok nemá tableId (cieľový stôl je v dest), aby ho appka nedala na účet stola; pravidlo vo Firebase (orders/$id/tableId)
+  // zápis tableId k záznamu s paidIn odmietne, takže ani stará verzia appky (↔ Na iný stôl) ho na účet nedá.
+  if (col === 'paidnow') {
+    if (m === 'POST' && !id) {
+      const dt = body.tableId ? S.tables.find(x => x.id === body.tableId) : null;
+      if (body.tableId && !dt) fail('Stôl neexistuje');
+      if ((Array.isArray(body.items) ? body.items : []).some(c => c && c.lg)) fail('🎯 Laser game na rozdelenie sa nedá zaplatiť hneď – vyber dospelý / študent / dieťa');
+      const staff = !!(dt && isStaffTable(dt.id));
+      const items = staff ? staffItems(buildOrderItems(body.items)) : buildOrderItems(body.items);
+      if (!items.length) fail('Objednávka je prázdna');
+      const who = dt ? '' : str(body.name, 30);
+      const sec = !dt && body.sec && uzSectors().some(s => s.n === body.sec) ? str(body.sec, 30) : '';
+      const guest = str(dt ? guestOf(dt.id) : who, 40);
+      const r = await db.ref('meta/lastNo').transaction(n => ((n || 0) % 999) + 1);
+      const no = r.snapshot.val(), t0 = now(), waiter = str(body.waiter, 30), note = str(body.note, 120);
+      const payKey = db.ref('orders').push().key, tkKey = db.ref('orders').push().key;
+      const u = {};
+      // platba: položky ako pri paySome (at = kedy sa objednalo – teraz)
+      u[payKey] = { no, ...(dt ? { tableId: dt.id } : {}), tableName: dt ? dt.name : PN_NAME, waiter, ...(guest ? { guest } : {}), note,
+        items: items.map(it => ({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: it.qty, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}),
+          ...(it.staffPct ? { staffPct: it.staffPct, origPrice: it.origPrice } : {}), at: t0 })),
+        status: 'zaplatena', createdAt: t0, paidAt: t0, upfront: true, ...(toBizDay(t0) ? { businessDay: bizDay } : {}), ...(sec ? { sec } : {}),
+        ...(staff ? { staff: true, staffName: str(staffNameOf(dt.id), 40) } : {}) };
+      // lístok: staff: true len kvôli zariadeniam so starou verziou appky (viď ticketOf)
+      u[tkKey] = { no, ...(dt ? { dest: dt.id } : {}), tableName: dt ? dt.name : (who ? '👤 ' + who : PN_PICKUP), waiter, note, items,
+        status: 'nova', createdAt: t0, paidIn: payKey, ...(guest ? { guest } : {}), staff: true };
+      await db.ref('orders').update(u);
+      return { payKey, tkKey, no };
     }
   }
   // Poradovník (napr. na biliard, ping-pong) - kto čaká a kto je ďalší na rade
@@ -1120,12 +1197,12 @@ const orderDueNow = o => !o.dueAt || o.dueAt - LATER_LEAD <= now();
 const hhmmOf = t => new Date(t).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' });
 let laterAnnounced = new Set();
 setInterval(() => {   // pípnutie na bare, keď naplánovaná objednávka "príde na rad"
-  const due = S.orders.filter(o => o.status === 'nova' && o.dueAt && orderDueNow(o) && !laterAnnounced.has(o.id));
+  const due = S.orders.filter(o => o.status === 'nova' && o.dueAt && orderDueNow(o) && !tkOld(o) && !laterAnnounced.has(o.no + '|' + o.dueAt));
   if (!due.length) return;
-  due.forEach(o => laterAnnounced.add(o.id));
+  due.forEach(o => laterAnnounced.add(o.no + '|' + o.dueAt));
   if (role === 'bar') { beep([880, 1320, 880]); toast(`⏰ Treba pripraviť: ${due.map(o => o.tableName + ' #' + o.no).join(', ')}`); safeRender(); }
 }, 20000);
-async function laterNow(id) { try { await db.ref('orders/' + id + '/dueAt').remove(); } catch (e) { toast('Nepodarilo sa uložiť'); } }
+async function laterNow(id) { try { await db.ref('orders/' + id).update({ dueAt: null, novaAt: now() }); } catch (e) { toast('Nepodarilo sa uložiť'); } }
 async function sendOrderLater() {
   if (!cart.length) return;
   const d = new Date(now() + 30 * 60e3); d.setMinutes(Math.ceil(d.getMinutes() / 15) * 15, 0, 0);
@@ -1176,7 +1253,7 @@ function onData(v) {
   if (prevStatus) {
     // pípne aj vtedy, keď čašník k objednávke na bare niečo pridal
     // (objednávka "na neskôr" nepípne pri zapísaní – pípne až keď príde jej čas, viď laterTick)
-    if (role === 'bar' && S.orders.some(o => o.status === 'nova' && orderDueNow(o) && (!prevStatus[o.id] || (o.addedAt && o.addedAt !== prevAdded[o.id])))) beep([880, 1320]);
+    if (role === 'bar' && S.orders.some(o => o.status === 'nova' && orderDueNow(o) && !tkOld(o) && ((!prevStatus[o.id] && !o.part) || (o.addedAt && o.addedAt !== prevAdded[o.id])))) beep([880, 1320]);
     if ((role === 'casnik' || role === 'odniest') && S.orders.some(o => o.status === 'hotova' && prevStatus[o.id] && prevStatus[o.id] !== 'hotova')) beep([660, 990, 1320]);
   }
   prevStatus = st; prevAdded = added;
@@ -1209,6 +1286,11 @@ function prune() {
   if (!isManager) return;
   const u = {}, limit = now() - 30 * 864e5;
   S.orders.forEach(o => { if (o.status === 'zaplatena' && o.paidAt < limit) u[o.id] = null; });
+  // (2026-11-07) 💶 lístky k zaplateným (peniaze sú v platbe): odnesené pred viac ako 12 h a všetky staršie ako 48 h
+  const tkLimit = now() - 12 * 3600e3, tkMax = now() - 48 * 3600e3;
+  S.orders.forEach(o => { if (isTicket(o) && ((o.status === 'vydana' && (o.vydanaAt || o.createdAt || 0) < tkLimit) || (o.createdAt || 0) < tkMax)) u[o.id] = null; });
+  // lístok s tableId (zapísala ho stará verzia appky skôr, než platili nové pravidlá) → preč z účtu stola
+  S.orders.forEach(o => { if (isTicket(o) && o.tableId && u[o.id] !== null) u[o.id + '/tableId'] = null; });
   if (Object.keys(u).length) db.ref('orders').update(u).catch(() => {});
   // zdieľané výplaty (hodiny, trinkgeľ) staršie ako 120 dní sa zmažú
   const plimit = dateKey(new Date(now() - 120 * 864e5)), up = {};
@@ -1440,7 +1522,32 @@ function toast(msg) {
 }
 const ago = t => { const m = Math.floor((now() - t) / 60000); return m < 1 ? 'teraz' : m + ' min'; };
 const open = () => S.orders.filter(o => o.status !== 'zaplatena');
-const tableOrders = id => open().filter(o => o.tableId === id);
+// (2026-11-07) 💶 Zaplatené hneď: lístok na bar k už zaplatenej platbe (paidIn = kľúč platby, dest = cieľový stôl, guest = meno).
+// Je na Bare a v Odniesť, ale nie je to účet stola – nepočíta sa do účtu, platby, „ešte nezaplatené“, % ani do tržby (peniaze sú v platbe).
+const isTicket = o => !!(o && o.paidIn) && o.status !== 'zaplatena';
+const TK_OLD = 3 * 3600e3;   // lístok, ktorý nikto neodklikol viac ako 3 h, je asi vydaný → na Bare v zbalenom bloku „🕘 Staršie zaplatené“
+// od kedy je lístok „na rade“: objednanie, čas ⏰, „Pripraviť už teraz“ / ↩ späť na bar (novaAt), Hotové (hotovaAt)
+const tkBase = o => Math.max(o.createdAt || 0, o.dueAt || 0, o.novaAt || 0, o.hotovaAt || 0);
+const tkOld = o => isTicket(o) && o.status !== 'vydana' && now() - tkBase(o) > TK_OLD;
+const tableOrders = id => open().filter(o => o.tableId === id && !o.paidIn);
+const tableTickets = id => open().filter(o => o.paidIn && o.dest === id && o.status !== 'vydana' && !tkOld(o));
+const payRank = o => o.status === 'vydana' ? 0 : o.status === 'hotova' ? 1 : 2;
+// zaplatené kusy objednávky, ktorá ešte nie je u hostí → samostatný lístok na bare (rovnaké číslo, stav aj čas; part = zaplatená časť,
+// nepípa ako nová objednávka). Stav sa číta po uložení platby – ak to medzitým odniesli (vydana), lístok je hneď v „✓ Už odnesené“.
+// staff: true len kvôli zariadeniam so starou verziou appky: ich Uzávierka by lístok rátala ako „ešte nezaplatené“ (2× základ %).
+const ticketOf = (o, items, payKey, guest) => ({ no: o.no || 0, ...(o.tableId ? { dest: o.tableId } : {}), tableName: str(o.tableName, 40), waiter: str(o.waiter, 30),
+  note: str(o.note, 120), items, status: o.status === 'hotova' || o.status === 'vydana' ? o.status : 'nova', createdAt: o.createdAt || now(),
+  ...(o.hotovaAt ? { hotovaAt: o.hotovaAt } : {}), ...(o.status === 'vydana' ? { vydanaAt: o.vydanaAt || now() } : {}),
+  ...(o.dueAt ? { dueAt: o.dueAt } : {}), ...(o.novaAt ? { novaAt: o.novaAt } : {}), staff: true, part: true, ...(guest ? { guest: str(guest, 40) } : {}), paidIn: payKey });
+const PN_ID = '_zaplatene', PN_NAME = '💶 Zaplatené hneď';   // dlaždica na Stoloch (nie je to stôl, len obrazovka na objednanie)
+const PN_PICKUP = '🙋 Vyzdvihne si';   // lístok bez stola a bez mena – zákazník si to vyzdvihne na bare
+// upozornenie pri − / 🗑 na zaplatenom lístku: podľa platby, ku ktorej patrí (je v tržbe / zamestnanecký účet / platbu už zmazali)
+const paidWarn = (o, sum) => {
+  const p = S.orders.find(x => x.id === o.paidIn && x.status === 'zaplatena');
+  if (!p) return '\n\n💶 Bolo to zaplatené hneď (platba už v Uzávierke nie je).';
+  if (p.staff) return `\n\n💶 Je to už zapísané na zamestnanecký účet (${sum}, mimo tržby). Ak to rušíš, povedz to vedúcemu.`;
+  return `\n\n💶 Je to UŽ ZAPLATENÉ – ${sum} je v tržbe. Ak peniaze zákazníkovi vraciaš, povedz to vedúcemu.`;
+};
 const sumOrders = os => os.reduce((s, o) => s + o.items.reduce((a, i) => a + i.price * i.qty, 0), 0);
 const STAV = { nova: 'Na bare', hotova: 'Hotová – odniesť', vydana: 'Vydaná' };
 
@@ -1520,9 +1627,9 @@ function render() {
   if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
   if (role === 'uzavierka' && !canUzavierka) { role = 'casnik'; store.set('role', role); }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
-  $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova' && orderDueNow(o)));
-  $('#serveDot').classList.toggle('hide', !open().some(o => o.status === 'hotova'));
-  const inTable = role === 'casnik' && tableId && S.tables.some(t => t.id === tableId);
+  $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova' && orderDueNow(o) && !tkOld(o)));
+  $('#serveDot').classList.toggle('hide', !open().some(o => o.status === 'hotova' && !tkOld(o)));
+  const inTable = role === 'casnik' && tableId && (tableId === PN_ID ? uiOn('paidNow') : S.tables.some(t => t.id === tableId));
   if (role === 'casnik' && tableId && !inTable) tableId = null;
   if (role !== 'casnik') { showHist = false; showQueue = false; showQuickCash = false; }
   if (role !== 'atrakcie') showQueueHist = false;
@@ -1531,12 +1638,12 @@ function render() {
   $('#backBtn').textContent = showBoard ? '‹ Späť' : '‹ Stoly';
   $('#cart').classList.add('hide');
   if (showBoard) { $('#title').textContent = 'Chýba / Kúpiť'; renderBoard(); return; }
-  $('#title').textContent = inTable ? S.tables.find(t => t.id === tableId).name + (guestOf(tableId) ? ' · ' + guestOf(tableId) : '')
+  $('#title').textContent = inTable ? (tableId === PN_ID ? PN_NAME : S.tables.find(t => t.id === tableId).name + (guestOf(tableId) ? ' · ' + guestOf(tableId) : ''))
     : (role === 'casnik' && showHist) ? 'História platieb'
     : (role === 'casnik' && showQueue) ? 'Rezervácie'
     : (role === 'atrakcie' && showQueueHist) ? 'História rezervácií'
     : { casnik: 'Stoly', bar: 'Bar – pripraviť', odniest: 'Na odnesenie', atrakcie: 'Atrakcie', uzavierka: 'Denná uzávierka', nastavenia: 'Nastavenia' }[role];
-  if (role === 'casnik') inTable ? (view === 'bill' ? renderBill() : renderTable()) : (showHist ? renderHistory() : showQueue ? renderQueue() : renderTables());
+  if (role === 'casnik') inTable ? (view === 'bill' && tableId !== PN_ID ? renderBill() : renderTable()) : (showHist ? renderHistory() : showQueue ? renderQueue() : renderTables());
   else if (role === 'bar') renderBar();
   else if (role === 'odniest') renderServe();
   else if (role === 'atrakcie') showQueueHist ? renderQueueHistory() : renderAtrakcie();
@@ -1608,7 +1715,9 @@ const UI_FEATURES = [
   ['later', '⏰ Objednávka na neskôr (na bar o určitej hodine)'],
   ['barCheck', '☑ Odškrtávanie položiek na Bare (všetko odškrtnuté = hotové)'],
   ['offlineBar', '🔴 Veľký pás „Bez internetu“, keď vypadne spojenie'],
-  ['laserSplit', '🎯 Laser game – dospelí / študenti / deti rozdeliť až pri platení']
+  ['laserSplit', '🎯 Laser game – dospelí / študenti / deti rozdeliť až pri platení'],
+  ['paidNow', '💶 Dlaždica „Zaplatené hneď“ na Stoloch (zákazník zaplatí hneď, bar to pripraví)'],
+  ['paidNowBtn', '💶 Tlačidlo „Zaplatené hneď“ v košíku pri stole']
 ];
 const uiOn = k => !(((S.access && S.access.uiOff) || []).includes(k));
 async function setUiFeature(k, on) {
@@ -1618,7 +1727,7 @@ async function setUiFeature(k, on) {
 }
 function tempTableAlive(t) {
   if (!t.temp) return true;
-  if (tableOrders(t.id).length || S.sessions.some(s => s.tableId === t.id)) return true;
+  if (tableOrders(t.id).length || tableTickets(t.id).length || S.sessions.some(s => s.tableId === t.id)) return true;
   if (tempGone[t.id]) return false;   // zmazaný omylom pridaný (prázdny) dočasný stôl
   const used = S.orders.some(o => o.tableId === t.id);
   return !used && now() - (t.createdAt || 0) < 3 * 3600e3;
@@ -1640,9 +1749,11 @@ async function addTempTable() {
   finally { addingTemp = false; }
 }
 // zmazanie omylom pridaného dočasného stola – len keď je prázdny (žiadny otvorený účet ani hra, nech sa nestratia peniaze)
+const TEMP_TK_TXT = 'Sem sa ešte nesie zaplatené z baru – stôl zmizne sám, keď to odnesú';
 async function delTempTable(id) {
   const t = S.tables.find(x => x.id === id); if (!t || !t.temp) return;
   if (tableOrders(id).length || S.sessions.some(s => s.tableId === id)) return toast('Stôl má otvorený účet alebo hru – najprv zaplať / presuň účet');
+  if (tableTickets(id).length) return toast('💶 ' + TEMP_TK_TXT);
   if (!confirm(`Zmazať dočasný stôl ${t.name}?`)) return;
   try {
     if (isManager) await db.ref('tables/' + id).remove();
@@ -1688,13 +1799,13 @@ function tableTile(t) {
   const os = tableOrders(t.id), games = uiOn('tableGames') ? tableGamesTag(t.id) : '', res = uiOn('tableRes') ? tableResTag(t.id) : { html: '', soon: false };
   const st = os.some(o => o.status === 'hotova') ? '<span class="pill p-hotova">Hotové</span>'
            : os.some(o => o.status === 'nova') ? '<span class="pill p-nova">Na bare</span>' : '';
-  const busy = os.length || games;
+  const busy = os.length || games, tk = tableTickets(t.id).length;
   return `<button class="tbl ttile ${busy ? 'busy' : ''}" style="${t.color ? `border-left:6px solid ${t.color};` : ''}${!busy && res.soon ? 'border-color:var(--warn);' : ''}" onclick="openTable('${t.id}')">
-    <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}${isStaffTable(t.id) ? `<small style="font-weight:800;color:var(--accent)">👤 zamestnanec${staffNameOf(t.id) ? ' ' + esc(staffNameOf(t.id)) : ''}</small>` : ''}${os.length ? `<small>${eur(sumOrders(os))}</small>${lastOrderTag(os)}${st}` : (games || res.html ? '' : '<small>voľný</small>')}${games}${res.html}</button>`;
+    <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}${isStaffTable(t.id) ? `<small style="font-weight:800;color:var(--accent)">👤 zamestnanec${staffNameOf(t.id) ? ' ' + esc(staffNameOf(t.id)) : ''}</small>` : ''}${os.length ? `<small>${eur(sumOrders(os))}</small>${lastOrderTag(os)}${st}` : (games || res.html || tk ? '' : '<small>voľný</small>')}${games}${res.html}${tk ? `<span class="pill p-hotova">💶 zaplatené na bare${tk > 1 ? ': ' + tk : ''}</span>` : ''}</button>`;
 }
 // (2026-10-16) prepínač "Len obsadené" na Stoloch – pamätá sa na zariadení
 let onlyBusy = store.get('onlyBusy', false) === true;
-const tableIsBusy = t => tableOrders(t.id).length > 0 || S.sessions.some(s => s.tableId === t.id);
+const tableIsBusy = t => tableOrders(t.id).length > 0 || tableTickets(t.id).length > 0 || S.sessions.some(s => s.tableId === t.id);
 function toggleOnlyBusy() { onlyBusy = !onlyBusy; store.set('onlyBusy', onlyBusy); render(); }
 function renderTables() {
   const groups = {};
@@ -1729,9 +1840,16 @@ function renderTables() {
     <p class="muted" style="font-size:12px;margin:4px 0 8px">Nové platby sa teraz zapisujú pod tento deň, nie pod dnešný.</p>
     <button class="btn ghost" style="width:auto" onclick="clearBizDay()">Späť na dnes (auto)</button>
   </div>` : '';
-  $('#app').innerHTML = readyBanner() + bizDayBanner + topRow + quickCashBlock() + (S.tables.length
+  $('#app').innerHTML = readyBanner() + bizDayBanner + topRow + quickCashBlock() + paidNowTile() + (S.tables.length
     ? (busyOnly && !tables.length ? '<div class="empty">Žiadny stôl nie je obsadený 👍<br><button class="btn ghost" style="width:auto;margin-top:10px" onclick="toggleOnlyBusy()">Ukázať všetky stoly</button></div>' : html)
     : '<div class="empty">Zatiaľ žiadne stoly. Pridajte ich v Nastaveniach.</div>');
+}
+// (2026-11-07) 💶 Zaplatené hneď – veľká dlaždica hore na Stoloch (vypína sa v Nastaveniach → 🧩 Funkcie)
+function paidNowTile() {
+  if (!uiOn('paidNow')) return '';
+  const n = open().filter(o => isTicket(o) && o.status !== 'vydana' && !tkOld(o)).length;
+  return `<div class="grid tgrid" style="margin-bottom:6px"><button class="tbl ttile" style="border:2px solid var(--ok);background:var(--okbg)" onclick="openTable(PN_ID)">
+    <b>${PN_NAME}</b><small>zákazník zaplatí hneď, bar to pripraví</small>${n ? `<span class="pill p-hotova">🍸 na bare: ${n}</span>` : ''}</button></div>`;
 }
 // Rýchla platba - keď treba len zapísať sumu do tržby (do kasy), bez toho aby sa rozpisovalo ku ktorému
 // stolu alebo položke menu patrí (napr. rýchly hotovostný predaj mimo bežnej objednávky).
@@ -1748,7 +1866,7 @@ function quickCashBlock() {
   const secs = uzSectors();
   if (qcSec && !secs.some(s => s.n === qcSec)) qcSec = '';   // sektor medzitým zmazali / premenovali
   return `<div class="card" style="margin-bottom:14px">
-    <b style="font-size:15px">💶 Rýchla platba</b> <small class="muted">do dnešnej tržby, bez stola</small>
+    <b style="font-size:15px">💶 Rýchla platba</b> <small class="muted">do dnešnej tržby, bez stola – na bar nič nejde${uiOn('paidNow') ? ' (na bar → 💶 Zaplatené hneď nižšie)' : ''}</small>
     <input id="qcAmount" type="text" inputmode="decimal" placeholder="0,00 €" value="${esc(qcAmt)}" oninput="qcAmt=this.value"
       onkeydown="if(event.key==='Enter'){this.blur();addQuickCash()}"
       style="margin-top:8px;font-size:32px;font-weight:800;text-align:center;height:64px">
@@ -2338,7 +2456,7 @@ function renderHistory() {
   let paid = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(histDate))).sort((a, b) => b.paidAt - a.paidAt);
   const total = sumOrders(paid.filter(o => !o.staff));   // zamestnanecké účty nie sú tržba
   const q = fold(histFilter || '');
-  if (q) paid = paid.filter(o => fold(o.tableName || '').includes(q) || fold(o.sec || '').includes(q) || String(o.no).includes(q) || o.items.some(i => fold(i.name || '').includes(q)));
+  if (q) paid = paid.filter(o => fold(o.tableName || '').includes(q) || fold(o.sec || '').includes(q) || fold(o.guest || '').includes(q) || String(o.no).includes(q) || o.items.some(i => fold(i.name || '').includes(q)));
   histPaidIds = paid.map(x => x.id);
   const fmtTime = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   $('#app').innerHTML = `
@@ -2350,9 +2468,9 @@ function renderHistory() {
     ${!isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="histDate=bizTodayDate();render()">Dnes</button></div>` : ''}
     <div class="card"><div class="total"><span>Tržba za deň</span><span>${eur(total)}</span></div>
       <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p></div>
-    <input id="histFilterInput" value="${esc(histFilter)}" placeholder="🔍 Hľadať (stôl, položka, č. objednávky)…" style="margin-top:10px" oninput="histFilter=this.value;renderHistory()">
+    <input id="histFilterInput" value="${esc(histFilter)}" placeholder="🔍 Hľadať (stôl, meno, položka, č. objednávky)…" style="margin-top:10px" oninput="histFilter=this.value;renderHistory()">
     ${paid.length ? `<div class="card" style="padding:0;margin-top:12px">${paid.map(o => `<div class="line" style="cursor:pointer" onclick="openPaid('${o.id}',histPaidIds)">
-        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.sec ? ' · 📍 ' + esc(o.sec) : ''}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}${o.staff ? ` <span class="pill" style="background:var(--line)">👤 zamestnanec${o.staffName ? ' ' + esc(o.staffName) : ''} · mimo tržby</span>` : ''}
+        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.sec ? ' · 📍 ' + esc(o.sec) : ''}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}${o.upfront ? ' · 💶 hneď' : ''}${o.staff ? ` <span class="pill" style="background:var(--line)">👤 zamestnanec${o.staffName ? ' ' + esc(o.staffName) : ''} · mimo tržby</span>` : ''}
           <small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small></div>
         <span>${eur(sumOrders([o]))}</span>
       </div>`).join('')}</div>` : `<div class="empty">${q ? 'Nič nenájdené.' : 'Za tento deň zatiaľ nič nebolo zaplatené.'}</div>`}
@@ -2365,7 +2483,7 @@ function shiftHist(n) { histDate = new Date(histDate.getFullYear(), histDate.get
 let tblModal = null;    // okienko na obrazovke stola: 'attr' | 'res' | 'move' | null
 let addToBar = false;   // režim "pridávam k objednávke, ktorá je ešte na bare"
 function startAddToBar() { addToBar = true; render(); const c = $('#cats') || $('#q'); if (c) { const head = document.querySelector('header'); window.scrollTo({ top: c.getBoundingClientRect().top + window.scrollY - (head ? head.offsetHeight : 0) - 8, behavior: 'smooth' }); } }
-function openTable(id) { tableId = id; view = 'order'; moveOrderId = null; tblModal = null; addToBar = false; cart = []; orderNote = ''; cat = null; q = ''; addAttrToTableOpen = false; render(); scrollTo(0, 0); }
+function openTable(id) { if (id === PN_ID) { if (!uiOn('paidNow')) return; pnMode = ''; pnTable = ''; pnName = ''; pnSec = ''; movePickGroup = null; } tableId = id; view = 'order'; moveOrderId = null; tblModal = null; addToBar = false; cart = []; orderNote = ''; cat = null; q = ''; addAttrToTableOpen = false; render(); scrollTo(0, 0); }
 
 // Atrakcie priamo z účtu stola - fyzicky pridáš atrakciu (napr. ping-pong) na tento stôl, s voľbou času
 // (teraz, alebo vlastný čas, ak sa zabudlo zapísať pri štarte), a potom ju tu vieš aj ukončiť/zrušiť.
@@ -2474,6 +2592,7 @@ async function toggleLayoutHidden(key) {
 async function setBigCats(on) { const lay = tableLayout(); lay.bigCats = !!on; await saveTableLayout(lay); }
 async function resetTableLayout() { if (confirm('Vrátiť predvolené rozloženie obrazovky stola?')) await saveTableLayout({ order: TABLE_BLOCK_KEYS.slice(), hidden: new Set(), bigCats: true }); }
 function renderTable() {
+  if (tableId === PN_ID) return renderPaidNow();
   const cats = sortCats([...new Set(S.menu.map(m => m.category))]);   // poradie kategórií podľa Nastavení
   if (!cats.includes(cat)) cat = cats[0] ?? null;
   const os = tableOrders(tableId);
@@ -2569,16 +2688,68 @@ function renderTable() {
   const curT = S.tables.find(x => x.id === tableId);
   const tempBanner = curT && curT.temp ? `<div class="card" style="margin-bottom:12px;padding:10px 14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span style="flex:1;font-size:14px">🕐 <b>Dočasný stôl</b> – po zaplatení zmizne</span>
-    ${!os.length && !S.sessions.some(s => s.tableId === tableId) ? `<button class="del" style="width:auto;padding:8px 12px" onclick="delTempTable('${tableId}')">🗑 Zmazať stôl</button>` : ''}</div>` : '';
+    ${!os.length && !S.sessions.some(s => s.tableId === tableId) ? (tableTickets(tableId).length ? `<small class="muted" style="flex-basis:100%">💶 ${TEMP_TK_TXT}</small>`
+      : `<button class="del" style="width:auto;padding:8px 12px" onclick="delTempTable('${tableId}')">🗑 Zmazať stôl</button>`) : ''}</div>` : '';
   // 👤 zamestnanecký účet – výrazná lišta hore (zľavy sa už prepočítali v položkách, účet sa nepočíta do tržby)
   const staffBanner = isStaffTable(tableId) ? `<div class="card" style="margin-bottom:12px;padding:10px 14px;border:2px solid var(--accent);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span style="flex:1;min-width:180px;font-size:14px">👤 <b>Zamestnanecký účet${staffNameOf(tableId) ? ' – ' + esc(staffNameOf(tableId)) : ''}</b><br><small class="muted">${staffDiscText()} · nepočíta sa do tržby</small></span>
     <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="setStaffTable('${tableId}',false)">Zrušiť</button></div>` : '';
-  $('#app').innerHTML = readyBanner() + staffBanner + tempBanner + barBanner + lay.order.filter(k => !lay.hidden.has(k)).map(k => blocks[k] || '').join('') + modal;
+  $('#app').innerHTML = readyBanner() + staffBanner + tempBanner + barBanner + tableTicketsInfo(tableId) + lay.order.filter(k => !lay.hidden.has(k)).map(k => blocks[k] || '').join('') + modal;
   if (S.menu.length) { renderItems(); renderFavs(); }
   renderCart();
 }
 
+// (2026-11-07) 💶 na obrazovke stola: čo je pre tento stôl už zaplatené a čaká na bare / na odnesenie (nie je v účte stola)
+function tableTicketsInfo(id) {
+  const tks = tableTickets(id);
+  if (!tks.length) return '';
+  return `<div class="card" style="margin-bottom:12px;padding:10px 14px;border-color:var(--ok);background:var(--okbg);font-size:14px">
+    💶 <b>Už zaplatené</b> – ${tks.map(o => `#${o.no} ${o.status === 'hotova' ? 'čaká na odnesenie' : 'na bare'} (${o.items.reduce((s, i) => s + i.qty, 0)} ks)`).join(', ')}. Na účte to nie je.</div>`;
+}
+// (2026-11-07) 💶 Zaplatené hneď – obrazovka ako stôl: menu a košík, hore „kam to doniesť“ (nepovinné). Zaplatí sa naraz s odoslaním na bar.
+let pnMode = '', pnTable = '', pnName = '', pnSec = '';   // pnMode: '' = vyzdvihne si na bare, 'table', 'name'
+function pnSetMode(mo) {
+  pnMode = mo; if (mo !== 'table') pnTable = ''; if (mo !== 'name') pnName = ''; if (mo === 'table') pnSec = '';
+  movePickGroup = null; render();
+  if (mo === 'name') setTimeout(() => { const n = $('#pnName'); if (n) n.focus(); }, 50);
+}
+function pnPickTable(id) { pnTable = id; render(); }
+function pnPickSec(i) { const s = uzSectors()[i]; if (!s) return; pnSec = pnSec === s.n ? '' : s.n; render(); }
+function renderPaidNow() {
+  const cats = sortCats([...new Set(S.menu.map(m => m.category))]);
+  if (!cats.includes(cat)) cat = cats[0] ?? null;
+  const lay = tableLayout(), hasMenu = S.menu.length > 0;
+  if (pnMode === 'table' && pnTable && !S.tables.some(x => x.id === pnTable)) pnTable = '';   // stôl medzitým zmazali
+  const dt = pnMode === 'table' && pnTable ? S.tables.find(x => x.id === pnTable) : null;
+  const secs = uzSectors();
+  if (pnSec && !secs.some(s => s.n === pnSec)) pnSec = '';
+  const opt = (mo, label) => `<button class="btn ${pnMode === mo ? 'ok' : 'ghost'}" style="width:auto;padding:10px 12px;font-size:15px" onclick="pnSetMode('${mo}')">${pnMode === mo ? '✓ ' : ''}${label}</button>`;
+  const head = `<div class="card" style="margin-bottom:14px;border:2px solid var(--ok)">
+    <b style="font-size:16px">💶 Zákazník už zaplatil – bar to len pripraví</b>
+    <p class="muted" style="margin:4px 0 10px;font-size:13px">Naťukaj položky a ťukni „💶 Zaplatené · na bar“. ${dt && isStaffTable(dt.id) ? 'Zapíše sa ako zaplatený zamestnanecký účet (mimo tržby).' : 'Platba pôjde hneď do tržby.'}</p>
+    <small class="muted">Kam to doniesť? (nepovinné)</small>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">${opt('', '🙋 Vyzdvihne si na bare')}${opt('table', '🍽 Na stôl')}${opt('name', '👤 Meno')}</div>
+    ${pnMode === 'table' ? (dt ? `<div class="row" style="justify-content:space-between;align-items:center;margin-top:10px;gap:8px"><span style="font-size:17px">🍽 <b>${esc(dt.name)}</b>${guestOf(dt.id) ? ' · 👤 ' + esc(guestOf(dt.id)) : ''}${isStaffTable(dt.id) ? ' · 👤 zamestnanecký účet (zľava, mimo tržby)' : ''}</span>
+        <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="pnTable='';movePickGroup=null;render()">Zmeniť stôl</button></div>`
+      : tablePickHtml(visibleTables(), '', 'pnPickTable')) : ''}
+    ${pnMode === 'name' ? `<input id="pnName" placeholder="Meno (napr. Peter)" maxlength="30" value="${esc(pnName)}" oninput="pnName=this.value" onkeydown="if(event.key==='Enter')this.blur()" style="margin-top:10px">` : ''}
+    ${secs.length && pnMode !== 'table' ? `<div style="margin-top:10px"><small class="muted">📍 Pre koho? (nepovinné – v Uzávierke sa ukáže zvlášť)</small>
+      <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:4px">${secs.map((s, i) => `<button class="btn ${pnSec === s.n ? 'ok' : 'ghost'}" style="width:auto;padding:9px 12px;font-size:15px" onclick="pnPickSec(${i})">${pnSec === s.n ? '✓ ' : ''}📍 ${esc(s.n)}</button>`).join('')}</div></div>` : ''}
+  </div>`;
+  // menu rovnako ako na obrazovke stola (hľadanie, kategórie, položky, obľúbené – poradie podľa Nastavení)
+  const blocks = {
+    search: hasMenu ? `<div class="search" style="margin-bottom:10px"><input id="q" type="search" placeholder="🔍 Hľadať položku…" value="${esc(q)}" oninput="q=this.value;renderItems()" autocomplete="off">
+      ${q ? '<button onclick="q=\'\';render()">✕</button>' : ''}
+      ${hasVoice ? '<button id="micBtn" title="Nadiktovať objednávku" onclick="startVoiceOrder()">🎤</button>' : ''}</div>` : '',
+    cats: hasMenu ? `<div class="cats${lay.bigCats ? ' big' : ''}" id="cats">${cats.map(c => `<button class="${c === cat ? 'on' : ''}" style="${catBtnStyle(c, c === cat)}" onclick="pickCat(this.dataset.c)" data-c="${esc(c)}">${esc(c)}</button>`).join('')}</div>`
+      : '<div class="empty">Menu je prázdne. Pridajte položky v Nastaveniach.</div>',
+    items: hasMenu ? '<div class="items" id="items" style="margin-bottom:16px"></div>' : '',
+    favs: hasMenu ? '<div id="favs" style="margin-bottom:14px"></div>' : ''
+  };
+  $('#app').innerHTML = readyBanner() + head + lay.order.filter(k => !lay.hidden.has(k)).map(k => blocks[k] || '').join('');
+  if (S.menu.length) { renderItems(); renderFavs(); }
+  renderCart();
+}
 // odstráni diakritiku, aby "kofola" našlo aj "Kófola" a "cierny" aj "čierny"
 const fold = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
@@ -2645,7 +2816,7 @@ function renderItems() {
   $('#cats').classList.toggle('hide', words.length > 0);
   const qty = id => cart.filter(c => c.menuId === id && !c.lg).reduce((a, c) => a + c.qty, 0);
   // 🎯 laser game na rozdelenie – prvá dlaždica v kategórii, kde je „Laser game dospelý“
-  const lga = lgOn() && !words.length ? lgMenu().a : null, lgInCart = cart.filter(c => c.lg).length;
+  const lga = lgOn() && !words.length && tableId !== PN_ID ? lgMenu().a : null, lgInCart = cart.filter(c => c.lg).length;
   const lgTile = lga && lga.category === cat ? `<button class="item" style="border:2px dashed var(--accent);${catColor(cat) ? `box-shadow:inset 5px 0 0 ${catColor(cat)};` : ''}" onclick="addLaserSplit()"><b>🎯 Laser game – rozdelím pri platení</b><span>hráči × hry · deti / študenti / dospelí neskôr</span>
     ${lgInCart ? `<div class="qwrap"><div class="q">${lgInCart}</div></div>` : ''}</button>` : '';
   el.innerHTML = list.length ? lgTile + list.map(m => `
@@ -3020,7 +3191,8 @@ function renderCart() {
     el.innerHTML = `<div class="cart-in" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px">
       <button class="btn ghost" style="display:flex;justify-content:space-between;align-items:center;gap:6px" onclick="cartOpen=true;renderCart()">
         <span>🛒 ${count} ks</span><span>${eur(total)} ▲</span></button>
-      ${toBar ? `<button class="btn ok" id="addBarBtn" style="width:auto;padding:13px 16px" onclick="addToBarOrder()">➕ k #${bo.no}</button>`
+      ${tableId === PN_ID ? `<button class="btn ok" id="paidNowBtn" style="width:auto;padding:13px 16px" onclick="sendPaidNow()">💶 Zaplatené</button>`
+        : toBar ? `<button class="btn ok" id="addBarBtn" style="width:auto;padding:13px 16px" onclick="addToBarOrder()">➕ k #${bo.no}</button>`
               : `<button class="btn" id="sendBtn" style="width:auto;padding:13px 16px" onclick="sendOrder()">📤 Na bar</button>`}</div>`;
     return;
   }
@@ -3039,9 +3211,10 @@ function renderCart() {
     <input id="onote" placeholder="Poznámka k objednávke (nepovinné)" value="${esc(orderNote)}" oninput="orderNote=this.value" style="margin-bottom:8px">
     <div style="display:grid;gap:6px">
       ${barOrderForTable() ? `<button class="btn ok" id="addBarBtn" onclick="addToBarOrder()">➕ Pridať k #${barOrderForTable().no} (ešte na bare) · ${eur(total)}</button>` : ''}
-      ${addToBar && barOrderForTable() ? '' : `<button class="btn ${barOrderForTable() ? 'ghost' : ''}" id="sendBtn" onclick="sendOrder()">📤 Odoslať na bar${barOrderForTable() ? ' ako novú' : ''} · ${eur(total)}</button>`}
-      ${uiOn('later') && !(addToBar && barOrderForTable()) ? `<button class="btn ghost" onclick="sendOrderLater()">⏰ Na bar neskôr (o určitej hodine)</button>` : ''}
-      <button class="btn ghost" id="writeBtn" onclick="writeOrder()">📝 Len zapísať do účtu (bez baru) · ${eur(total)}</button>
+      ${tableId === PN_ID || (addToBar && barOrderForTable()) ? '' : `<button class="btn ${barOrderForTable() ? 'ghost' : ''}" id="sendBtn" onclick="sendOrder()">📤 Odoslať na bar${barOrderForTable() ? ' ako novú' : ''} · ${eur(total)}</button>`}
+      ${uiOn('later') && tableId !== PN_ID && !(addToBar && barOrderForTable()) ? `<button class="btn ghost" onclick="sendOrderLater()">⏰ Na bar neskôr (o určitej hodine)</button>` : ''}
+      ${tableId === PN_ID ? '' : `<button class="btn ghost" id="writeBtn" onclick="writeOrder()">📝 Len zapísať do účtu (bez baru) · ${eur(total)}</button>`}
+      ${paidNowBtnHtml(total)}
     </div></div>`;
 }
 
@@ -3053,7 +3226,7 @@ function afterSend() {
   else render();
 }
 // posledná objednávka tohto stola, ktorá je ešte na bare (barman ju nepripravil) - dá sa k nej pridávať
-const barOrderForTable = () => tableId ? S.orders.filter(o => o.tableId === tableId && o.status === 'nova' && orderDueNow(o)).sort((a, b) => b.createdAt - a.createdAt)[0] || null : null;
+const barOrderForTable = () => tableId ? S.orders.filter(o => o.tableId === tableId && o.status === 'nova' && orderDueNow(o) && !o.paidIn).sort((a, b) => b.createdAt - a.createdAt)[0] || null : null;
 async function addToBarOrder() {
   const o = barOrderForTable(); if (!o || !cart.length) return;
   const b = $('#addBarBtn'); if (b) b.disabled = true;
@@ -3077,6 +3250,70 @@ async function writeOrder() {
     await call('POST', '/api/orders', { tableId, items: cart, note: orderNote, waiter: store.get('waiter', ''), skipBar: true });
     cart = []; orderNote = ''; toast('Zapísané do účtu ✓'); afterSend();
   } catch { $('#writeBtn') && ($('#writeBtn').disabled = false); }
+}
+// (2026-11-07) 💶 Zaplatené hneď – tlačidlo v košíku: na dlaždici jediné (veľké), pri stole navyše (vypína sa v 🧩 Funkcie)
+function paidNowBtnHtml(total) {
+  if (tableId === PN_ID) return `<button class="btn ok" id="paidNowBtn" style="font-size:17px" onclick="sendPaidNow()">💶 Zaplatené · na bar · ${eur(paidNowTotal(total))}</button>`;
+  if (!uiOn('paidNowBtn') || (addToBar && barOrderForTable())) return '';
+  const bo = barOrderForTable();
+  return `<button class="btn ghost" id="paidNowBtn" style="margin-top:8px;border-color:var(--ok);color:var(--ok)" onclick="sendPaidNow()">💶 Zaplatené hneď · na bar · ${eur(paidNowTotal(total))}</button>`
+    + (bo ? `<small class="muted" style="text-align:center">Na bare už je #${bo.no}. Ak hosť platí za ňu, otvor 🧾 Účet stola → 💶 Platba – ostane na bare ako zaplatená.</small>` : '');
+}
+// suma tak, ako ju zapíše platba (zamestnanecký stôl má zľavu, ktorú košík neukazuje)
+function paidNowTotal(fallback) {
+  const dId = tableId === PN_ID ? (pnMode === 'table' ? pnTable : '') : tableId;
+  if (!dId || !isStaffTable(dId)) return fallback;
+  return staffItems(buildOrderItems(cart)).reduce((s, i) => s + i.price * i.qty, 0);
+}
+// zákazník zaplatil hneď → platba do tržby a lístok na bar jedným zápisom (callInner 'paidnow')
+let paidNowSaving = false;
+async function sendPaidNow() {
+  if (!cart.length) return;
+  if (paidNowSaving || payBusy) return toast(PAY_BUSY_TXT);
+  if (cart.some(c => c.lg)) return toast('🎯 Laser game na rozdelenie sa nedá zaplatiť hneď – vyber dospelý / študent / dieťa');
+  if (!isOnline) return toast(PAY_OFF_TXT);
+  const pn = tableId === PN_ID;
+  const dt = pn ? (pnMode === 'table' && pnTable ? S.tables.find(x => x.id === pnTable) : null) : S.tables.find(x => x.id === tableId);
+  if (!pn && !dt) return;
+  if (pn && pnMode === 'table' && !dt) return toast('Vyber stôl (alebo ťukni „🙋 Vyzdvihne si na bare“)');
+  const name = pn && pnMode === 'name' ? pnName.trim() : '';
+  // suma ako ju zapíše platba (ceny z menu, zľavy, zamestnanecký účet)
+  const its = dt && isStaffTable(dt.id) ? staffItems(buildOrderItems(cart)) : buildOrderItems(cart);
+  if (!its.length) return toast('Objednávka je prázdna');
+  const total = its.reduce((s, i) => s + i.price * i.qty, 0);
+  const where = dt ? dt.name : name ? '👤 ' + name : 'vyzdvihne si na bare';
+  const staffT = !!(dt && isStaffTable(dt.id));
+  if (!confirm(`💶 Zákazník už zaplatil ${eur(total)}?\n\n${staffT ? 'Zapíše sa ako zaplatený zamestnanecký účet (mimo tržby)' : 'Platba pôjde hneď do tržby'} a objednávka na bar (${where}). Na účet stola sa nezapíše.`)) return;
+  paidNowSaving = true;
+  const b = $('#paidNowBtn'); if (b) b.disabled = true;
+  // kým sa ukladá, čašník mohol prejsť k inému stolu alebo presunúť účet: zaplatený košík sa po uložení zmaže vždy,
+  // nový košík iného stola nie; späť na Stoly len vtedy, keď ostal na tom istom stole
+  const myT = tableId, myCart = cart;
+  let r;
+  try { r = await call('POST', '/api/paidnow', { tableId: dt ? dt.id : '', name, sec: pn && !dt ? pnSec : '', items: cart, note: orderNote, waiter: store.get('waiter', '') }); }
+  catch (e) {
+    paidNowSaving = false;
+    const b2 = $('#paidNowBtn'); if (b2) b2.disabled = false;
+    // chyby z fail() a z Firebase (s kódom) už hlášku ukázali; inak treba povedať, že sa nič neuložilo
+    if (e && !e.code && !e.shown) toast('⚠ Platba sa NEULOŽILA – skús znova');
+    return;
+  }
+  paidNowSaving = false;
+  // platba je uložená – chyba pri zobrazení nižšie už nesmie hlásiť „neuložila“ (čašník by ju zadal znova)
+  try {
+    toast(`💶 Zaplatené ${eur(total)} · #${r.no} ide na bar ✓`);
+    const same = cart === myCart;
+    if (same) { cart = []; orderNote = ''; }
+    if (same && tableId === myT) { if (pn) { pnMode = ''; pnTable = ''; pnName = ''; pnSec = ''; } afterSend(); }
+    else render();
+  } catch (e) {}
+}
+// (2026-11-07) 💶 zaplatené „vyzdvihne si na bare“ aj staré lístky: barman ich odklikne rovno ako vydané (v „✓ Už odnesené“ sa dajú vrátiť).
+// paidIn sa zapíše znova (rovnaká hodnota): pravidlo vo Firebase tak odmietne zápis na lístok, ktorý medzitým zmazali (nevznikne prázdny záznam).
+async function ticketHandOver(id) {
+  const o = S.orders.find(x => x.id === id); if (!o || !isTicket(o)) return;
+  try { await db.ref('orders/' + id).update({ status: 'vydana', vydanaAt: now(), paidIn: o.paidIn, ...(o.hotovaAt ? {} : { hotovaAt: now() }) }); toast(`#${o.no} vydané ✓`); }
+  catch (e) { toast('Nepodarilo sa uložiť'); }
 }
 async function setStatus(id, status) { await call('POST', `/api/orders/${id}/status`, { status }); }
 async function cancelOrder(id) { if (confirm('Zrušiť túto objednávku?')) await call('DELETE', `/api/orders/${id}`); }
@@ -3108,7 +3345,7 @@ function tablePickHtml(others, selId, pickFn) {
   const g = names.length === 1 ? names[0] : movePickGroup;
   if (g === null || !groups[g]) {
     return `<div class="muted" style="font-size:13px;margin:8px 0 6px">1. Vyber skupinu stolov:</div>
-      <div class="grid">${names.map(n => { const free = groups[n].filter(t => !tableOrders(t.id).length).length;
+      <div class="grid">${names.map(n => { const free = groups[n].filter(t => !tableOrders(t.id).length && !tableTickets(t.id).length).length;
         const col = (groups[n].find(t => t.color) || {}).color;
         return `<button class="tbl" style="min-height:70px;${col ? `border-left:6px solid ${col}` : ''}" onclick="movePickGroup=decodeURIComponent('${grpArg(n)}');render()">
           <b>${esc(n || 'Ostatné')}</b><small>${groups[n].length} ${groups[n].length === 1 ? 'stôl' : (groups[n].length < 5 ? 'stoly' : 'stolov')} · ${free} voľných</small></button>`; }).join('')}</div>`;
@@ -3116,9 +3353,9 @@ function tablePickHtml(others, selId, pickFn) {
   return `<div class="row" style="justify-content:space-between;margin:8px 0 6px;gap:8px">
       <span class="muted" style="font-size:13px">${names.length > 1 ? '2. ' : ''}Vyber stôl${g ? ` – <b>${esc(g)}</b>` : ''}:</span>
       ${names.length > 1 ? `<button class="btn ghost" style="width:auto;padding:6px 12px" onclick="movePickGroup=null;render()">‹ Skupiny</button>` : ''}</div>
-    <div class="grid">${groups[g].map(t => { const os = tableOrders(t.id);
-      return `<button class="tbl ${os.length ? 'busy' : ''}" style="min-height:70px;${t.color ? `border-left:6px solid ${t.color};` : ''}${selId === t.id ? 'outline:3px solid var(--ok);' : ''}" onclick="${pickFn}('${t.id}')">
-        <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}<small>${os.length ? 'obsadený · ' + eur(sumOrders(os)) : 'voľný'}</small></button>`; }).join('')}</div>`;
+    <div class="grid">${groups[g].map(t => { const os = tableOrders(t.id), tk = tableTickets(t.id).length;
+      return `<button class="tbl ${os.length || tk ? 'busy' : ''}" style="min-height:70px;${t.color ? `border-left:6px solid ${t.color};` : ''}${selId === t.id ? 'outline:3px solid var(--ok);' : ''}" onclick="${pickFn}('${t.id}')">
+        <b>${esc(t.name)}</b>${guestOf(t.id) ? `<small style="font-weight:700">👤 ${esc(guestOf(t.id))}</small>` : ''}<small>${os.length ? 'obsadený · ' + eur(sumOrders(os)) : tk ? '💶 čaká zaplatené z baru' : 'voľný'}</small></button>`; }).join('')}</div>`;
 }
 async function moveTable(targetId) {
   const target = S.tables.find(t => t.id === targetId); if (!target) return;
@@ -3177,14 +3414,15 @@ function billTap(k, max) { if ((billSel[k] || 0) >= max) return; billSel[k] = (b
 function billMinus(k) { billSel[k] = Math.max(0, (billSel[k] || 0) - 1); render(); }
 async function payAll() {
   const os = tableOrders(tableId);
-  if (!os.length) return;
+  if (!os.length || !payReady()) return;
   if (!lgPayOk()) return;
-  if (!confirm('Označiť stôl ako zaplatený? Objednávky sa uzavrú.')) return;
   const agg = {};
   os.forEach(o => o.items.forEach(i => { const k = i.name + '|' + i.price; agg[k] = agg[k] || { name: i.name, price: i.price, qty: 0 }; agg[k].qty += i.qty; }));
-  const items = Object.values(agg);
-  await call('POST', `/api/tables/${tableId}/paySome`, { items, waiter: store.get('waiter', '') });
-  billSel = {}; tableId = null; toast('Stôl uzavretý ✓'); render();
+  const items = Object.values(agg), pend = barPendingFor(items);
+  if (!confirm('Označiť stôl ako zaplatený? Objednávky sa uzavrú.' + pendTxt(pend))) return;
+  payBusy = true;
+  try { await call('POST', `/api/tables/${tableId}/paySome`, { items, waiter: store.get('waiter', '') }); } finally { payBusy = false; }
+  billSel = {}; tableId = null; toast('Stôl uzavretý ✓' + pendToast(pend)); render();
 }
 function updateSplitPreview(total) {
   const inp = $('#splitParts'); const el = $('#splitPreview'); if (!inp || !el) return;
@@ -3192,14 +3430,18 @@ function updateSplitPreview(total) {
   el.textContent = eur(total / n);
 }
 async function paySplit(total) {
+  if (!payReady()) return;
   const inp = $('#splitParts');
   const n = Math.max(2, Math.min(20, parseInt(inp ? inp.value : '2', 10) || 2));
   if (!lgPayOk()) return;
-  if (!confirm(`Rozdeliť účet (${eur(total)}) na ${n} rovnakých častí po ${eur(total / n)}? Celý účet sa tým zaplatí a uzavrie.`)) return;
-  await call('POST', `/api/tables/${tableId}/paySplit`, { parts: n, waiter: store.get('waiter', '') });
-  billSel = {}; tableId = null; toast('Účet rozdelený a zaplatený ✓'); render();
+  const pend = tableOrders(tableId).filter(o => o.status === 'nova' || o.status === 'hotova').map(o => ({ o, took: o.items }));
+  if (!confirm(`Rozdeliť účet (${eur(total)}) na ${n} rovnakých častí po ${eur(total / n)}? Celý účet sa tým zaplatí a uzavrie.` + pendTxt(pend))) return;
+  payBusy = true;
+  try { await call('POST', `/api/tables/${tableId}/paySplit`, { parts: n, waiter: store.get('waiter', '') }); } finally { payBusy = false; }
+  billSel = {}; tableId = null; toast('Účet rozdelený a zaplatený ✓' + pendToast(pend)); render();
 }
 async function payItems() {
+  if (!payReady()) return;
   const items = Object.entries(billSel).filter(([, q]) => q > 0).map(([k, q]) => {
     const i = k.lastIndexOf('|'); return { name: k.slice(0, i), price: Number(k.slice(i + 1)), qty: q };
   });
@@ -3209,13 +3451,38 @@ async function payItems() {
   const selTotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const isAll = Math.abs(selTotal - allTotal) < 0.005;
   if (!lgPayOk(items.map(i => i.name))) return;
-  if (!confirm(isAll ? 'Označiť stôl ako zaplatený? Objednávky sa uzavrú.' : `Označiť vybrané položky (${eur(selTotal)}) ako zaplatené? Zvyšok účtu ostane na stole otvorený.`)) return;
-  await call('POST', `/api/tables/${tableId}/paySome`, { items, waiter: store.get('waiter', '') });
+  const pend = barPendingFor(items);
+  if (!confirm((isAll ? 'Označiť stôl ako zaplatený? Objednávky sa uzavrú.' : `Označiť vybrané položky (${eur(selTotal)}) ako zaplatené? Zvyšok účtu ostane na stole otvorený.`) + pendTxt(pend))) return;
+  payBusy = true;
+  try { await call('POST', `/api/tables/${tableId}/paySome`, { items, waiter: store.get('waiter', '') }); } finally { payBusy = false; }
   billSel = {};
-  if (isAll) { tableId = null; toast('Stôl uzavretý ✓'); } else toast('Zaplatené ✓');
+  if (isAll) { tableId = null; toast('Stôl uzavretý ✓' + pendToast(pend)); } else toast('Zaplatené ✓' + pendToast(pend));
   render();
 }
 
+// (2026-11-07) 💶 čo z platby ešte nie je u hostí (na bare / na odnesenie) – rovnaké poradie ako paySome; ostane tam ako ZAPLATENÉ
+function barPendingFor(items) {
+  const need = {};
+  (items || []).forEach(i => { const k = i.name + '|' + i.price; need[k] = (need[k] || 0) + Math.max(0, i.qty | 0); });
+  const hit = [];
+  tableOrders(tableId).sort((a, b) => payRank(a) - payRank(b) || a.createdAt - b.createdAt).forEach(o => {
+    const took = [];
+    o.items.forEach(it => { const k = it.name + '|' + it.price, take = Math.min(need[k] || 0, it.qty); if (take > 0) { need[k] -= take; took.push({ name: it.name, qty: take }); } });
+    if (took.length && (o.status === 'nova' || o.status === 'hotova')) hit.push({ o, took });
+  });
+  return hit;
+}
+const pendTxt = pend => pend.length ? '\n\n💶 Ešte nie je odnesené – ostane na bare ako ZAPLATENÉ:\n' + pend.map(({ o, took }) => `#${o.no} · ${took.map(i => `${i.qty}× ${i.name}`).join(', ')}${o.status === 'hotova' ? ' (čaká na odnesenie)' : ''}`).join('\n') : '';
+const pendToast = pend => pend.length ? ` · ${pend.map(p => '#' + p.o.no).join(', ')} ${pend.length > 1 ? 'ostávajú' : 'ostáva'} na bare` : '';
+let payBusy = false;   // zámok proti dvojitej platbe (dvojťuk, kým sa platba ukladá)
+const PAY_BUSY_TXT = '⏳ Predchádzajúca platba sa ešte ukladá – počkaj, nezadávaj ju znova (ani na inom zariadení)';
+const PAY_OFF_TXT = '🔴 Bez internetu sa platba nedá uložiť – počkaj na pripojenie';
+// platiť sa dá, len keď sa práve neukladá iná platba a je internet (inak by platba visela a uložila sa až neskôr zo starých údajov)
+function payReady() {
+  if (payBusy || paidNowSaving) { toast(PAY_BUSY_TXT); return false; }
+  if (!isOnline) { toast(PAY_OFF_TXT); return false; }
+  return true;
+}
 const tableDot = tId => { const t = S.tables.find(x => x.id === tId); return (t && t.color) ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${t.color};margin-right:5px;vertical-align:middle"></span>` : ''; };
 // položky objednávky na bare / na odnesenie - pri každej "−" na odobratie 1 kusu (zákazník si to rozmyslel)
 // (2026-10-19) ☑ odškrtávanie položiek pri príprave (len na Bare, objednávka "nova"): ťuk na štvorček = pripravené;
@@ -3231,7 +3498,10 @@ async function toggleItemReady(orderId, idx) {
 }
 const barItemsHtml = (o, withNotes) => `<ul>${o.items.map((i, idx) => `<li style="${o.status === 'nova' && i.ready ? 'opacity:.5;text-decoration:line-through' : ''}">${o.status === 'nova' && uiOn('barCheck') ? `<button title="Pripravené" onclick="toggleItemReady('${o.id}',${idx})" style="width:30px;height:30px;flex:none;margin-right:6px;border-radius:6px;border:2px solid ${i.ready ? 'var(--ok)' : 'var(--line)'};background:${i.ready ? 'var(--ok)' : 'transparent'};color:#fff;font-weight:900;text-decoration:none">${i.ready ? '✓' : ''}</button>` : ''}<b>${i.qty}×</b>${esc(i.name)}${i.plus && o.status === 'nova' ? ` <span style="background:var(--okbg);color:var(--ok);font-size:13px;font-weight:800;padding:1px 6px;border-radius:6px">+${i.plus} pridané</span>` : ''}${withNotes && i.note ? `<i>${esc(i.note)}</i>` : ''}
   <button class="li-minus" title="Odobrať 1 ks (zákazník si to rozmyslel)" onclick="barRemoveItem('${o.id}',${idx})">−</button></li>`).join('')}</ul>`;
-const guestTag = o => guestOf(o.tableId) ? ` <small style="margin-left:0;font-weight:700">👤 ${esc(guestOf(o.tableId))}</small>` : '';
+// (2026-11-07) 💶 zaplatený lístok má vlastnú snímku mena (o.guest) – meno k účtu stola sa po vyplatení zmaže
+const guestTag = o => { const g = isTicket(o) ? (o.dest ? o.guest || '' : '') : guestOf(o.tableId); return g ? ` <small style="margin-left:0;font-weight:700">👤 ${esc(g)}</small>` : ''; };
+// veľký zelený štítok, nech od hostí nikto nepýta peniaze znova (pri oddelenej časti aj „zaplatená časť“ – zvyšok #N je nezaplatený)
+const ticketTag = o => isTicket(o) ? '<div class="paidtag">💶 ZAPLATENÉ</div>' + (o.part ? `<small class="muted" style="display:block;margin:2px 0 4px">zaplatená časť objednávky #${o.no}</small>` : '') : '';
 // Bar = len to, čo treba PRIPRAVIŤ. Hotové na odnesenie sú zvlášť v záložke "🚶 Odniesť" (renderServe).
 // (2026-10-16) súhrn na bare: všetky čakajúce objednávky spolu ("6× Pivo · 3× Kofola") – barman natočí naraz
 function barSummaryHtml(nove) {
@@ -3244,10 +3514,10 @@ function barSummaryHtml(nove) {
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${rows.map(([n, q]) => `<span class="pill" style="font-size:15px;padding:4px 10px;background:var(--card);color:var(--ink)"><b>${q}×</b> ${esc(n)}</span>`).join('')}</div></div>`;
 }
 function renderBar() {
-  const nove = open().filter(o => o.status === 'nova' && orderDueNow(o)).sort((a, b) => (a.dueAt || a.createdAt) - (b.dueAt || b.createdAt));
+  const nove = open().filter(o => o.status === 'nova' && orderDueNow(o) && !tkOld(o)).sort((a, b) => (a.dueAt || a.createdAt) - (b.dueAt || b.createdAt));
   const planned = open().filter(o => o.status === 'nova' && !orderDueNow(o)).sort((a, b) => a.dueAt - b.dueAt);
   const soldList = S.menu.filter(m => isSoldOut(m.id));
-  const hotN = open().filter(o => o.status === 'hotova').length;
+  const hotN = open().filter(o => o.status === 'hotova' && !tkOld(o)).length;
   $('#app').innerHTML = `
     <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:8px">
       ${hotN ? `<button class="btn ghost" style="width:auto;padding:8px 12px" onclick="role='odniest';store.set('role',role);render()">🚶 Na odnesenie čaká: <b>${hotN}</b> →</button>` : '<span></span>'}
@@ -3256,32 +3526,33 @@ function renderBar() {
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">${soldList.map(m => `<button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="setSoldOut('${m.id}',false)">${esc(m.name)} · ✓ už je</button>`).join('')}</div></div>` : ''}
     <h2>Pripraviť (${nove.length})</h2>
     ${uiOn('barSummary') ? barSummaryHtml(nove) : ''}
-    ${nove.length ? `<div class="bar-grid">${nove.map(o => `<div class="order nova">
-      <h3>${tableDot(o.tableId)}${esc(o.tableName)}${guestTag(o)} <span class="muted">#${o.no}</span><small>${ago(o.createdAt)}${o.waiter ? ' · ' + esc(o.waiter) : ''}</small></h3>
+    ${nove.length ? `<div class="bar-grid">${nove.map(o => `<div class="order nova">${ticketTag(o)}
+      <h3>${tableDot(o.dest || o.tableId)}${esc(o.tableName)}${guestTag(o)} <span class="muted">#${o.no}</span><small>${ago(o.createdAt)}${o.waiter ? ' · ' + esc(o.waiter) : ''}</small></h3>
       ${o.dueAt ? `<div class="pill" style="background:var(--warnbg);color:var(--warn);font-size:14px;margin-bottom:6px">⏰ na ${hhmmOf(o.dueAt)}</div>` : ''}
       ${barItemsHtml(o, true)}
       ${o.note ? `<div class="note">${esc(o.note)}</div>` : ''}
       ${moveOrderBlock(o)}
-      <button class="btn ok" onclick="setStatus('${o.id}','hotova')">Hotové – na odnesenie</button>
+      ${isTicket(o) && !o.dest ? `<button class="btn ok" onclick="ticketHandOver('${o.id}')">✓ Vydané – vyzdvihol si</button><button class="btn ghost" style="margin-top:6px" onclick="setStatus('${o.id}','hotova')">Hotové – počká na pulte</button>`
+        : `<button class="btn ok" onclick="setStatus('${o.id}','hotova')">Hotové – na odnesenie</button>`}
       <button class="btn ghost" style="margin-top:6px;color:var(--warn)" onclick="cancelWholeOrder('${o.id}')">🗑 Zrušiť celú objednávku</button></div>`).join('')}</div>`
       : '<div class="empty">Žiadne nové objednávky ☕</div>'}
     ${planned.length ? `<h2 style="margin-top:18px">⏰ Naplánované na neskôr (${planned.length})</h2>
       <div class="card" style="padding:0">${planned.map(o => `<div class="line" style="align-items:center">
-        <div class="n"><b>⏰ ${hhmmOf(o.dueAt)}</b> · ${esc(o.tableName)}${guestTag(o)} #${o.no}<small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}${o.note ? ' · ' + esc(o.note) : ''}</small></div>
+        <div class="n"><b>⏰ ${hhmmOf(o.dueAt)}</b> · ${esc(o.tableName)}${guestTag(o)} #${o.no}${isTicket(o) ? ' · 💶 zaplatené' : ''}<small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}${o.note ? ' · ' + esc(o.note) : ''}</small></div>
         <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="laterNow('${o.id}')">Pripraviť už teraz</button></div>`).join('')}</div>
-      <p class="muted" style="font-size:12px;margin:6px 0 0">Do „Pripraviť“ sa presunú samé 10 minút pred časom (Bar pípne).</p>` : ''}`;
+      <p class="muted" style="font-size:12px;margin:6px 0 0">Do „Pripraviť“ sa presunú samé 10 minút pred časom (Bar pípne).</p>` : ''}${oldTicketsBlock()}`;
 }
 // Odniesť = hotové objednávky, ktoré treba zaniesť ku stolu (samostatná záložka, nemiešajú sa s prípravou)
 function renderServe() {
-  const hot = open().filter(o => o.status === 'hotova').sort((a, b) => (a.hotovaAt || a.createdAt) - (b.hotovaAt || b.createdAt));
+  const hot = open().filter(o => o.status === 'hotova' && !tkOld(o)).sort((a, b) => (a.hotovaAt || a.createdAt) - (b.hotovaAt || b.createdAt));
   $('#app').innerHTML = `<h2>Čaká na odnesenie (${hot.length})</h2>
-    ${hot.length ? `<div class="bar-grid">${hot.map(o => `<div class="order hotova">
-      <h3>${tableDot(o.tableId)}${esc(o.tableName)}${guestTag(o)} <span class="muted">#${o.no}</span><small>hotové ${ago(o.hotovaAt || o.createdAt)}</small></h3>
+    ${hot.length ? `<div class="bar-grid">${hot.map(o => `<div class="order hotova">${ticketTag(o)}
+      <h3>${tableDot(o.dest || o.tableId)}${esc(o.tableName)}${guestTag(o)} <span class="muted">#${o.no}</span><small>hotové ${ago(o.hotovaAt || o.createdAt)}</small></h3>
       ${barItemsHtml(o, true)}
       ${o.note ? `<div class="note">${esc(o.note)}</div>` : ''}
       ${moveOrderBlock(o)}
       <div class="row"><button class="btn ghost" onclick="setStatus('${o.id}','nova')">↩ Vrátiť na bar</button>
-      <button class="btn ok" onclick="setStatus('${o.id}','vydana')">✓ Odnesené</button></div>
+      <button class="btn ok" onclick="setStatus('${o.id}','vydana')">${isTicket(o) && !o.dest ? '✓ Vydané' : '✓ Odnesené'}</button></div>
       <button class="btn ghost" style="margin-top:6px;color:var(--warn)" onclick="cancelWholeOrder('${o.id}')">🗑 Zrušiť celú objednávku</button></div>`).join('')}</div>`
     : '<div class="empty">Nič nečaká na odnesenie 👍</div>'}
     ${servedBlock()}`;
@@ -3298,12 +3569,26 @@ function servedBlock() {
     <p class="muted" style="font-size:12px;margin:6px 0 4px">Ak niekto ťukol „Odnesené“ omylom, tu vidíš, na ktorý stôl to išlo – a vieš to vrátiť.</p>
     ${list.length ? list.map(o => `<div style="padding:8px 0;border-top:1px solid var(--line)">
       <div class="row" style="justify-content:space-between;gap:8px;align-items:flex-start">
-        <div style="flex:1;min-width:0"><b>${hhmmOf(o.vydanaAt)}</b> → ${tableDot(o.tableId)}<b>${esc(o.tableName)}</b>${guestTag(o)} <span class="muted">#${o.no}</span>${o.waiter ? ` <small class="muted">· ${esc(o.waiter)}</small>` : ''}
+        <div style="flex:1;min-width:0"><b>${hhmmOf(o.vydanaAt)}</b> → ${tableDot(o.dest || o.tableId)}<b>${esc(o.tableName)}</b>${guestTag(o)} <span class="muted">#${o.no}</span>${isTicket(o) ? ' <span class="pill p-hotova">💶 zaplatené</span>' : ''}${o.waiter ? ` <small class="muted">· ${esc(o.waiter)}</small>` : ''}
           <div class="muted" style="font-size:13px">${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</div></div>
         <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="setStatus('${o.id}','hotova')">↩ Späť na odnesenie</button>
       </div>
       <div style="margin-top:4px">${moveOrderBlock(o)}</div></div>`).join('')
       : '<div class="muted" style="padding:8px 0">Za posledných 12 hodín nič.</div>'}
+  </details>`;
+}
+// (2026-11-07) 🕘 Staršie zaplatené: lístok, ktorý nikto neodklikol viac ako 3 h, je asi už vydaný – nech ho bar nerobí znova.
+// Je zbalený dole na Bare (nie v „Pripraviť“, „Spolu pripraviť“ ani v bodkách); ✓ Vybavené ho dá do „✓ Už odnesené“. Nič sa neplatí.
+let oldTkOpen = false;
+function oldTicketsBlock() {
+  const old = open().filter(tkOld).sort((a, b) => tkBase(a) - tkBase(b));
+  if (!old.length) return '';
+  return `<details class="card" style="margin-top:16px;padding:12px 14px" ${oldTkOpen ? 'open' : ''} ontoggle="oldTkOpen=this.open">
+    <summary style="cursor:pointer;font-weight:700">🕘 Staršie zaplatené (${old.length}) <span class="muted" style="font-weight:400">– asi už vydané</span></summary>
+    <p class="muted" style="font-size:12px;margin:6px 0 4px">Objednané pred viac ako 3 hodinami a nikto ich neodklikol. Ak sú vydané, ťukni ✓ Vybavené. Peniaze sú už zaplatené – od hostí nič nepýtaj.</p>
+    ${old.map(o => `<div class="line" style="align-items:center"><div class="n"><b>#${o.no}</b> · ${tableDot(o.dest)}${esc(o.tableName)}${guestTag(o)} <small class="muted">· pred ${Math.floor((now() - tkBase(o)) / 3600e3)} h</small>
+      <small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small></div>
+      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="ticketHandOver('${o.id}')">✓ Vybavené</button></div>`).join('')}
   </details>`;
 }
 // (2026-10-30) 💶 detail zaplateného účtu – ťuknutím na platbu (Uzávierka, História) sa otvorí veľký prehľad
@@ -3360,7 +3645,7 @@ function paidOverlay() {
     <div class="card" style="width:100%;max-width:520px;margin:0">
       <div class="row" style="justify-content:space-between;align-items:flex-start;gap:8px">
         <div><div style="font-size:20px;font-weight:800">${esc(o.tableName)}${o.sec ? ' · 📍 ' + esc(o.sec) : ''}${o.guest ? ' · 👤 ' + esc(o.guest) : ''}</div>
-          <div class="muted">💶 zaplatené ${tm} · #${o.no}${o.waiter ? ' · ' + esc(o.waiter) : ''}${o.staff ? ' · 👤 zamestnanec' + (o.staffName ? ' ' + esc(o.staffName) : '') + ' (mimo tržby)' : ''}</div></div>
+          <div class="muted">💶 zaplatené ${tm}${o.upfront ? ' hneď pri objednaní' : ''} · #${o.no}${o.waiter ? ' · ' + esc(o.waiter) : ''}${o.staff ? ' · 👤 zamestnanec' + (o.staffName ? ' ' + esc(o.staffName) : '') + ' (mimo tržby)' : ''}</div></div>
         <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="closePaid()">✕</button></div>
       <div style="margin-top:10px">${rows.map(r => `<div class="row" style="justify-content:space-between;align-items:baseline;gap:10px;padding:9px 0;border-top:1px solid var(--line)">
         <div style="flex:1;min-width:0;font-size:18px"><b style="font-size:22px">${r.qty}×</b> ${esc(r.name)}
@@ -3375,7 +3660,7 @@ document.addEventListener('keydown', e => { if (paidViewId && e.key === 'Escape'
 // "↔ Prepísať na iný stôl" pri jednej objednávke (bar, odniesť, účet stola) - zavretý = tlačidlo, otvorený = výber stola
 function moveOrderBlock(o) {
   if (moveOrderId !== o.id) return `<button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="moveOrderId='${o.id}';moveOrderTarget='';movePickGroup=null;render()">↔ Na iný stôl</button>`;
-  const others = visibleTables().filter(t => t.id !== o.tableId);
+  const others = visibleTables().filter(t => t.id !== (o.paidIn ? o.dest : o.tableId));
   return `<div style="width:100%">
     <div class="row" style="justify-content:space-between;gap:6px"><b style="font-size:14px">↔ #${o.no} prepísať na iný stôl</b>
       <button class="btn ghost" style="width:auto;padding:6px 12px" onclick="moveOrderId=null;render()">Zrušiť</button></div>
@@ -3386,7 +3671,7 @@ async function confirmMoveOrder(id) {
   const o = S.orders.find(x => x.id === id), t = S.tables.find(x => x.id === moveOrderTarget);
   if (!o) { moveOrderId = null; render(); return; }
   if (!t) return toast('Vyber stôl');
-  if (!confirm(`Prepísať #${o.no} z ${o.tableName} na ${t.name}?`)) { moveOrderTarget = ''; render(); return; }
+  if (!confirm(isTicket(o) ? `Zaplatené #${o.no} doniesť na ${t.name}?\n(Platba sa nemení, mení sa len, kam sa to nesie.)` : `Prepísať #${o.no} z ${o.tableName} na ${t.name}?`)) { moveOrderTarget = ''; render(); return; }
   try { await call('POST', `/api/orders/${id}/moveTo`, { targetId: t.id }); toast(`#${o.no} prepísané z ${o.tableName} na ${t.name} ✓`); }
   finally { moveOrderId = null; render(); }
 }
@@ -3396,8 +3681,8 @@ async function barRemoveItem(orderId, idx) {
   if (!it || barRemoving) return;
   let n = 1;
   if (it.qty > 1) { n = askRemoveQty(it.name, it.qty); if (!n) return; }
-  const last = o.items.length === 1 && n >= it.qty;
-  if ((it.qty === 1 || last) && !confirm(`Odobrať ${n}× ${it.name} z objednávky ${o.tableName} #${o.no}?${last ? '\nJe to posledná položka – zruší sa celá objednávka.' : ''}`)) return;
+  const last = o.items.length === 1 && n >= it.qty, paidTk = isTicket(o);
+  if ((it.qty === 1 || last || paidTk) && !confirm(`Odobrať ${n}× ${it.name} z objednávky ${o.tableName} #${o.no}?${last ? '\nJe to posledná položka – zruší sa celá objednávka.' : ''}${paidTk ? paidWarn(o, eur(it.price * n)) : ''}`)) return;
   barRemoving = true;
   try { await call('POST', `/api/orders/${orderId}/removeItem`, { idx, name: it.name, qty: n }); toast(`Odobrané: ${n}× ${it.name}`); }
   finally { barRemoving = false; }
@@ -3406,7 +3691,7 @@ async function barRemoveItem(orderId, idx) {
 async function cancelWholeOrder(id) {
   const o = S.orders.find(x => x.id === id); if (!o) return;
   const n = o.items.reduce((s, i) => s + i.qty, 0);
-  if (!confirm(`Zrušiť CELÚ objednávku ${o.tableName} #${o.no} (${n} ks)?`)) return;
+  if (!confirm(`Zrušiť CELÚ objednávku ${o.tableName} #${o.no} (${n} ks)?${isTicket(o) ? paidWarn(o, eur(sumOrders([o]))) : ''}`)) return;
   await call('DELETE', `/api/orders/${id}`);
   toast(`Objednávka #${o.no} zrušená`);
 }
@@ -3454,7 +3739,9 @@ function renderUzavierka() {
   const byCat = {};
   Object.values(agg).forEach(r => { (byCat[r.cat] = byCat[r.cat] || []).push(r); });
   const cats = Object.keys(byCat).sort();
-  const txns = [...paid].sort((a, b) => b.paidAt - a.paidAt);
+  // (2026-11-07) aj 👤 zamestnanecké platby (so štítkom „mimo tržby“), nech ich vedúci vie zmazať ✕ (napr. omylom 💶 Zaplatené hneď);
+  // tržba, počet zaplatených, položky, sektory aj % sa naďalej rátajú len z paid
+  const txns = [...paidAll].sort((a, b) => b.paidAt - a.paidAt);
   uzPaidIds = txns.map(x => x.id);   // poradie pre ‹ › v detaile platby
   const fmtTime = t => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
   const dayKey = `${uzavDate.getFullYear()}-${String(uzavDate.getMonth() + 1).padStart(2, '0')}-${String(uzavDate.getDate()).padStart(2, '0')}`;
@@ -3579,9 +3866,9 @@ function renderUzavierka() {
       cats.length ? cats.map(c => `<h3 style="margin:14px 0 6px;font-size:14px">${esc(c)} <span class="muted" style="font-weight:400">· ${eur(byCat[c].reduce((s, r) => s + r.price * r.qty, 0))}</span></h3>${byCat[c].sort((a, b) => b.qty - a.qty).map(r => `
       <div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span></div>`).join('')}`).join('')
       : '<div class="empty" style="padding:16px 0">Za tento deň zatiaľ nič nebolo zaplatené.</div>')}
-    ${txns.length ? uzDetails('pays', `💶 Jednotlivé platby <span class="muted" style="font-weight:400">(${txns.length})</span>`,
+    ${txns.length ? uzDetails('pays', `💶 Jednotlivé platby <span class="muted" style="font-weight:400">(${paid.length}${staffPaid.length ? ' + 👤 ' + staffPaid.length : ''})</span>`,
       `<p class="muted" style="font-size:12px;margin:0 0 6px">Ťukni na platbu = veľký prehľad, čo mali (na prepis do pokladne).</p>` + txns.map(o => `<div class="line" style="align-items:center;cursor:pointer" onclick="if(!event.target.closest('button'))openPaid('${o.id}',uzPaidIds)">
-        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.sec ? ' · 📍 ' + esc(o.sec) : ''}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}${o.staff ? ` <span class="pill" style="background:var(--line)">👤 zamestnanec${o.staffName ? ' ' + esc(o.staffName) : ''} · mimo tržby</span>` : ''}
+        <div class="n"><b>${fmtTime(o.paidAt)}</b> · ${esc(o.tableName)}${o.sec ? ' · 📍 ' + esc(o.sec) : ''}${o.guest ? ' · 👤 ' + esc(o.guest) : ''} · #${o.no}${o.upfront ? ' · 💶 hneď' : ''}${o.staff ? ` <span class="pill" style="background:var(--line)">👤 zamestnanec${o.staffName ? ' ' + esc(o.staffName) : ''} · mimo tržby</span>` : ''}
           <small>${o.items.map(i => `${i.qty}× ${esc(i.name)}`).join(', ')}</small></div>
         <span>${eur(sumOrders([o]))}</span>
         ${isManager ? `<button class="btn ghost" style="width:auto;padding:6px 10px;margin-left:8px" onclick="delPaidOrder('${o.id}')">✕</button>` : ''}
@@ -3617,7 +3904,7 @@ function sectorStats(paid, sec) {
   }));
   return { orders: orders.sort((a, b) => a.paidAt - b.paidAt), total, byCat };
 }
-const sectorLabel = sec => [...sec.g.map(g => 'skupina ' + g), ...sec.t.map(id => { const t = S.tables.find(x => x.id === id); return t ? t.name : null; }).filter(Boolean)].join(', ') || 'bez stolov – len rýchle platby';
+const sectorLabel = sec => [...sec.g.map(g => 'skupina ' + g), ...sec.t.map(id => { const t = S.tables.find(x => x.id === id); return t ? t.name : null; }).filter(Boolean)].join(', ') || 'bez stolov – len platby s 📍 Pre koho';
 function pickUzSector(n) { uzSector = uzSector === n ? '' : n; store.set('uzSector', uzSector); render(); }
 function uzSectorBlock(paid, total) {
   const secs = uzSectors(), cur = secs.find(s => s.n === uzSector);
@@ -3630,9 +3917,9 @@ function uzSectorBlock(paid, total) {
     inner += `<div class="total" style="margin-top:10px"><span>📍 ${esc(cur.n)}</span><span>${eur(st.total)}</span></div>
       <p class="muted" style="margin:2px 0 8px;font-size:12px">${esc(sectorLabel(cur))} · ${st.orders.length} ${st.orders.length === 1 ? 'platba' : (st.orders.length >= 2 && st.orders.length <= 4 ? 'platby' : 'platieb')}${total > 0 ? ` · ${Math.round(st.total / total * 100)} % z celej tržby (${eur(total)})` : ''}</p>
       ${cats.map(c => { const rows = Object.values(st.byCat[c]).sort((a, b) => b.qty - a.qty); return `<h3 style="margin:10px 0 4px;font-size:14px">${esc(c)} <span class="muted" style="font-weight:400">· ${eur(rows.reduce((s, r) => s + r.price * r.qty, 0))}</span></h3>
-        ${rows.map(r => `<div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span></div>`).join('')}`; }).join('') || '<p class="muted" style="font-size:13px">Na týchto stoloch ani v rýchlych platbách pre tento sektor v tento deň zatiaľ nič nebolo zaplatené.</p>'}
+        ${rows.map(r => `<div class="line"><div class="n">${esc(r.name)}<small>${eur(r.price)} / ks</small></div><b>${r.qty}×</b>&nbsp;&nbsp;<span>${eur(r.price * r.qty)}</span></div>`).join('')}`; }).join('') || '<p class="muted" style="font-size:13px">Na týchto stoloch, v rýchlych platbách ani v 💶 Zaplatené hneď pre tento sektor v tento deň zatiaľ nič nebolo zaplatené.</p>'}
       <button class="btn ghost" style="margin-top:10px" onclick="downloadSectorCsv()">⬇️ Stiahnuť / zdieľať ${esc(cur.n)} (CSV pre Excel)</button>`;
-  } else if (secs.length) inner += '<p class="muted" style="font-size:12px;margin:8px 0 0">Vyber sektor a uvidíš, koľko zarobili jeho stoly a rýchle platby, pri ktorých ho čašník vybral (📍 Pre koho).</p>';
+  } else if (secs.length) inner += '<p class="muted" style="font-size:12px;margin:8px 0 0">Vyber sektor a uvidíš, koľko zarobili jeho stoly, rýchle platby a 💶 Zaplatené hneď, pri ktorých ho čašník vybral (📍 Pre koho).</p>';
   return `<div class="card" style="margin-top:10px"><h3 style="margin:0 0 8px;font-size:15px">📍 Tržba podľa sektorov</h3>${inner}</div>`;
 }
 function uzSectorEditor() {
@@ -3640,7 +3927,7 @@ function uzSectorEditor() {
   S.tables.forEach(t => { (byG[t.group || 'Bez skupiny'] = byG[t.group || 'Bez skupiny'] || []).push(t); });
   const chip = (on, label, fn) => `<button class="btn ${on ? '' : 'ghost'}" style="width:auto;padding:5px 10px;font-size:13px" onclick="${fn}">${on ? '✓ ' : ''}${label}</button>`;
   return `<div class="card" style="margin-top:10px"><h3 style="margin:0 0 4px;font-size:15px">✎ Sektory pre Uzávierku</h3>
-    <p class="muted" style="font-size:12px;margin:0 0 10px">Vyber celé skupiny (napr. L, P) a/alebo jednotlivé stoly. Sektor môže byť aj bez stolov (napr. Šípkari) – rátajú sa doň rýchle platby, pri ktorých ho čašník vyberie v „📍 Pre koho“. Uloží sa pre všetky zariadenia.</p>
+    <p class="muted" style="font-size:12px;margin:0 0 10px">Vyber celé skupiny (napr. L, P) a/alebo jednotlivé stoly. Sektor môže byť aj bez stolov (napr. Šípkari) – rátajú sa doň rýchle platby a 💶 Zaplatené hneď, pri ktorých ho čašník vyberie v „📍 Pre koho“. Uloží sa pre všetky zariadenia.</p>
     ${uzSecEdit.map((s, i) => `<div style="border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px">
       <div class="row" style="gap:8px;align-items:center"><input id="uzSecN${i}" maxlength="30" placeholder="Názov, napr. Quiz" value="${esc(s.n)}" oninput="uzSecEdit[${i}].n=this.value" style="flex:1">
         <button class="btn ghost" style="width:auto;padding:6px 10px" onclick="uzSecEdit.splice(${i},1);render()">🗑</button></div>
@@ -3703,7 +3990,7 @@ function deletedLogBlock(day) {
   return uzDetails('del', `🗑 Zmazané <span class="muted" style="font-weight:400">(${rows.length})</span>`, rows.length
     ? rows.map(r => `<div class="line" style="align-items:center">
       <div class="n"><b>${fmtT(r.deletedAt)}</b> · zmazal/a <b>${esc(r.by || '?')}</b> · ${esc(r.tableName || '')} · #${esc(String(r.no || ''))}
-        <small>${r.status === 'zaplatena' ? '💶 zaplatená platba' : '🧾 nezaplatená objednávka'}${r.items ? ' – ' + esc(r.items) : ''}</small></div>
+        <small>${r.status === 'zaplatena' ? (r.staff ? '👤 zaplatený zamestnanecký účet (mimo tržby)' : '💶 zaplatená platba') : r.status === 'zaplateny-listok' ? (r.noPay ? '💶 objednávka z baru, ktorej platbu už predtým zmazali (nie je v tržbe)' : r.staff ? '💶 zaplatená objednávka z baru (zamestnanecký účet, mimo tržby)' : '💶 zaplatená objednávka z baru (peniaze ostali v tržbe)') : '🧾 nezaplatená objednávka'}${r.items ? ' – ' + esc(r.items) : ''}</small></div>
       <span>${eur(r.total || 0)}</span></div>`).join('')
     : '<p class="muted" style="font-size:13px;margin:0">V tento deň sa nič nezmazalo.</p>');
 }
@@ -3797,7 +4084,7 @@ function payPctLabel(pct, excludedRevenue, pctBase, sharers, timed, openTotal) {
 // Deň = kedy bola nahodená (čas − 6 h). (2026-10-31) Už nie celý 🌙 pracovný deň – pri „včera“ sa tam miešali aj dnešné stoly.
 function dayOpenOrders(date) {
   const k = dateKey(date);
-  return S.orders.filter(o => o.status !== 'zaplatena' && !o.staff && !isStaffTable(o.tableId) && (o.items || []).length
+  return S.orders.filter(o => o.status !== 'zaplatena' && !o.paidIn && !o.staff && !isStaffTable(o.tableId) && (o.items || []).length
     && bizKeyOfTs(o.createdAt || 0) === k);
 }
 // (2026-10-31) na ktorých stoloch je to „ešte nezaplatené“ – stôl, od kedy, čo a koľko; ťuk = otvorí účet stola
@@ -4179,7 +4466,139 @@ async function downloadPayrollCsv() {
 }
 async function delPaidOrder(id) {
   if (!confirm('Zmazať túto platbu z uzávierky? Toto nastálo odstráni záznam.')) return;
-  await call('DELETE', '/api/orders/' + id); render();
+  // platbu medzitým zmazal iný vedúci (zoznam sa neprekreslil, napr. kým sa písalo do políčka)
+  const pay = S.orders.find(x => x.id === id); if (!pay) { toast('Platba už neexistuje'); render(); return; }
+  // ➗ podiel: lístky z baru patria k celému rozdeleniu – kým ostáva iný podiel, len sa k nemu preložia (otázky až pri poslednom)
+  const shareOf = skip => isSplitPart(pay) ? S.orders.find(x => !skip.includes(x.id) && x.status === 'zaplatena' && isSplitPart(x) && x.tableId === pay.tableId && Math.abs((x.paidAt || 0) - (pay.paidAt || 0)) < 15000) || null : null;
+  const tks = S.orders.filter(o => isTicket(o) && o.paidIn === id), sib = shareOf([id]);
+  let left;
+  if (sib && tks.length) {
+    // zmazanie podielu a preloženie lístkov JEDNÝM zápisom: keď bar lístok medzitým zmenil (napr. zrušil), nezapíše sa nič
+    // a platba ostane – inak by lístok ostal „zaplatený“ k zmazanej platbe a pri poslednom podiele by sa naň nikto nespýtal
+    const u = { [id]: null }; tks.forEach(o => { u[o.id + '/paidIn'] = sib.id; });
+    try { await db.ref('orders').update(u); } catch (e) { toast('Platba sa NEZMAZALA – objednávka na bare sa medzitým zmenila. Skús znova.'); render(); return; }
+    logDeleted(pay);
+    if (S.orders.some(x => x.id === sib.id && x.status === 'zaplatena')) { render(); return; }
+    // druhý vedúci medzitým zmazal aj ten ďalší podiel (oba naraz) – po potvrdení zápisu to appka už vie
+    left = S.orders.filter(o => isTicket(o) && (o.paidIn === sib.id || o.paidIn === id));
+  } else {
+    await call('DELETE', '/api/orders/' + id);
+    // po potvrdení zmazania (appka má už aj zápisy iných zariadení spred neho): aj lístky, ktoré sem medzitým preložil druhý vedúci
+    left = S.orders.filter(o => isTicket(o) && o.paidIn === id);
+  }
+  // ostal iný podiel toho istého rozdelenia (napr. pri 3 podieloch zmazal druhý vedúci jeden naraz s nami) → lístky len preložiť k nemu
+  const next = left.length ? shareOf([id, sib ? sib.id : '']) : null;
+  if (next) {
+    const u = {}; left.forEach(o => { u[o.id + '/paidIn'] = next.id; });
+    try { await db.ref('orders').update(u); } catch (e) { alert(`Objednávku na bare (${left.map(o => '#' + o.no).join(', ')}) sa nepodarilo preložiť k ďalšiemu podielu – platba k nej už nie je. Skontroluj Bar a účet stola.`); }
+    render(); return;
+  }
+  // (2026-11-07) 💶 lístok k zmazanej platbe: hosť to chce, len nezaplatil (napr. omylom „Zaplatené hneď“) → vrátiť na účet stola
+  // ako nezaplatené (aj už vydané); čo ešte čaká na bare, sa dá aj zrušiť (napr. peniaze sa vrátili). Bez zápisu do 🗑 Zmazané.
+  // lístky tejto platby (pred zmazaním aj po ňom) – keď ich niekto vráti na účet, nie sú „účet iných hostí“ (tí istí hostia)
+  const ours = [...tks, ...left];
+  for (const o0 of left) {
+    const pid = o0.paidIn, ppay = pid === id ? pay : sib;
+    // čerstvý stav: lístok, ktorý medzitým zmizol alebo k platbe už nepatrí (vrátil ho iný vedúci), preskočiť
+    let step = { o: S.orders.find(x => x.id === o0.id && isTicket(x) && x.paidIn === pid), note: '' };
+    // keď bar alebo stôl lístok počas otázky zmení (↔, odnesené, noví hostia), otázka sa zopakuje podľa nového stavu (najviac 3×)
+    for (let k = 0; step && step.o && k < 3; k++) {
+      try { step = await askPaidTicket(step.o, step.note, pid, ppay, ours); }
+      catch (e) { toast('Objednávku na bare sa nepodarilo zmeniť'); step = null; }
+    }
+    if (step && step.o) alert(`#${step.o.no} sa počas otázok stále mení – skontroluj Bar a účet stola.`);
+  }
+  render();
+}
+// otázky k jednému lístku zmazanej platby (tks = všetky lístky tejto platby); vráti { o, note }, keď sa lístok alebo stôl medzitým
+// zmenil (spýtať sa znova podľa nového stavu; note = čo sa zmenilo), inak null
+async function askPaidTicket(o, note, id, pay, tks = []) {
+  const t = o.dest ? S.tables.find(x => x.id === o.dest) : null, what = `#${o.no} (${(o.items || []).map(i => i.qty + '× ' + i.name).join(', ')})`;
+  const again = note ? `${note} – pýtam sa znova.\n\n` : '';
+  const fresh = () => S.orders.find(x => x.id === o.id && isTicket(x) && x.paidIn === id) || null;
+  // účet iných hostí na stole: nezaplatené objednávky okrem tohto lístka a lístkov TEJTO platby, ktoré už vedúci vrátil (tí istí hostia)
+  const others = () => t ? tableOrders(t.id).filter(x => x.id !== o.id && !tks.some(k => k.id === x.id)) : [];
+  // vrátiť sa dá, len keď sedí zamestnanecký / bežný účet (inak by sa zľava alebo tržba pomiešala s iným účtom na stole)
+  const backOk = () => !!t && (pay.staff ? (isStaffTable(t.id) || !others().length) : !isStaffTable(t.id)), canBack = backOk();
+  // otázka pomenuje účet, ktorý je na stole TERAZ (zamestnanecký účet iného zamestnanca, otvorený účet iných hostí so sumou)
+  const os = others(), sn = t && pay.staff && isStaffTable(t.id) ? staffNameOf(t.id) : str(pay.staffName || '', 40);
+  const acct = t ? (pay.staff ? `zamestnanecký účet${sn ? ' ' + sn : ''} (${t.name})` : `účet ${t.name}`) : '';
+  const warn = canBack && os.length ? `Pozor: na ${t.name} je teraz otvorený účet ${eur(sumOrders(os))} – pripočíta sa k nemu.\n` : '';
+  // po OK ešte raz skontrolovať lístok aj stôl (počas otázky mohli prísť zmeny z baru alebo noví hostia), potom vrátiť transakciou;
+  // served = starý lístok (🕘) ide na účet ako už vydaný
+  const back = async (served = false) => {
+    await new Promise(r => setTimeout(r, 0));
+    const f = fresh();
+    if (!f) { toast(`#${o.no} sa medzitým zmenila – skontroluj Bar a účet stola`); return null; }   // zmizla / vrátil ju iný vedúci
+    // (↔ na iný stôl stráži transakcia v ticketBack – nič neprepíše a vráti nový stav, otázka sa zopakuje)
+    if (!backOk()) {
+      if (f.status !== 'vydana') toast(`${t.name} sa medzitým zmenil – #${o.no} som na účet nevrátil`);
+      return { o: f, note: `${t.name} sa medzitým zmenil, na účet sa #${o.no} vrátiť nedá` };
+    }
+    // na stole medzitým pribudol účet iných hostí, ktorý otázka ešte neukázala → spýtať sa znova s upozornením
+    const added = others().filter(x => !os.some(y => y.id === x.id));
+    if (added.length) return { o: f, note: `Na ${t.name} medzitým pribudol účet ${eur(sumOrders(added))}` };
+    // a naopak: účet, ku ktorému sa to malo pripočítať, medzitým zmizol (zaplatili, presadli si) → spýtať sa znova
+    const gone = os.filter(y => !others().some(x => x.id === y.id));
+    if (gone.length) return { o: f, note: `Účet ${eur(sumOrders(gone))} na ${t.name} medzitým zaplatili alebo presunuli` };
+    const cur = await ticketBack(o, t, id, pay, os, tks, served);
+    return cur ? { o: cur, note: `#${o.no} sa medzitým zmenila na bare` } : null;
+  };
+  if (o.status === 'vydana') {
+    if (canBack && confirm(`${again}K tejto platbe patrí UŽ VYDANÉ ${what}.\n\n${warn}Hosť to NEZAPLATIL?\nOK = dať na ${acct} ako nezaplatené\nZrušiť = nechať tak`)) return back();
+    // vydaná a na účet sa dať nedá (vyzdvihnutie, na meno, stôl je teraz zamestnanecký či zmazaný): zrušiť už nejde – aspoň to povedať
+    if (!canBack) alert(`${note ? note + '.\n\n' : ''}${what} je už vydaná (hosť ju má) – zrušiť ani dať na účet sa nedá.\n\nOstáva ako zaplatená, hoci platba v Uzávierke už nie je. Skontroluj to s hosťom.`);
+    return null;
+  }
+  // 🕘 nikto ju neodklikol viac ako 3 h (na Bare „Staršie zaplatené – asi už vydané“): na účet ako vydaná, nech ju bar nerobí ani nenosí znova
+  const old = tkOld(o);
+  const head = old ? `${again}K tejto platbe patrí ${what} – už ${Math.floor((now() - tkBase(o)) / 3600e3)} h ju nikto neodklikol (🕘 asi už vydaná).\n\n`
+    : `${again}K tejto platbe ešte čaká na bare ${what}.\n\n`;
+  if (canBack && confirm(old
+    ? `${head}${warn}Hosť to NEZAPLATIL?\nOK = dať na ${acct} ako nezaplatené a už vydané (bar ju znova robiť ani nosiť nebude)\nZrušiť = ďalšia otázka`
+    : `${head}${warn}Hosť to ešte chce, len NEZAPLATIL?\nOK = vrátiť na ${acct} ako nezaplatené (${o.status === 'hotova' ? 'je hotová na pulte, odnesie sa' : 'bar to pripraví ďalej'})\nZrušiť = ďalšia otázka`)) return back(old);
+  if (!confirm(`${canBack ? '' : head}Zrušiť aj objednávku #${o.no}, aby ju bar nerobil?\n\nZrušiť = nechať ju na bare ako zaplatenú (platba už v Uzávierke nie je).`)) return null;
+  // transakciou: len ak je to stále lístok k tejto platbe a bar ho ešte nevydal (inak by sa zmazalo, čo medzitým vrátil iný vedúci alebo už odniesli)
+  const rr = await db.ref('orders/' + o.id).transaction(cur => cur && cur.paidIn === id && cur.status !== 'vydana' ? null : undefined);
+  if (rr && rr.committed) return null;
+  const cur = rr && rr.snapshot ? rr.snapshot.val() : null;
+  if (cur && cur.paidIn === id && cur.status !== 'zaplatena') return { o: { ...cur, id: o.id }, note: `#${o.no} sa medzitým zmenila na bare (napr. ju už odniesli)` };
+  toast(`#${o.no} sa medzitým zmenila – skontroluj Bar a účet stola`);
+  return null;
+}
+// lístok späť na účet stola ako nezaplatená objednávka – transakciou: len ak je to ešte ten istý lístok k tejto platbe s tým istým
+// cieľom (inak by vznikol prázdny záznam alebo by sa prepísala zmena z baru, napr. ↔ na iný stôl); zamestnanecký podľa platby.
+// Vráti nový stav lístka, keď je to stále lístok k tejto platbe, len medzitým zmenený (otázka sa zopakuje), inak null.
+// os0 = účet iných hostí, ktorý ukázala otázka; tks = lístky tejto platby (vrátené k tým istým hosťom sa nerátajú ako iný účet)
+async function ticketBack(o, t, payId, pay, os0 = [], tks = [], served = false) {
+  const r = await db.ref('orders/' + o.id).transaction(cur => {
+    if (!cur || cur.paidIn !== payId || (cur.dest || '') !== (o.dest || '')) return;
+    const n = { ...cur, tableId: t.id, tableName: t.name };
+    delete n.paidIn; delete n.dest; delete n.guest; delete n.part; delete n.staff;
+    if (pay.staff) n.staff = true;
+    // 🕘 staršia ako 3 h (asi už vydaná) → na účet ako vydaná (v „✓ Už odnesené“ sa dá vrátiť na odnesenie);
+    // keď ju medzitým niekto znova pripravil (už nie je 🕘), nič nezapísať – otázka sa zopakuje podľa nového stavu
+    if (served && n.status !== 'vydana') { if (!tkOld(cur)) return; n.status = 'vydana'; n.vydanaAt = now(); if (!n.hotovaAt) n.hotovaAt = now(); }
+    return n;
+  });
+  if (!r || !r.committed) {
+    const cur = r && r.snapshot ? r.snapshot.val() : null;
+    if (cur && cur.paidIn === payId && cur.status !== 'zaplatena') return { ...cur, id: o.id };
+    toast(`#${o.no} sa medzitým zmenila – skontroluj Bar a účet stola`);
+    return null;
+  }
+  // po potvrdení zápisu má appka aj zápisy iných zariadení spred neho: účet iných hostí, ktorý pribudol tesne pred vrátením
+  const late = tableOrders(t.id).filter(x => x.id !== o.id && !tks.some(k => k.id === x.id) && !os0.some(y => y.id === x.id));
+  // a naopak: účet, ktorý otázka ukázala, tesne pred vrátením zmizol (zaplatili / presadli si)
+  const lateGone = os0.filter(y => !tableOrders(t.id).some(x => x.id === y.id));
+  if (pay.staff && !isStaffTable(t.id)) {
+    // zamestnanecká cena na stole, kde sedia iní → z ich stola zamestnanecký účet nerobiť (zľava a tržba by sa pomiešali)
+    if (late.length) { toast(`Pozor: na ${t.name} je aj iný účet – #${o.no} je na ňom so zamestnaneckou cenou, skontroluj ho`); return null; }
+    try { await db.ref('meta/staffTables/' + t.id).set({ n: str(pay.staffName || '', 40), t: now() }); } catch (e) {}
+  } else if (late.length) { toast(`Pozor: na ${t.name} medzitým pribudol účet ${eur(sumOrders(late))} – #${o.no} je na ňom, skontroluj ho`); return null; }
+  if (lateGone.length) { toast(`Pozor: účet ${eur(sumOrders(lateGone))} na ${t.name} medzitým zaplatili alebo presunuli – #${o.no} je na účte ${t.name}, skontroluj ho`); return null; }
+  toast(`#${o.no} je späť na účte ${t.name} ✓`);
+  return null;
 }
 
 function renderSettings() {
