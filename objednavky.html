@@ -141,7 +141,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-19</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-20</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1043,6 +1043,9 @@ async function callInner(m, [col, id, action], body) {
     if (m === 'POST' && !id) {
       const name = str(body.name, 40); if (!name) fail('Zadaj meno');
       const rec = { name, note: str(body.note, 60), type: str(body.type, 30), createdAt: now() };
+      // (2026-11-20) kto ju zapísal – ukáže sa po ťuknutí na rezerváciu (želanie majiteľa)
+      const by = isManager ? 'Vedúci' : str(body.waiter, 40);
+      if (by) rec.by = by;
       if (body.tableId) { const t = S.tables.find(x => x.id === body.tableId); if (t) rec.tableId = t.id; }
       // rezervácia len "miesta" (bez konkrétneho stola): gauč / stolík, a počet osôb (aj pri stole či atrakcii)
       if (!rec.tableId && (body.seat === 'gauc' || body.seat === 'stolik' || body.seat === 'any')) rec.seat = body.seat;
@@ -1994,6 +1997,13 @@ const Q_DOW = ['ne', 'po', 'ut', 'st', 'št', 'pi', 'so'];
 const qWhen = q => { const d = q.reserveAt ? new Date(q.reserveAt) : parseISODate(qDayKey(q)); return `${Q_DOW[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.${q.reserveAt ? ' ' + fmtQTime(q.reserveAt) : ''}`; };
 const qLead = (q, i, nowT) => q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${qWhen(q)}</b> `
   : `${i === 0 ? '<b>▶ Na rade:</b>' : `<span class="muted">${i + 1}.</span>`} <span class="muted">${qWhen(q)} ·</span> `;
+// (2026-11-20) ťuknutie na rezerváciu ukáže, kedy a kto ju zapísal (želanie majiteľa); qInfoId = práve otvorená.
+// by = meno čašníka / „Vedúci“ / „Rezervácie – meno“; staršie zápisy ho nemajú → aspoň či prišla z Rezervácií.
+let qInfoId = '';
+function toggleQInfo(id) { qInfoId = qInfoId === id ? '' : id; render(); }
+const qStamp = t => { const d = new Date(t); return `${Q_DOW[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}. ${fmtQTime(t)}`; };
+const qByTxt = q => q.by ? String(q.by) : q.rezAttr || q.grp || isLaserQ(q) ? 'appka Rezervácie' : 'nevieme (zapísané pred 20.11.)';
+const qInfo = (key, q) => qInfoId === key && q ? `<div class="muted" style="font-size:12px;margin-top:4px">✍ Kto zapísal: <b>${esc(qByTxt(q))}</b>${q.createdAt ? ` · kedy: <b>${qStamp(q.createdAt)}</b>` : ''}</div>` : '';
 const queueDay = k => S.queue.filter(q => qOnDay(q, k || curBizKey()));
 let qDay = '', qDoneOpen = false;   // qDoneOpen = rozbalené „✓ Odkliknuté“ (queueDoneOn)
 function shiftQDay(n) {
@@ -2006,7 +2016,7 @@ function renderQueue() {
   const later = S.queue.filter(q => q.reserveAt && qBizKey(q) > dk).sort((a, b) => a.reserveAt - b.reserveAt);
   const done = queueDoneOn(dk);
   const rows = dayList.map((q, i) => `<div class="line" style="align-items:center">
-    <div class="n">${qLead(q, i, nowT)}${esc(q.name)}${qPreTag(q)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
+    <div class="n" style="cursor:pointer" onclick="toggleQInfo('${q.id}')">${qLead(q, i, nowT)}${esc(q.name)}${qPreTag(q)}${queueTargetLabel(q) ? ` <small>· ${esc(queueTargetLabel(q))}</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}${qInfo(q.id, q)}</div>
     <div class="row" style="gap:4px;flex-wrap:wrap">${queueBtns(q)}</div>
   </div>`).join('');
   const attrTypes =[...new Set(S.attractions.map(a => a.type || 'Ostatné'))].sort((a, b) => a.localeCompare(b, 'sk'));
@@ -2035,8 +2045,8 @@ function renderQueue() {
     ${done.length ? `<details class="card" style="margin-top:10px;padding:10px 14px" ${qDoneOpen ? 'open' : ''} ontoggle="qDoneOpen=this.open">
       <summary style="cursor:pointer"><b>✓ Odkliknuté (${done.length})</b> <small class="muted">– omylom odkliknuté sa dá vrátiť</small></summary>
       ${done.map(L => `<div class="line" style="align-items:center">
-        <div class="n"><span class="muted">${fmtQTime(L.endedAt)}</span> ${L.action === 'served' ? '✓' : L.action === 'expired' ? '⌛' : '✕'} ${esc(L.name)}${queueTargetLabel(L.q || L) ? ` <small>· ${esc(queueTargetLabel(L.q || L))}</small>` : ''}${L.q ? ` <small>· na ${qWhen(L.q)}</small>` : ''}
-          <small class="muted">${L.action === 'served' ? 'prišli' : L.action === 'expired' ? 'deň skončil – zmazalo sa samo' : 'zrušené'}</small></div>
+        <div class="n" style="cursor:pointer" onclick="toggleQInfo('${L.id}')"><span class="muted">${fmtQTime(L.endedAt)}</span> ${L.action === 'served' ? '✓' : L.action === 'expired' ? '⌛' : '✕'} ${esc(L.name)}${queueTargetLabel(L.q || L) ? ` <small>· ${esc(queueTargetLabel(L.q || L))}</small>` : ''}${L.q ? ` <small>· na ${qWhen(L.q)}</small>` : ''}
+          <small class="muted">${L.action === 'served' ? 'prišli' : L.action === 'expired' ? 'deň skončil – zmazalo sa samo' : 'zrušené'}</small>${qInfo(L.id, L.q || L)}</div>
         ${L.action === 'expired' ? '' : `<button class="btn ghost" style="width:auto;padding:6px 10px" onclick="restoreQueue('${L.id}')">↺ Vrátiť</button>`}</div>`).join('')}
     </details>` : ''}
     <div class="card" style="margin-top:14px">
@@ -2066,7 +2076,7 @@ async function addQueue() {
   if (f.kind === 'attr' && !f.attr) return toast('Vyber atrakciu');
   if (f.pre && !f.time) return toast('Predbežná rezervácia potrebuje dátum a čas');
   if (addingQueue) return;
-  const body = { name, note: f.note.trim() };
+  const body = { name, note: f.note.trim(), waiter: store.get('waiter', '') };
   if (f.kind === 'table') body.tableId = f.tableId;
   else if (f.kind === 'attr') body.type = f.attr;
   else body.seat = f.seat || 'any';
@@ -2313,7 +2323,7 @@ function stationQueueBlock(type) {
   if (!rows.length) return '';
   const nowT = now();
   return `<div class="card" style="padding:0;margin-top:8px">${rows.map((q, i) => `<div class="line" style="align-items:center">
-    <div class="n">${qLead(q, i, nowT)}${esc(q.name)}${qPreTag(q)}${queueStation(q) ? ` <b>· ${esc(queueStation(q).name)}</b>` : ''}${q.people ? `<small> · 👥 ${q.people} os.</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}</div>
+    <div class="n" style="cursor:pointer" onclick="toggleQInfo('${q.id}')">${qLead(q, i, nowT)}${esc(q.name)}${qPreTag(q)}${queueStation(q) ? ` <b>· ${esc(queueStation(q).name)}</b>` : ''}${q.people ? `<small> · 👥 ${q.people} os.</small>` : ''}${q.note ? `<small> · ${esc(q.note)}</small>` : ''}${qInfo(q.id, q)}</div>
     <div class="row" style="gap:4px;flex-wrap:wrap">${queueBtns(q)}</div>
   </div>`).join('')}</div>`;
 }
@@ -2457,7 +2467,7 @@ async function addStationQueue(type) {
   if (!name) return toast('Vyber stôl alebo napíš meno');
   if (f.pre && !f.time) return toast('Predbežná rezervácia potrebuje dátum a čas');
   if (addingStationQueue) return;
-  const body = { name, note: '', type, tableId: table ? table.id : null };
+  const body = { name, note: '', type, tableId: table ? table.id : null, waiter: store.get('waiter', '') };
   if (String(f.people).trim()) body.people = f.people;
   if (f.time) { body.time = f.time; body.date = f.date || todayISO(); }
   if (f.pre) body.pre = true;
@@ -2582,7 +2592,7 @@ function tableReservationsBlock(id) {
     </div></div>
     <div style="padding:10px 14px 14px">${rs.map(q => `
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px;flex-wrap:wrap;gap:6px">
-        <span>${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${qWhen(q)}</b> ` : `<span class="muted">${qWhen(q)} ·</span> `}${esc(q.name)}${qPreTag(q)}${q.people ? ` <small class="muted">· 👥 ${q.people} os.</small>` : ''}${q.note ? ` <small class="muted">· ${esc(q.note)}</small>` : ''}</span>
+        <span style="cursor:pointer" onclick="toggleQInfo('${q.id}')">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${qWhen(q)}</b> ` : `<span class="muted">${qWhen(q)} ·</span> `}${esc(q.name)}${qPreTag(q)}${q.people ? ` <small class="muted">· 👥 ${q.people} os.</small>` : ''}${q.note ? ` <small class="muted">· ${esc(q.note)}</small>` : ''}${qInfo(q.id, q)}</span>
         <div class="row" style="gap:6px">${queueBtns(q, true)}</div>
       </div>`).join('')}</div>
   </div>`;
