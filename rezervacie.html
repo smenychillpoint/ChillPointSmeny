@@ -85,7 +85,7 @@
     .tbl2{border-left:5px solid var(--yellow)}
     .tbl2 .ln,.attr2 .ln{padding:7px 0;border-top:1px solid #2b2e33;cursor:pointer}
     .tbl2 .tw{color:var(--yellow);font-weight:800}
-    .ln.ext{cursor:default;opacity:.85}
+    .ln.ext{opacity:.85}
     /* 🪑 výber stola kockami (2026-10-31) – najprv skupina (B, P…), potom jej stoly; farba stola ako v Objednávkach */
     .tpk{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px;margin:2px 0 10px}
     .tpc{background:#0d0f11;border:1px solid var(--line);border-left:6px solid var(--tc,var(--line));color:#fff;font:inherit;padding:9px 6px;min-height:64px;min-width:0;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;text-align:center}
@@ -491,17 +491,35 @@
   let calMonth = sheetDay.slice(0, 7);
   let showOld = false, busyAct = false;
   let sel = '';      // otvorený detail rezervácie (id)
+  let qv = '';       // (2026-11-20) otvorený záznam z Objednávok (queue id) – len na pozretie, aj kto a kedy ho zapísal
   let f = null;      // rozpísaný formulár (nie v DOM → živé prekreslenie ho nevymaže); f.id = úprava existujúcej
   const canSeeContact = () => isMgr;   // telefón a e-mail len vedúci
   // prístup zamestnancov (settings/hubAccess je verejne čitateľné, mení len vedúci)
   let hubAccess = null, authUser = null;
   const myName = () => ls.get('cp_viewAs') || ls.get('cp_myname') || '';
-  // (2026-11-20) kto zapísal stôl / atrakciu do Objednávok (queue/<id>/by) – Objednávky aj formulár stola to ukážu po ťuknutí
-  const rezBy = () => ('Rezervácie' + (myName() ? ' – ' + myName() : '')).slice(0, 40);
+  // (2026-11-20) ✍ kto zapísal (želanie majiteľa): rezervácia laser game / uzavretá / atrakcia (by) aj stôl a atrakcia v Objednávkach
+  // (queue/<id>/by). Vedúci = „Vedúci“, zamestnanec = jeho meno z prihlásenia na úvode. Ťuknutie na hocičo to ukáže aj s časom zápisu.
+  const whoAmI = () => (isMgr ? 'Vedúci' : myName() || 'zariadenie').slice(0, 40);
+  const rezBy = whoAmI;
   const Q_DOW = ['ne', 'po', 'ut', 'st', 'št', 'pi', 'so'];
-  const qByLine = q => { if (!q) return ''; const d = q.createdAt ? new Date(q.createdAt) : null;
-    const by = q.by ? String(q.by) : q.rezAttr || q.grp || String(q.note || '').startsWith('🎯') ? 'Rezervácie' : 'nevieme (zapísané pred 20.11.)';
-    return `<p class="hint" style="margin:0 0 8px">✍ Kto zapísal: <b>${esc(by)}</b>${d ? ` · kedy: <b>${Q_DOW[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}. ${pad(d.getHours())}:${pad(d.getMinutes())}</b>` : ''}</p>`; };
+  const NO_BY = 'nevieme (zapísané pred 20.11.)';
+  const stampTxt = t => { const d = new Date(t); return `${Q_DOW[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}. ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+  const whoHtml = (by, ts) => `✍ Kto zapísal: <b>${esc(by)}</b>${typeof ts === 'number' ? ` · kedy: <b>${stampTxt(ts)}</b>` : ''}`;
+  const qBy = q => q.by ? String(q.by) : q.rezAttr || q.grp || String(q.note || '').startsWith('🎯') ? 'v Rezerváciách' : NO_BY;
+  const bkBy = b => b.by ? String(b.by) : b.source === 'web' ? 'zákazník sám cez web' : NO_BY;
+  const qByLine = q => q ? `<p class="hint" style="margin:0 0 8px">${whoHtml(qBy(q), q.createdAt)}</p>` : '';
+  // „by“ v laser/<env>/bookings a attr pustia až pravidlá z 2026-11-20 – kým nie sú vo Firebase, uloží sa to bez mena (nič sa nezasekne)
+  async function updBy(u) {
+    const ref = firebase.database().ref();
+    try { await ref.update(u); }
+    catch (e) {
+      const ks = Object.keys(u).filter(k => /\/(bookings|attr)\/[^/]+$/.test(k) && u[k] && typeof u[k] === 'object' && 'by' in u[k]);
+      if (!isPerm(e) || !ks.length) throw e;
+      console.warn('[kto zapísal] bez nových pravidiel – ukladám bez mena', e);
+      ks.forEach(k => { const { by, ...r } = u[k]; u[k] = r; });
+      await ref.update(u);
+    }
+  }
   const encName = n => encodeURIComponent(n).replace(/\./g, '%2E');
   const rezAll = () => !!(hubAccess && hubAccess.rezAll);
   // (2026-10-28) kto vidí rezervácie = konkrétni ľudia: settings/hubAccess/rezWho/<meno> = true.
@@ -743,7 +761,7 @@
   // (2026-11-09) ťuk vedľa okna: formulár (rezervácia, stôl, atrakcia, uzavretá) sa nezavrie a rozpísané údaje sa nestratia – na mobile sa tam ťuká,
   // keď treba schovať klávesnicu (zmizne len nepridaný „+ Vlastný čas“); zavrie ho ✕ alebo spodné tlačidlo. Okná bez formulára (detail, ponuka) sa zavrú ako doteraz.
   function ovBg(e) { if (e.target !== e.currentTarget) return; if (f || af || tf || cf) blurNow(); else closeOv(); }
-  function closeOv() { blurNow(); sel = ''; f = null; af = null; tf = null; cf = null; more = null; render(); }
+  function closeOv() { blurNow(); sel = ''; f = null; af = null; tf = null; cf = null; more = null; qv = ''; render(); }
   // ⋯ ďalšie akcie k rezervácii v tabuľke dňa (2026-10-30) – v riadku ostáva len Potvrdiť a Odohratá
   let more = null;   // {id, t}
   function openMore(id, t) { if (bookings[id]) { more = { id, t }; render(); } }
@@ -822,7 +840,7 @@
     const ext = qList().filter(q => !q.tableId && q.type && !q.rezAttr && qDay(q, d)).sort((a, b) => a.reserveAt - b.reserveAt);
     return `<div class="card attr2">${lnHead('🎮 Ostatné atrakcie', '', `<button class="btn sm" onclick="openAttr('',{date:'${d}'})">➕ Atrakcia</button>`)}
       ${list.map((a, i) => `<div class="ln" onclick="openAttr('${a.id}')"><b>${esc(showT(a.time))}–${esc(showT(attrEnd(a)))}</b> · <span class="aw">${tIc(a.what)} ${esc(attrLabel(a))}</span> · <b>${esc(a.name)}</b>${` (${a.people ? esc(a.people) : '?'})`}${preTag(a)}${env === 'live' && qOfAttr(a.id) ? ' <small>📌 v Objednávkach</small>' : ''}${a.note ? `<br><small>📝 ${esc(a.note)}</small>` : ''}${clash(a, i) ? `<div class="err" style="margin:4px 0 0">❗ ${esc(clash(a, i))}</div>` : ''}</div>`).join('')}
-      ${ext.map(q => `<div class="ln ext"><b>${esc(showT(qTime(q)))}</b> · <span class="aw">${tIc(q.type)} ${esc(q.stationId && stationOf(q.stationId) ? stLabel(stationOf(q.stationId)) : q.type)}</span> · <b>${esc(q.name)}</b>${` (${q.people ? esc(q.people) : '?'})`}${preTag(q)} <small>📌 zapísané v Objednávkach</small></div>`).join('')}
+      ${ext.map(q => `<div class="ln ext" onclick="openQ('${q.id}')"><b>${esc(showT(qTime(q)))}</b> · <span class="aw">${tIc(q.type)} ${esc(q.stationId && stationOf(q.stationId) ? stLabel(stationOf(q.stationId)) : q.type)}</span> · <b>${esc(q.name)}</b>${` (${q.people ? esc(q.people) : '?'})`}${preTag(q)} <small>📌 zapísané v Objednávkach</small></div>`).join('')}
       ${list.length || ext.length ? '' : '<div class="hint" style="margin-top:6px">Zatiaľ nič – VR, biliard, PS5… mimo laser game.</div>'}</div>`;
   }
 
@@ -850,7 +868,7 @@
     const all = types.map(typeNow).filter(x => x.st.length || x.q.length);
     if (!all.length) return '';
     const act = all.filter(x => x.busy.length || x.q.length), idle = all.filter(x => !x.busy.length && !x.q.length);
-    const qTxt = (q, nowT) => `<span class="nqi">${q.reserveAt ? `${q.reserveAt > nowT ? '🕐' : '▶'} ${hhmmOf(q.reserveAt)} ` : ''}<b>${q.pre === true ? '⏳ ' : ''}${esc(q.name)}</b>${q.people ? ` (${esc(q.people)})` : ''}${q.reserveAt ? '' : ` <small>čaká ${durTxt(nowT - (q.createdAt || nowT))}</small>`}</span>`;
+    const qTxt = (q, nowT) => `<span class="nqi" style="cursor:pointer" onclick="${q.rezAttr && attrs[q.rezAttr] ? `openAttr('${q.rezAttr}')` : `openQ('${q.id}')`}">${q.reserveAt ? `${q.reserveAt > nowT ? '🕐' : '▶'} ${hhmmOf(q.reserveAt)} ` : ''}<b>${q.pre === true ? '⏳ ' : ''}${esc(q.name)}</b>${q.people ? ` (${esc(q.people)})` : ''}${q.reserveAt ? '' : ` <small>čaká ${durTxt(nowT - (q.createdAt || nowT))}</small>`}</span>`;
     return `<div class="card now2">${lnHead('🎮 Teraz v Objednávkach', '', '<small class="mut">hry a poradovník čašníkov · živo</small>')}
       ${act.map(x => `<div class="nr">
         <div class="nh"><b>${tIc(x.type)} ${esc(x.type)}</b> <small>${x.st.length ? (x.free.length ? `voľné ${x.free.length} z ${x.st.length}` : '<span class="full">všetko obsadené</span>') : ''}</small></div>
@@ -898,7 +916,7 @@
     });
     qList().filter(q => q.pre === true && !q.rezAttr && !String(q.note || '').startsWith('🎯') && (!q.reserveAt || bizOfTs(q.reserveAt).date >= tk)).filter(onePerGrp()).forEach(q => {
       const bt = q.reserveAt ? bizOfTs(q.reserveAt) : { date: tk, time: '' };
-      out.push({ k: 'q', id: q.id, date: bt.date, time: bt.time, name: q.name, people: qPeople(q), ts: q.createdAt, go: q.tableId ? `openTbl('${q.id}')` : '',
+      out.push({ k: 'q', id: q.id, date: bt.date, time: bt.time, name: q.name, people: qPeople(q), ts: q.createdAt, go: q.tableId ? `openTbl('${q.id}')` : `openQ('${q.id}')`,
         what: q.tableId ? `${IC('table')} ${esc(qWhere(q))}` : q.type ? `${tIc(q.type)} ${esc(q.type)} <span class="mut">v Objednávkach</span>` : `${SEAT_TXT[q.seat] || '📌'} <span class="mut">v Objednávkach</span>` });
     });
     return out.sort((x, y) => (x.date + x.time).localeCompare(y.date + y.time));
@@ -1090,11 +1108,11 @@
       // atrakcie zo skupiny, ktoré už v Objednávkach odklikli, sa do úpravy neberú (uloženie by ich tam vrátilo)
       const recs = Object.entries(attrs || {}).filter(([k, x]) => x && (x.grp || k) === g && (k === id || !attrDone(k))).map(([k, x]) => ({ id: k, ...x }))
         .sort((p, q) => (p.date + p.time).localeCompare(q.date + q.time));
-      af = { grp: a.grp || '', ids: recs.map(r => r.id), date: a.date, name: a.name || '', people: a.people || '', note: a.note || '', pre: a.pre === true, err: '',
+      af = { who: id, grp: a.grp || '', ids: recs.map(r => r.id), date: a.date, name: a.name || '', people: a.people || '', note: a.note || '', pre: a.pre === true, err: '',
         rows: recs.map(r => ({ id: r.id, what: r.what || '', st: r.st || '', from: showT(r.time), to: showT(attrEnd(r)), custom: !attrTypes().includes(r.what || '') })) };
     } else {
       const from = showT((preset && preset.time) || '17:00');
-      af = { grp: '', ids: [], date: (preset && preset.date) || sheetDay, name: '', people: '', note: '', pre: false, err: '',
+      af = { who: '', grp: '', ids: [], date: (preset && preset.date) || sheetDay, name: '', people: '', note: '', pre: false, err: '',
         rows: [{ id: '', what: '', st: '', from, to: showM(toMin(bizTime(from)) + 60), custom: false }] };
     }
     sel = ''; f = null; tf = null; render();
@@ -1134,6 +1152,7 @@
     return `<div class="ov" onclick="ovBg(event)"><div class="box">
       <button class="x" onclick="closeOv()">✕</button>
       <h3>${af.ids.length ? '✎ Upraviť atrakcie' : '🎮 Rezervovať atrakcie'}</h3>
+      ${af.who && attrs[af.who] ? `<p class="hint" style="margin:0 0 8px">${whoHtml(attrs[af.who].by ? String(attrs[af.who].by) : NO_BY, attrs[af.who].createdAt)}</p>` : ''}
       <div class="row2"><div><label class="f">Deň</label><input id="aDate" type="date" value="${esc(af.date)}" oninput="afSet('date',this.value)"></div>
         <div><label class="f">Koľko osôb</label><input id="aPeople" type="number" inputmode="numeric" min="1" max="50" placeholder="? neviem" value="${esc(af.people)}" oninput="afSet('people',this.value)"></div></div>
       <label class="f">Meno (kto)</label><input id="aName" maxlength="80" value="${esc(af.name)}" placeholder="Meno a priezvisko" oninput="afSet('name',this.value)">
@@ -1181,6 +1200,7 @@
       if (grp) v.grp = grp;
       if (x.st) v.st = x.st;
       if (af.pre) v.pre = true;
+      if (old ? old.by : true) v.by = old ? String(old.by) : whoAmI();
       u[`${base()}/attr/${id}`] = v;
       if (env === 'live') {
         const q = qOfAttr(id), s = x.st ? stationOf(x.st) : null;
@@ -1195,7 +1215,7 @@
     busyAct = true;
     const a0 = af;   // okno sa môže počas ukladania zavrieť
     try {
-      await db.ref().update(u); busyAct = false;
+      await updBy(u); busyAct = false;
       toast(a0.ids.length ? 'Atrakcie upravené ✓' : `${a0.pre ? '⏳ Predbežne' : '🎮'} ${rows.length > 1 ? rows.length + ' atrakcie rezervované' : 'Atrakcia rezervovaná'}${env === 'live' ? ' – sú aj v Objednávkach' : ''} ✓`);
       sheetDay = a0.date; calMonth = a0.date.slice(0, 7); if (af === a0) af = null; render();
     } catch (e) {
@@ -1341,12 +1361,12 @@
     const db = firebase.database(), id = cf.id || db.ref(`${base()}/bookings`).push().key, old = cf.id ? (bookings[cf.id] || {}) : null, u = {};
     const games = {}; free.forEach(t => { games[rawKey(d, t)] = true; });
     u[`${base()}/bookings/${id}`] = { name, players: 1, games, consent: true, createdAt: old && old.createdAt ? old.createdAt : firebase.database.ServerValue.TIMESTAMP,
-      status: 'confirmed', source: 'admin', pkg: CLOSED_PKG, ...(note ? { note } : {}), ...(cf.pre ? { pre: true } : {}) };
+      status: 'confirmed', source: 'admin', ...(old ? (old.by ? { by: old.by } : {}) : { by: whoAmI() }), pkg: CLOSED_PKG, ...(note ? { note } : {}), ...(cf.pre ? { pre: true } : {}) };
     if (old) gamesOf(old).forEach(g => { if (!games[g.key]) { const rd = g.key.slice(0, 10), hm = g.key.slice(11); if ((slots[rd] || {})[hm] === id) u[`${base()}/slots/${rd}/${hm}`] = null; } });
     Object.keys(games).forEach(k => { u[`${base()}/slots/${k.slice(0, 10)}/${k.slice(11)}`] = id; });
     busyAct = true;
     const c0 = cf;   // okno sa môže počas ukladania zavrieť
-    try { await db.ref().update(u); busyAct = false; toast(`${c0.pre ? '⏳ Predbežne vyrezervované' : '🔒 Vyrezervované'} ${closedRange({ games }).join('–')} ✓`); sheetDay = d; calMonth = d.slice(0, 7); if (cf === c0) cf = null; render(); }
+    try { await updBy(u); busyAct = false; toast(`${c0.pre ? '⏳ Predbežne vyrezervované' : '🔒 Vyrezervované'} ${closedRange({ games }).join('–')} ✓`); sheetDay = d; calMonth = d.slice(0, 7); if (cf === c0) cf = null; render(); }
     catch (e) { busyAct = false; console.error('[uzavretá]', e); const m = isPerm(e) && c0.pre ? 'Firebase to nedovolil – treba vložiť nové pravidlá (firebase-rules.json): pribudla predbežná rezervácia.' : 'Nepodarilo sa uložiť, skús znova.'; if (cf === c0) fail(m); else toast(m); }
   }
   async function cancelClosed() {
@@ -1474,7 +1494,7 @@
       }
     } else {
       // pozor: undefined do Firebase nesmie (pouč. #1) → nepovinné polia len keď sú
-      u[bp] = { name, players, games, consent: true, createdAt: firebase.database.ServerValue.TIMESTAMP, status: 'confirmed', source: 'admin', pkg: f.pkg,
+      u[bp] = { name, players, games, consent: true, createdAt: firebase.database.ServerValue.TIMESTAMP, status: 'confirmed', source: 'admin', by: whoAmI(), pkg: f.pkg,
         ...(note ? { note } : {}), ...(seatV ? { seat: seatV } : {}), ...(mc ? { mStart: f.mStart, mOrder: f.mOrder } : {}),
         ...(mc && aSet ? { aFrom: f.aFrom, ...(hhmm(f.aTo) ? { aTo: f.aTo } : {}) } : {}), ...(arrive ? { arrive } : {}), ...(f.pre ? { pre: true } : {}) };
       if (phone || email) u[cp] = { ...(phone ? { phone } : {}), ...(email ? { email } : {}) };
@@ -1494,7 +1514,7 @@
     Object.keys(games).forEach(g => { u[`${base()}/slots/${g.slice(0, 10)}/${g.slice(11)}`] = id; });
     busyAct = true;
     const ff = f;   // okno sa môže počas ukladania zavrieť (✕, Zrušiť, Escape)
-    try { await db.ref().update(u); toast(ff.id ? 'Rezervácia upravená ✓' : ff.pre ? '⏳ Predbežná rezervácia pridaná ✓' : 'Rezervácia pridaná ✓'); sheetDay = ff.day; if (f === ff) f = null; }
+    try { await updBy(u); toast(ff.id ? 'Rezervácia upravená ✓' : ff.pre ? '⏳ Predbežná rezervácia pridaná ✓' : 'Rezervácia pridaná ✓'); sheetDay = ff.day; if (f === ff) f = null; }
     catch (e) { console.error(e); ff.err = isPerm(e)
       ? 'Firebase to nedovolil. Treba vložiť aktuálne pravidlá (firebase-rules.json) – pribudla v nich predbežná rezervácia a čas príchodu.' : 'Nepodarilo sa uložiť, skús znova.'; if (f !== ff) toast(ff.err); }
     busyAct = false; render();
@@ -2291,6 +2311,20 @@
     return `<div class="warn" style="margin:10px 0 0;font-size:13px">${b.chA === 'cancel' ? '✕ Zákazník rezerváciu <b>ZRUŠIL</b>' : '✎ Zákazník si rezerváciu <b>ZMENIL</b>'} cez odkaz v e-maile${t ? ` (${t.getDate()}. ${t.getMonth() + 1}. ${pad(t.getHours())}:${pad(t.getMinutes())})` : ''}${b.chOld ? `<br>predtým: ${esc(b.chOld)}` : ''}${b.chA === 'move' && tableQOf(b) ? '<br>🪑 Stôl ostal na pôvodný čas – skontroluj ho (✎ Upraviť).' : ''}${b.chA === 'move' && arrOf(b) ? '<br>🚪 Čas príchodu ostal pôvodný – skontroluj ho (✎ Upraviť).' : ''}</div>`;
   }
   const custMoved = b => b.chA === 'move' && (b.status || 'new') === 'new';   // zmenil a ešte sme ju nepotvrdili
+  // (2026-11-20) 📌 záznam z Objednávok (atrakcia, poradovník) – len na pozretie, aj kto a kedy ho zapísal
+  function openQ(id) { if (!queueMap[id]) return; sel = ''; f = null; af = null; tf = null; cf = null; more = null; qv = id; render(); }
+  function qViewHtml(q) {
+    const s = q.stationId ? stationOf(q.stationId) : null;
+    const what = q.tableId ? `🪑 ${esc(qWhere(q))}` : q.type ? `${tIc(q.type)} ${esc(s ? stLabel(s) : q.type)}` : `${SEAT_TXT[q.seat] || '📌'} miesto`;
+    const when = q.reserveAt ? `${esc(dayTitle(bizOfTs(q.reserveAt).date))} <b>${esc(showT(qTime(q)))}</b>` : 'bez času – čaká v poradovníku';
+    return `<div class="ov" onclick="ovBg(event)"><div class="box">
+      <button class="x" onclick="closeOv()">✕</button>
+      <h3>${q.pre === true ? '⏳ ' : ''}${esc(q.name)}</h3>
+      <div class="info">${what}<br>🕐 ${when}${q.people ? `<br>👥 <b>${esc(q.people)}</b> ${plural(+q.people || 0, 'osoba', 'osoby', 'osôb')}` : ''}${q.note ? `<br>📝 ${esc(q.note)}` : ''}
+        <br><span style="color:var(--muted);font-size:13px">${whoHtml(qBy(q), q.createdAt)}</span></div>
+      <p class="hint" style="margin:8px 0">📌 Zapísané v Objednávkach – odkliknúť alebo zrušiť sa dá tam.</p>
+      <div class="acts"><button class="btn ghost" onclick="closeOv()">Zavrieť</button></div></div></div>`;
+  }
   // ---- okno: detail rezervácie ----
   function detailHtml(b) {
     const st = stOf(b), g = gamesOf(b), mc = isMc(b);
@@ -2315,7 +2349,7 @@
           ${pkgOf(b).attrMin ? `<span style="color:#d9c2ff">🎮 ${esc(pkgOf(b).attrText || 'Atrakcie')} <b>${showM(a.from)}–${showM(a.to)}</b>${a.set ? ' (nastavené ručne)' : a.pizza ? ' (po hrách, niekedy ešte pizza)' : ''}</span>` : ''}` : ''}
         ${canSeeContact() ? (c => `${c.phone ? `<br>📞 <a href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : ''}${c.email ? `<br>✉ <a href="${esc(mailHref(c.email))}">${esc(c.email)}</a>` : ''}`)(contactOf(b)) : ''}
         ${b.note ? `<br>📝 ${esc(b.note)}` : ''}
-        ${created ? `<br><span style="color:var(--muted);font-size:12px">vytvorené ${created.getDate()}. ${created.getMonth() + 1}. ${pad(created.getHours())}:${pad(created.getMinutes())}</span>` : ''}
+        <br><span style="color:var(--muted);font-size:13px">${whoHtml(bkBy(b), created ? b.createdAt : null)}</span>
       </div>
       <div class="acts">
         ${st === 'pre' ? `<button class="btn sm" onclick="preYes('b','${b.id}')">✓ Súhlasia</button>` : ''}
@@ -2445,13 +2479,14 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? preBoxHtml() + calHtml() : view === 'sheet' ? preBoxHtml() + sheetHtml() : view === 'play' ? playHtml() : preBoxHtml() + listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-20</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-20b</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
     else if (cf) html += closedFormHtml();
     else if (more && bookings[more.id]) html += moreHtml();
     else if (sel && bookings[sel]) html += detailHtml({ id: sel, ...bookings[sel] });
+    else if (qv && queueMap[qv]) html += qViewHtml({ id: qv, ...queueMap[qv] });
     app.innerHTML = applyIcons(html);   // 🎨 nastavené ikonky namiesto pôvodných
     const ov = document.querySelector('.ov'); if (ov && ovScroll) ov.scrollTop = ovScroll;
   }
