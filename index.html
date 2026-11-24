@@ -513,7 +513,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" oninput="ui.lCode=this.value" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-15</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-24</footer>`;
       // (2026-11-04) Rovnaký obsah sa neprekresľuje: iPhone po výbere zo zoznamu stratí fokus, focusout zavolá render() a nové políčka
       // by zmazali vybrané meno aj rozpísaný kód či heslo – zamestnanec sa potom nevedel prihlásiť. Keď sa obsah naozaj zmení, meno a kód vráti ui.
       homeHtml = '';
@@ -527,7 +527,7 @@
     loginHtml = '';
     // (2026-11-15) ⚙ Nastavenia – samostatná stránka, len vedúci (openSet)
     if (isMgr && ui.page === 'set') {
-      const html = head + setPageHtml() + `<footer>🏠 Úvod (index.html) · verzia 2026-11-15</footer>`;
+      const html = head + setPageHtml() + `<footer>🏠 Úvod (index.html) · verzia 2026-11-24</footer>`;
       if (html !== homeHtml) { writeApp(app, html); homeHtml = html; }
       return;
     }
@@ -614,6 +614,8 @@
     html += `<h2>Kam ideš?</h2><div class="tiles">`;
     if (allowed('smeny')) html += `<a class="tile" href="smeny.html"><span class="ic">📅</span><span class="tx"><b>Smeny</b><span>Rozpis zmien, úlohy a navyše, vzal/a som si</span></span><span class="arr">›</span></a>`;
     if (allowed('objednavky')) html += `<a class="tile" href="objednavky.html"><span class="ic">🍹</span><span class="tx"><b>Objednávky</b><span>Stoly, bar, atrakcie, platby a uzávierka</span></span><span class="arr">›</span></a>`;
+    // (2026-11-24) 🧪 testovacia verzia Objednávok – len vedúci (novinky si najprv vyskúša sám, zamestnanci majú ostrú)
+    if (isMgr) html += `<a class="tile" href="objednavky-test.html" style="border-left-color:#6e56cf"><span class="ic">🧪</span><span class="tx"><b>Objednávky – test</b><span>Novinky len pre vedúceho, zamestnanci ich zatiaľ nevidia (údaje sú ostré)</span></span><span class="arr">›</span></a>`;
     // (2026-10-26d) 🎯 Rezervácie laser game – vedúci vždy; zamestnanci až keď vedúci v Rezerváciách → ⚙ zapne
     // „Aj zamestnanci“ (settings/hubAccess/rezAll) a človek nemá v Prístupoch odškrtnuté 📆 Rezervácie
     // (2026-10-28) prístup po ľuďoch: settings/hubAccess/rezWho/<meno> = true (nastavuje sa v Rezerváciách → ⚙ Kto vidí)
@@ -664,7 +666,7 @@
         <button class="tile" style="border-left-color:var(--muted)" onclick="openSet()"><span class="ic">⚙</span><span class="tx"><b>Nastavenia</b><span>Objednávky, Smeny, Rezervácie a prístupy zamestnancov – všetko na jednom mieste</span></span><span class="arr">›</span></button>`;
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-11-15</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-11-24</footer>`;
     if (html !== homeHtml) { writeApp(app, html); homeHtml = html; }   // rovnaký obsah sa neprekresľuje (ťuknutie po skrytí klávesnice by sa stratilo)
   }
 
