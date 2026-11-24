@@ -143,7 +143,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24c</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -390,11 +390,15 @@ function buildOrderItems(list) {
     let price = mi.price;
     if (mi.customPrice && i.price !== undefined) { const p = num(i.price); if (p > 0 && p < 10000) price = Math.round(p * 100) / 100; }
     const origPrice = price;
+    // (2026-11-24) ×2 pri možnosti (2 dl vína, dvojitá vodka): 1 pohár = 2 kusy položky za bežnú cenu (v účte aj v uzávierke 2×),
+    // mult ostane pri riadku, nech barman vidí 1 pohár. Pri vlastnej sume a laser game sa nepoužíva.
+    const mult = (!mi.customPrice && !i.lg && i.mult !== undefined) ? Math.max(1, Math.min(10, Math.round(num(i.mult)) || 1)) : 1;
     // zľava na konkrétnu položku (napr. zamestnanecká/VIP zľava) - buď % alebo pevná suma v €; prepočíta
     // sa zo serverovej ceny (nedôveruje sa klientom spočítanej sume), pôvodná cena aj zľava ostanú uložené
     // kvôli prehľadu. Suma má prednosť, ak by omylom prišli obe naraz.
+    // (pri ×2 je zľava v € zadaná na pohár – na kus sa delí)
     let discountPct = 0, discountAmt = 0;
-    if (i.discountAmt !== undefined) { const a = num(i.discountAmt); if (a > 0) discountAmt = Math.min(origPrice, Math.round(a * 100) / 100); }
+    if (i.discountAmt !== undefined) { const a = num(i.discountAmt) / mult; if (a > 0) discountAmt = Math.min(origPrice, Math.round(a * 100) / 100); }
     if (!discountAmt && i.discountPct !== undefined) { const d = num(i.discountPct); if (d > 0 && d <= 100) discountPct = Math.round(d * 10) / 10; }
     if (discountAmt > 0) price = Math.max(0, Math.round((origPrice - discountAmt) * 100) / 100);
     else if (discountPct > 0) price = Math.round(origPrice * (1 - discountPct / 100) * 100) / 100;
@@ -402,7 +406,8 @@ function buildOrderItems(list) {
     // (pri "Zopakovať objednávku" už poznámka ľad/poháre obsahuje – vtedy sa nepridáva znova)
     const base = str(i.note, 80), had = /🧊|bez ľadu|ľad zvlášť|🥤/.test(base);
     const ex = had ? '' : extrasNote(i), note = [base, ex].filter(Boolean).join(' · ');
-    const rec = { menuId: mi.id, name: mi.name, price, qty: Math.max(1, Math.min(999, i.qty | 0)), note: str(note, 140) };
+    const rec = { menuId: mi.id, name: mi.name, price, qty: Math.max(1, Math.min(999, (i.qty | 0) * mult)), note: str(note, 140) };
+    if (mult > 1) rec.mult = mult;
     if (discountAmt > 0) { rec.discountAmt = discountAmt; rec.origPrice = origPrice; }
     else if (discountPct > 0) { rec.discountPct = discountPct; rec.origPrice = origPrice; }
     // 🎯 laser game na rozdelenie pri platení (hráči × hry; cena zatiaľ ako dospelý)
@@ -411,7 +416,7 @@ function buildOrderItems(list) {
   }).filter(Boolean).reduce((acc, it) => {
     // (2026-10-19) rovnaké riadky (položka + cena + poznámka/výber + zľava) sa spoja do jedného – na bare "2× Mattoni · jemne perlivá"
     // (🎯 laser game na rozdelenie sa nespája s ničím – má vlastný počet hráčov a hier)
-    const same = !it.lg && acc.find(x => !x.lg && x.menuId === it.menuId && x.price === it.price && (x.note || '') === (it.note || '') && (x.discountPct || 0) === (it.discountPct || 0) && (x.discountAmt || 0) === (it.discountAmt || 0));
+    const same = !it.lg && acc.find(x => !x.lg && x.menuId === it.menuId && x.price === it.price && (x.note || '') === (it.note || '') && (x.mult || 1) === (it.mult || 1) && (x.discountPct || 0) === (it.discountPct || 0) && (x.discountAmt || 0) === (it.discountAmt || 0));
     if (same) same.qty = Math.min(999, same.qty + it.qty); else acc.push(it);
     return acc;
   }, []);
@@ -629,7 +634,7 @@ async function callInner(m, [col, id, action], body) {
             // natvrdo, lebo zápis objektu s explicitnou hodnotou undefined do Firebase rovno zlyhá (a keďže
             // to nie je fail() s hláškou, používateľ nevidí vôbec nič - účet sa potichu nedá vyplatiť).
             // at = kedy si to hostia objednali (pôvodná objednávka) – podľa toho sa ráta ⏰ % pre čašníka, ktorý tu bol len časť dňa
-            paidItems.push({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: take, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}),
+            paidItems.push({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: take, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}), ...(it.mult > 1 ? { mult: it.mult } : {}),
               ...(it.staffPct ? { staffPct: it.staffPct, origPrice: it.origPrice } : {}),
               ...(typeof (it.at || o.createdAt) === 'number' ? { at: it.at || o.createdAt } : {}) });
             return { ...rest, qty: it.qty - take, ...(pl - tkPlus > 0 ? { plus: pl - tkPlus } : {}) }; }
@@ -996,7 +1001,7 @@ async function callInner(m, [col, id, action], body) {
       if (!add.length) fail('Nič na pridanie');
       const items = o.items.map(x => ({ ...x }));
       add.forEach(n => {
-        const same = !n.lg && items.find(x => !x.lg && x.menuId === n.menuId && x.price === n.price && (x.note || '') === (n.note || '') && !x.discountPct && !x.discountAmt && !n.discountPct && !n.discountAmt);
+        const same = !n.lg && items.find(x => !x.lg && x.menuId === n.menuId && x.price === n.price && (x.note || '') === (n.note || '') && (x.mult || 1) === (n.mult || 1) && !x.discountPct && !x.discountAmt && !n.discountPct && !n.discountAmt);
         if (same) { same.qty = Math.min(999, same.qty + n.qty); same.plus = (same.plus || 0) + n.qty; delete same.ready; }   // pridané kusy ešte nie sú pripravené
         else items.push({ ...n, plus: n.qty });
       });
@@ -1072,7 +1077,7 @@ async function callInner(m, [col, id, action], body) {
       const u = {};
       // platba: položky ako pri paySome (at = kedy sa objednalo – teraz)
       u[payKey] = { no, ...(dt ? { tableId: dt.id } : {}), tableName: dt ? dt.name : PN_NAME, waiter, ...(guest ? { guest } : {}), note,
-        items: items.map(it => ({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: it.qty, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}),
+        items: items.map(it => ({ ...(it.menuId ? { menuId: it.menuId } : {}), name: it.name, price: it.price, qty: it.qty, note: it.note || '', ...(it.cat ? { cat: it.cat } : {}), ...(it.mult > 1 ? { mult: it.mult } : {}),
           ...(it.staffPct ? { staffPct: it.staffPct, origPrice: it.origPrice } : {}), at: t0 })),
         status: 'zaplatena', createdAt: t0, paidAt: t0, upfront: true, ...(toBizDay(t0) ? { businessDay: bizDay } : {}), ...(sec ? { sec } : {}),
         ...(staff ? { staff: true, staffName: str(staffNameOf(dt.id), 40) } : {}) };
@@ -2966,6 +2971,15 @@ function parseOptsEdit(raw) {
     return { name, multi, choices };
   });
 }
+// (2026-11-24) „×2“ na konci možnosti (napr. „2 dl ×2“, „Dvojitá ×2“; z Excelu ide aj „x2“) = 1 pohár sa zaráta ako 2 kusy
+// položky za bežnú cenu – v košíku, účte aj v uzávierke. Barman vidí 1× s poznámkou „2 dl“ (order item má mult).
+const OPT_MULT_RE = /\s*(?:×|\s[xX])\s*(\d{1,2})\s*$/;
+function optChoice(c) {
+  const s = String(c || ''), m = OPT_MULT_RE.exec(s), n = m ? Math.min(10, parseInt(m[1], 10) || 1) : 1;
+  return { label: (m ? s.slice(0, m.index).trim() : s) || s, mult: n > 1 ? n : 1 };
+}
+// koľko pohárov/porcií je v riadku objednávky (pri ×2 je qty v kusoch položky, napr. 2 dl = 2 ks)
+const glassQty = i => (i && i.mult > 1 && i.qty % i.mult === 0) ? i.qty / i.mult : (i ? i.qty : 0);
 const optQClean = s => String(s || '').replace(/[:\r\n]/g, ' ').replace(/\+\s*$/, '').replace(/\s+/g, ' ').trim().slice(0, 30);
 const optChClean = s => String(s || '').replace(/[,\r\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
 function serializeOpts(qs) {
@@ -2997,9 +3011,11 @@ function repeatLastOrder() {
     const customPrice = Math.abs(it.price - mi.price) > 0.004 ? it.price : null;
     // 🎯 nerozdelený laser game sa zopakuje znova ako „rozdelím pri platení“
     if (it.lg) { cart.push({ menuId: it.menuId, qty: it.qty, note: it.note || '', lg: { p: it.lg.p, g: it.lg.g } }); added += it.qty; return; }
-    const c = cart.find(x => !x.lg && x.menuId === it.menuId && (x.note || '') === (it.note || '') && (x.price ?? null) === customPrice);
-    if (c) c.qty += it.qty; else cart.push({ menuId: it.menuId, qty: it.qty, note: it.note || '', ...(customPrice != null ? { price: customPrice } : {}) });
-    added += it.qty;
+    // (2026-11-24) ×2 (2 dl, dvojitá): v objednávke sú kusy, do košíka idú znova poháre s násobkom
+    const mu = (it.mult > 1 && it.qty % it.mult === 0) ? it.mult : 1, q = it.qty / mu;
+    const c = cart.find(x => !x.lg && x.menuId === it.menuId && (x.note || '') === (it.note || '') && (x.price ?? null) === customPrice && (x.mult || 1) === mu);
+    if (c) c.qty += q; else cart.push({ menuId: it.menuId, qty: q, note: it.note || '', ...(customPrice != null ? { price: customPrice } : {}), ...(mu > 1 ? { mult: mu } : {}) });
+    added += q;
   });
   if (!added) return toast('Položky z poslednej objednávky už nie sú v cenníku');
   toast(`Pridané ${added}× z objednávky #${o.no}${skipped ? ' (časť sa nedala doplniť)' : ''} ✓`);
@@ -3080,8 +3096,9 @@ function renderItemOptions() {
   $('#itemOptionsBody').innerHTML = groups.map((g, gi) => `
     <label class="muted" style="font-size:13px;display:block;margin-top:${gi ? 10 : 0}px">${esc(g.name)}${g.multi ? ' <small>(aj viac naraz)</small>' : ''}</label>
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">
-      ${g.choices.map((c, ci) => `<button type="button" class="btn ${optPicked(gi, ci) ? '' : 'ghost'}" style="width:auto;padding:8px 12px" onclick="pickItemOption(${gi},${ci})">${g.multi && optPicked(gi, ci) ? '✓ ' : ''}${esc(c)}</button>`).join('')}
+      ${g.choices.map((c, ci) => { const o = optChoice(c); return `<button type="button" class="btn ${optPicked(gi, ci) ? '' : 'ghost'}" style="width:auto;padding:8px 12px" onclick="pickItemOption(${gi},${ci})">${g.multi && optPicked(gi, ci) ? '✓ ' : ''}${esc(o.label)}${o.mult > 1 ? ` <small style="opacity:.75">×${o.mult}</small>` : ''}</button>`; }).join('')}
     </div>`).join('') + `
+    ${itemOptionsSel(mi).mult > 1 ? `<div style="margin-top:12px;font-size:14px">= ${itemOptionsSel(mi).mult}× ${esc(mi.name)} za ${eur(mi.price)} → <b>${eur(mi.price * itemOptionsSel(mi).mult)}</b> za kus</div>` : ''}
     <label class="muted" style="font-size:13px;display:block;margin-top:12px">Počet kusov</label>
     <div class="row" style="gap:8px;align-items:center;margin-top:4px">
       <button type="button" class="btn ghost" style="width:52px;padding:8px 0;font-size:20px" onclick="setItemOptionsQty(-1)">−</button>
@@ -3090,18 +3107,24 @@ function renderItemOptions() {
       ${[2, 3, 4, 6].map(n => `<button type="button" class="btn ${itemOptionsQty === n ? '' : 'ghost'}" style="width:auto;padding:8px 10px" onclick="itemOptionsQty=${n};renderItemOptions()">${n}×</button>`).join('')}
     </div>`;
 }
+// vybrané možnosti → poznámka (bez „×2“) a násobok (súčin ×N všetkých vybraných, najviac 10)
+function itemOptionsSel(mi) {
+  const groups = itemQs(mi); let mult = 1;
+  const pick = c => { const o = optChoice(c); mult *= o.mult; return o.label; };
+  const note = groups.map((g, gi) => { const p = itemOptionsPicks[gi];
+    if (Array.isArray(p)) return p.slice().sort((a, b) => a - b).map(ci => g.choices[ci]).filter(Boolean).map(pick).join(' · ');
+    return p != null && g.choices[p] ? pick(g.choices[p]) : null; }).filter(Boolean).join(' · ');
+  return { note, mult: Math.min(10, mult) };
+}
 function confirmItemOptions() {
   const mi = S.menu.find(x => x.id === itemOptionsFor); if (!mi) return;
-  const groups = itemQs(mi);
-  const note = groups.map((g, gi) => { const p = itemOptionsPicks[gi];
-    if (Array.isArray(p)) return p.slice().sort((a, b) => a - b).map(ci => g.choices[ci]).filter(Boolean).join(' · ');
-    return p != null ? g.choices[p] : null; }).filter(Boolean).join(' · ');
+  const { note, mult } = itemOptionsSel(mi);
   // (2026-10-19) rovnaká položka s rovnakým výberom sa v košíku zlúči do jedného riadka (2× Mattoni · jemne perlivá),
   // nie dva samostatné riadky; iný výber = iný riadok
   const n = itemOptionsQty || 1;
-  const same = cart.find(x => x.menuId === mi.id && (x.note || '') === note && x.price == null && !x.discountPct && !x.discountAmt);
-  if (same) same.qty = Math.min(999, same.qty + n); else cart.push({ menuId: mi.id, qty: n, note });
-  toast(`+${n}× ${mi.name}${note ? ' · ' + note : ''}`);
+  const same = cart.find(x => x.menuId === mi.id && (x.note || '') === note && (x.mult || 1) === mult && x.price == null && !x.discountPct && !x.discountAmt);
+  if (same) same.qty = Math.min(999, same.qty + n); else cart.push({ menuId: mi.id, qty: n, note, ...(mult > 1 ? { mult } : {}) });
+  toast(`+${n}× ${mi.name}${note ? ' · ' + note : ''}${mult > 1 ? ` (= ${n * mult} ks)` : ''}`);
   closeItemOptions();
   renderItems(); renderFavs(); renderCart();
 }
@@ -3331,7 +3354,8 @@ function renderCartMain() {
   el.classList.remove('hide');
   const m = id => S.menu.find(x => x.id === id) || { name: '?', price: 0 };
   // položky s vlastnou sumou (napr. biliard) majú cenu uloženú priamo na riadku v košíku (c.price), inak sa berie z menu
-  const basePrice = c => c.price != null ? c.price : m(c.menuId).price;
+  // (2026-11-24) ×2 (2 dl, dvojitá): cena za pohár = cena z menu × 2
+  const basePrice = c => c.price != null ? c.price : Math.round(m(c.menuId).price * (c.mult || 1) * 100) / 100;
   // zľava na konkrétnu položku (napr. zamestnanecká/VIP zľava) - buď % alebo pevná suma z basePrice, len na tomto riadku košíka
   const linePrice = c => {
     const b = basePrice(c);
@@ -3358,7 +3382,7 @@ function renderCartMain() {
     <div class="cart-list">${cart.map((c, i) => `
     <div class="line"><div class="n">${c.lg ? `${esc(LG_NAME)} <span class="muted">· ${c.lg.p} hr. × ${c.lg.g} ${c.lg.g === 1 ? 'hra' : c.lg.g < 5 ? 'hry' : 'hier'}</span>` : esc(m(c.menuId).name)}${(c.discountPct || c.discountAmt)
         ? ` · <s class="muted">${eur(basePrice(c))}</s> <b>${eur(linePrice(c))}</b> <span style="color:var(--warn);font-weight:700">-${c.discountAmt ? eur(c.discountAmt) : c.discountPct + '%'}</span>`
-        : (c.price != null ? ` · <b>${eur(c.price)}</b>` : '')}
+        : (c.price != null ? ` · <b>${eur(c.price)}</b>` : c.mult > 1 ? ` · <b>${eur(basePrice(c))}</b> <span class="muted">(${c.mult}× ${eur(m(c.menuId).price)})</span>` : '')}
       <small onclick="setNote(${i})" style="cursor:pointer">${c.note ? '✎ ' + esc(c.note) : '+ poznámka'}</small>
       <small onclick="setDiscount(${i})" style="cursor:pointer;margin-left:8px">${(c.discountPct || c.discountAmt) ? '🏷️ zmeniť zľavu' : '🏷️ zľava'}</small>
       ${iceOf(c) ? `<button onclick="cycleIce(${i})" title="Ťukni: s ľadom → bez ľadu → ľad zvlášť" style="margin:4px 6px 0 0;padding:3px 9px;border-radius:99px;border:1px solid var(--accent);background:${iceOf(c) === 'with' ? 'var(--card)' : 'var(--warnbg)'};color:var(--ink);font-size:13px;font-weight:700">${ICE_TXT[iceOf(c)]}</button>` : ''}
@@ -3683,7 +3707,7 @@ async function toggleItemReady(orderId, idx) {
     if (on && allReady) { await setStatus(orderId, 'hotova'); toast(`${o.tableName} #${o.no}: všetko pripravené → Odniesť ✓`); }
   } catch (e) { toast('Nepodarilo sa uložiť'); }
 }
-const barItemsHtml = (o, withNotes) => `<ul>${o.items.map((i, idx) => `<li style="${o.status === 'nova' && i.ready ? 'opacity:.5;text-decoration:line-through' : ''}">${o.status === 'nova' && uiOn('barCheck') ? `<button title="Pripravené" onclick="toggleItemReady('${o.id}',${idx})" style="width:30px;height:30px;flex:none;margin-right:6px;border-radius:6px;border:2px solid ${i.ready ? 'var(--ok)' : 'var(--line)'};background:${i.ready ? 'var(--ok)' : 'transparent'};color:#fff;font-weight:900;text-decoration:none">${i.ready ? '✓' : ''}</button>` : ''}<b>${i.qty}×</b>${esc(i.name)}${i.plus && o.status === 'nova' ? ` <span style="background:var(--okbg);color:var(--ok);font-size:13px;font-weight:800;padding:1px 6px;border-radius:6px">+${i.plus} pridané</span>` : ''}${withNotes && i.note ? `<i>${esc(i.note)}</i>` : ''}
+const barItemsHtml = (o, withNotes) => `<ul>${o.items.map((i, idx) => `<li style="${o.status === 'nova' && i.ready ? 'opacity:.5;text-decoration:line-through' : ''}">${o.status === 'nova' && uiOn('barCheck') ? `<button title="Pripravené" onclick="toggleItemReady('${o.id}',${idx})" style="width:30px;height:30px;flex:none;margin-right:6px;border-radius:6px;border:2px solid ${i.ready ? 'var(--ok)' : 'var(--line)'};background:${i.ready ? 'var(--ok)' : 'transparent'};color:#fff;font-weight:900;text-decoration:none">${i.ready ? '✓' : ''}</button>` : ''}<b>${glassQty(i)}×</b>${esc(i.name)}${i.plus && o.status === 'nova' ? ` <span style="background:var(--okbg);color:var(--ok);font-size:13px;font-weight:800;padding:1px 6px;border-radius:6px">+${glassQty({ qty: i.plus, mult: i.mult })} pridané</span>` : ''}${withNotes && i.note ? `<i>${esc(i.note)}</i>` : ''}
   <button class="li-minus" title="Odobrať 1 ks (zákazník si to rozmyslel)" onclick="barRemoveItem('${o.id}',${idx})">−</button></li>`).join('')}</ul>`;
 // (2026-11-07) 💶 zaplatený lístok má vlastnú snímku mena (o.guest) – meno k účtu stola sa po vyplatení zmaže
 const guestTag = o => { const g = isTicket(o) ? (o.dest ? o.guest || '' : '') : guestOf(o.tableId); return g ? ` <small style="margin-left:0;font-weight:700">👤 ${esc(g)}</small>` : ''; };
@@ -3694,7 +3718,8 @@ const ticketTag = o => isTicket(o) ? '<div class="paidtag">💶 ZAPLATENÉ</div>
 function barSummaryHtml(nove) {
   if (nove.length < 2) return '';
   const agg = {};
-  nove.forEach(o => o.items.forEach(i => { agg[i.name] = (agg[i.name] || 0) + i.qty; }));
+  // (×2: „1× Biele víno (2 dl)“ – počíta sa po pohároch, nie po kusoch)
+  nove.forEach(o => o.items.forEach(i => { const k = i.name + (i.mult > 1 ? ` (${i.note || '×' + i.mult})` : ''); agg[k] = (agg[k] || 0) + glassQty(i); }));
   const rows = Object.entries(agg).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'sk'));
   return `<div class="card" style="margin-bottom:12px;border-color:var(--warn);background:var(--warnbg)">
     <b style="font-size:14px">🧾 Spolu pripraviť</b>
@@ -3866,12 +3891,14 @@ let barRemoving = false;   // zámok proti dvojťuku (inak by sa odobrali 2 kusy
 async function barRemoveItem(orderId, idx) {
   const o = S.orders.find(x => x.id === orderId), it = o && o.items[idx];
   if (!it || barRemoving) return;
+  // (2026-11-24) pri ×2 (2 dl, dvojitá) sa odoberá po celých pohároch – 1 pohár = mult kusov
+  const mu = (it.mult > 1 && it.qty % it.mult === 0) ? it.mult : 1, g = it.qty / mu, nm = it.name + (mu > 1 && it.note ? ` (${it.note})` : '');
   let n = 1;
-  if (it.qty > 1) { n = askRemoveQty(it.name, it.qty); if (!n) return; }
-  const last = o.items.length === 1 && n >= it.qty, paidTk = isTicket(o);
-  if ((it.qty === 1 || last || paidTk) && !confirm(`Odobrať ${n}× ${it.name} z objednávky ${o.tableName} #${o.no}?${last ? '\nJe to posledná položka – zruší sa celá objednávka.' : ''}${paidTk ? paidWarn(o, eur(it.price * n)) : ''}`)) return;
+  if (g > 1) { n = askRemoveQty(nm, g); if (!n) return; }
+  const last = o.items.length === 1 && n >= g, paidTk = isTicket(o);
+  if ((g === 1 || last || paidTk) && !confirm(`Odobrať ${n}× ${nm} z objednávky ${o.tableName} #${o.no}?${last ? '\nJe to posledná položka – zruší sa celá objednávka.' : ''}${paidTk ? paidWarn(o, eur(it.price * n * mu)) : ''}`)) return;
   barRemoving = true;
-  try { await call('POST', `/api/orders/${orderId}/removeItem`, { idx, name: it.name, qty: n }); toast(`Odobrané: ${n}× ${it.name}`); }
+  try { await call('POST', `/api/orders/${orderId}/removeItem`, { idx, name: it.name, qty: n * mu }); toast(`Odobrané: ${n}× ${nm}`); }
   finally { barRemoving = false; }
 }
 // (2026-10-17) zrušiť celú objednávku na bare / na odnesenie naraz (nie po kusoch) – zapíše sa do histórie zmazaných
@@ -5174,11 +5201,23 @@ function optEditorHtml(ctx) {
         <input value="${esc(q.name)}" maxlength="30" placeholder="Otázka, napr. Mlieko" style="flex:1;font-weight:700" onkeydown="if(event.key==='Enter')this.blur()" onchange="optRenameQ('${ctx}',${qi},this.value)">
         <button class="del" style="width:auto;padding:6px 10px" title="Zmazať celú otázku" onclick="optDelQ('${ctx}',${qi})">✕</button></div>
       <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin:6px 0"><input type="checkbox" style="width:auto" ${q.multi ? 'checked' : ''} onchange="optMultiQ('${ctx}',${qi},this.checked)">dá sa vybrať viac naraz (napr. šľahačka aj jahody)</label>
-      <div class="row" style="flex-wrap:wrap;gap:6px">${q.choices.map((c, ci) => `<span style="display:inline-flex;align-items:center;gap:2px;padding:4px 4px 4px 11px;border-radius:99px;border:1px solid var(--line);background:var(--bg);font-size:14px">${esc(c)}<button title="Odobrať" onclick="optDelChoice('${ctx}',${qi},${ci})" style="border:none;background:none;color:var(--warn);font-size:15px;cursor:pointer;padding:0 6px">✕</button></span>`).join('') || '<span class="muted" style="font-size:13px">zatiaľ žiadne možnosti – napíš ich nižšie</span>'}</div>
+      <div class="row" style="flex-wrap:wrap;gap:6px">${q.choices.map((c, ci) => { const o = optChoice(c); return `<span style="display:inline-flex;align-items:center;gap:2px;padding:4px 4px 4px 11px;border-radius:99px;border:1px solid ${o.mult > 1 ? 'var(--accent)' : 'var(--line)'};background:var(--bg);font-size:14px">${esc(o.label)}<button title="Koľkokrát sa zaráta (napr. 2 dl alebo dvojitá = ×2)" onclick="optMultChoice('${ctx}',${qi},${ci})" style="border:none;background:none;cursor:pointer;padding:0 4px 0 8px;font-size:13px;font-weight:800;color:${o.mult > 1 ? 'var(--accent)' : 'var(--muted)'};opacity:${o.mult > 1 ? 1 : .6}">×${o.mult}</button><button title="Odobrať" onclick="optDelChoice('${ctx}',${qi},${ci})" style="border:none;background:none;color:var(--warn);font-size:15px;cursor:pointer;padding:0 6px">✕</button></span>`; }).join('') || '<span class="muted" style="font-size:13px">zatiaľ žiadne možnosti – napíš ich nižšie</span>'}</div>
       <div class="row" style="gap:6px;margin-top:6px"><input id="optNew-${d}-${qi}" maxlength="40" placeholder="Nová možnosť" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();optAddChoice('${ctx}',${qi},this)}">
         <button class="btn" style="width:auto;padding:8px 14px" onclick="optAddChoice('${ctx}',${qi},$('#optNew-${d}-${qi}'))">+</button></div>
     </div>`).join('') + `<div class="row" style="gap:6px;margin-top:8px"><input id="optNewQ-${d}" maxlength="30" placeholder="${qs.length ? 'Ďalšia otázka, napr. Cukor' : 'Otázka, napr. Mlieko alebo Aká'} (Enter)" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();optAddQ('${ctx}',this)}">
-      <button class="btn ghost" style="width:auto;padding:8px 12px" onclick="optAddQ('${ctx}',$('#optNewQ-${d}'))">+ Otázka</button></div>`;
+      <button class="btn ghost" style="width:auto;padding:8px 12px" onclick="optAddQ('${ctx}',$('#optNewQ-${d}'))">+ Otázka</button></div>
+    ${qs.some(q => q.choices.length) ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Ťukni na ×1 pri možnosti – napr. „2 dl“ alebo „Dvojitá“ nastav na ×2 a zaráta sa ako 2 kusy položky (cena, účet aj uzávierka). Barman uvidí 1 pohár.</p>' : ''}`;
+}
+// (2026-11-24) koľkokrát sa možnosť zaráta (2 dl / dvojitá = ×2) – uloží sa ako „2 dl ×2“
+function optMultChoice(ctx, qi, ci) {
+  const q = parseOptsEdit(optRaw(ctx))[qi]; if (!q || q.choices[ci] == null) return;
+  const o = optChoice(q.choices[ci]);
+  const v = prompt(`Koľkokrát sa zaráta „${o.label}“?\n\nNapr. 2 dl vína = 2, dvojitá vodka = 2, 3 dl = 3.\n1 = normálne (raz).`, String(o.mult));
+  if (v === null) return;
+  const n = parseInt(String(v).trim(), 10);
+  if (!(n >= 1 && n <= 10)) return toast('Zadaj číslo 1 až 10');
+  if (n === o.mult) return;
+  optEdit(ctx, qs => { if (!qs[qi] || qs[qi].choices[ci] == null) return false; qs[qi].choices[ci] = o.label + (n > 1 ? ` ×${n}` : ''); });
 }
 // zmena → uloží sa hneď (položka: menu.opts, sada: access.optSets) → prekreslí sa a kurzor ostane v políčku na ďalšie písanie
 async function optEdit(ctx, fn, focusId) {
@@ -5195,7 +5234,8 @@ async function optEdit(ctx, fn, focusId) {
 }
 function optAddChoice(ctx, qi, el) {
   const v = optChClean(el && el.value); if (!v) return;
-  optEdit(ctx, qs => { if (!qs[qi]) return false; if (qs[qi].choices.some(c => c.toLowerCase() === v.toLowerCase())) { toast('Táto možnosť tam už je'); return false; } qs[qi].choices.push(v); }, `optNew-${optDomId(ctx)}-${qi}`);
+  const lab = optChoice(v).label.toLowerCase();
+  optEdit(ctx, qs => { if (!qs[qi]) return false; if (qs[qi].choices.some(c => optChoice(c).label.toLowerCase() === lab)) { toast('Táto možnosť tam už je'); return false; } qs[qi].choices.push(v); }, `optNew-${optDomId(ctx)}-${qi}`);
 }
 function optDelChoice(ctx, qi, ci) { optEdit(ctx, qs => { if (!qs[qi]) return false; qs[qi].choices.splice(ci, 1); }); }
 function optAddQ(ctx, el) {
