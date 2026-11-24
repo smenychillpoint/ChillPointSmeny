@@ -154,7 +154,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24g</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24h</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -627,6 +627,18 @@ async function callInner(m, [col, id, action], body) {
     if (m === 'DELETE') { if (!isManager) fail('Stoly smie mazať len vedúci');
       if (tableOrders(id).length) fail('Stôl má nezaplatené objednávky'); return db.ref('tables/' + id).remove(); }
     // Rozdelenie platby: zaplatí sa len zadaný počet kusov z každej položky, zvyšok ostane na stole otvorený.
+    // (2026-11-24) 🗑 zmazať celý účet stola – len vedúci. Všetky nezaplatené objednávky stola (aj tie na bare) jedným zápisom,
+    // každá ide do 🗑 Zmazané v Uzávierke (logDeleted). Zaplatené lístky na bare a bežiace hry sa nemenia.
+    if (m === 'POST' && action === 'clearAccount') {
+      if (!isManager) fail('Celý účet smie zmazať len vedúci');
+      const os = tableOrders(id); if (!os.length) fail('Na stole nie je žiadny účet');
+      const u = {}; os.forEach(o => { u[o.id] = null; });
+      await db.ref('orders').update(u);
+      os.forEach(o => logDeleted(o));
+      if (guestOf(id)) clearGuest(id);
+      if (isStaffTable(id)) db.ref('meta/staffTables/' + id).remove().catch(() => {});
+      return { n: os.length };
+    }
     if (m === 'POST' && action === 'paySome') {
       const need = {};
       (body.items || []).forEach(i => { const k = i.name + '|' + i.price; need[k] = (need[k] || 0) + Math.max(0, i.qty | 0); });
@@ -2793,6 +2805,7 @@ function renderTable() {
             ${moveOrderId === o.id ? '' : moveOrderBlock(o)}
           </div>${moveOrderId === o.id ? moveOrderBlock(o) : ''}</div>`).join('')}</div>` : ''}
       <div style="margin-top:14px"><button class="btn ghost" onclick="billSel={};view='bill';render()">💶 Platba · ${eur(acctTotal)}</button></div>
+      ${isManager ? `<button class="del" style="width:100%;margin-top:14px;padding:10px" title="Len vedúci – zmaže všetky nezaplatené objednávky stola (zapíše sa do 🗑 Zmazané v Uzávierke)" onclick="clearTableAccount()">🗑 Zmazať celý účet stola (${eur(acctTotal)})</button>` : ''}
     </div>` : ''}
   </div>` : '';
 
@@ -3611,6 +3624,16 @@ function remQtyOk() {
   const i = $('#remQtyIn'), n = parseInt(String(i ? i.value : remQtyN).replace(/\D/g, ''), 10);
   if (!n || n < 1) { toast('Zadaj počet kusov'); if (i) i.focus(); return; }
   remQtyPick(Math.min(remQtyHave, n));
+}
+// (2026-11-24) 🗑 zmazať celý účet stola (len vedúci): potvrdenie + napísať ZMAZAŤ, nech sa to nestane omylom
+async function clearTableAccount() {
+  if (!isManager) return;
+  const t = S.tables.find(x => x.id === tableId), os = tableOrders(tableId); if (!t || !os.length) return toast('Na stole nie je žiadny účet');
+  const total = sumOrders(os), ks = os.reduce((s, o) => s + o.items.reduce((a, i) => a + i.qty, 0), 0), onBar = os.filter(o => o.status !== 'vydana').length;
+  if (!confirm(`🗑 Zmazať CELÝ účet stola ${t.name}?\n\n${ks} ks za ${eur(total)}${onBar ? `\n(${onBar === 1 ? '1 objednávka je' : onBar + ' objednávky sú'} ešte na bare – zmizne aj odtiaľ)` : ''}\n\nNezapíše sa to do tržby. Čo sa zmazalo, uvidíš v Uzávierke → 🗑 Zmazané.`)) return;
+  const v = prompt('Pre istotu napíš: ZMAZAŤ'); if (v === null) return;
+  if (!/^zmaza[tť]$/i.test(v.trim())) return toast('Nezmazané – nenapísal si ZMAZAŤ');
+  try { await call('POST', `/api/tables/${tableId}/clearAccount`, {}); toast(`🗑 Účet ${t.name} zmazaný (${eur(total)})`); render(); } catch (e) {}
 }
 async function removeAcctItem(name, price, have) {
   const n = await askRemoveQty(name, have || 1); if (!n) return;
