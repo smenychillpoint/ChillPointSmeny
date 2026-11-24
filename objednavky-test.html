@@ -154,7 +154,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24e</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24f</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1823,6 +1823,34 @@ const UI_FEATURES = [
   ['cartAdd', '➕ Tlačidlo „k #…“ pod sumou – pridať k objednávke, ktorá je ešte na bare'],
   ['plusOneStay', '🧾 „+1“ v účte stola nechá košík zbalený (neotvorí ho)']
 ];
+// (2026-11-24) ⓘ pri funkcii v Nastaveniach → 🧩 Funkcie: čo funkcia robí a čo sa stane, keď ju vypneš
+const UI_FEATURE_INFO = {
+  tableGames: 'Na dlaždici stola (zoznam Stolov) vidno, ktorá atrakcia na tom stole práve beží (biliard, PlayStation…) a ako dlho.\n\nVypnuté: dlaždica ukazuje len účet stola.',
+  tableRes: 'Ak má stôl na dnes rezerváciu, na dlaždici stola sa ukáže 📌. Hodinu pred príchodom zoranžovie, nech stôl nikto neobsadí.\n\nVypnuté: rezervácie na dlaždiciach nevidno (v Rezerváciách ostanú).',
+  onlyBusy: 'Na Stoloch tlačidlo „🔴 Len obsadené“ – skryje voľné stoly a ukáže len tie, kde je otvorený účet. Hodí sa, keď je stolov veľa.',
+  tempTable: 'Na Stoloch tlačidlo „➕ Dočasný stôl“ – čašník si pridá stôl navyše (napr. hostia pri bare alebo na terase). Po zaplatení sám zmizne.\n\nV Nastaveniach → Stoly nastavíš, či sú dočasné stoly hore alebo dole.',
+  nextAttr: 'Pri obsadenej atrakcii (napr. biliard) sa ukáže, kto je ďalší na rade z čakacieho zoznamu / rezervácií – nech vieš, komu ju dať, keď sa uvoľní.',
+  barSummary: 'Na Bare hore súhrn všetkých čakajúcich objednávok spolu, napr. „6× Pivo · 3× Kofola“ – barman natočí všetko naraz. Ukáže sa, keď čakajú aspoň 2 objednávky.',
+  soldOut: 'Pri objednávaní podržíš prst na položke → „🚫 Dnes vypredané“. Položka zošedne a keď ju niekto pridá, appka sa spýta, či naozaj. Ráno (nový pracovný deň) je znova dostupná.',
+  later: 'V rozbalenom košíku tlačidlo „⏰ Na bar neskôr“ – objednávka sa na Bare ukáže až o hodine, ktorú zadáš (napr. jedlo alebo torta na 19:30).',
+  barCheck: 'Na Bare je pri každej položke štvorček ☑ – barman odškrtá, čo už pripravil. Keď je odškrtnuté všetko, objednávka sa sama presunie do „🚶 Odniesť“.',
+  offlineBar: 'Keď vypadne internet, hore sa ukáže veľký červený pás „Bez internetu“, nech každý hneď vie, že sa objednávky práve neposielajú.',
+  laserSplit: 'Pri laser game stačí zadať, koľko hráčov a koľko hier. Na dospelých / študentov / deti sa to rozdelí až pri platení (cena sa vtedy prepočíta).\n\nVypnuté: treba hneď pridať správne položky (dospelý, študent, dieťa).',
+  paidNow: 'Na Stoloch hore veľká dlaždica „💶 Zaplatené hneď“ – pre zákazníka, ktorý zaplatí hneď pri bare, bez stola. Objednávka ide na bar označená ako ZAPLATENÁ.',
+  paidNowBtn: 'V košíku pri stole tlačidlo „💶 Zaplatené“ – zákazník zaplatí hneď. Objednávka ide na bar ako ZAPLATENÁ a na účet stola sa nepripíše.\n\nZamestnanec si ho vie vypnúť / zapnúť aj len na svojom zariadení.',
+  cartBtns: 'V zbalenom košíku (dole pri objednávaní): hore suma a pod ňou tlačidlá Zaplatené / Zapísať / Na bar (a „k #…“, keď je objednávka ešte na bare). Poradie nastavíš nižšie v „🛒 Poradie tlačidiel“.\n\nVypnuté: starý košík – len suma a „Na bar“.',
+  cartWrite: 'Tlačidlo „📝 Zapísať“ – položky sa zapíšu rovno na účet stola a NEJDÚ na bar (napr. niečo, čo netreba pripravovať, alebo čo už hostia dostali).',
+  cartAdd: 'Keď má stôl objednávku, ktorá je ešte na bare (nepripravená), ukáže sa tlačidlo „➕ k #12“ – nové položky sa pridajú k nej, nevznikne ďalšia objednávka.',
+  plusOneStay: 'V „🧾 Účet stola“ je pri každej položke „+1“ – pridá ešte raz to isté do košíka (napr. ďalšie kolo).\n\nZapnuté: košík ostane zbalený, môžeš ťukať ďalej. Vypnuté: po „+1“ sa košík otvorí.'
+};
+function showFeatureInfo(k) {
+  const f = UI_FEATURES.find(x => x[0] === k); if (!f) return;
+  $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 10px;font-size:17px">${esc(f[1])}</h3>
+    <p style="margin:0;font-size:15px;line-height:1.5;white-space:pre-line">${esc(UI_FEATURE_INFO[k] || 'Bez popisu.')}</p>
+    <p class="muted" style="font-size:13px;margin:12px 0 0">Teraz: <b>${uiOnAll(k) ? '✓ zapnuté' : 'vypnuté'}</b> · platí pre všetky zariadenia${DEV_UI_KEYS.includes(k) ? ' (zamestnanec si to vie zmeniť na svojom zariadení)' : ''}.</p>
+    <button class="btn" style="margin-top:14px" onclick="closeQuickModal()">Rozumiem</button>`;
+  $('#quickModal').classList.remove('hide');
+}
 // (2026-11-24) Tieto si zamestnanec vie zmeniť len na svojom zariadení (⚙ dole v rozbalenom košíku) – inak platí,
 // čo nastavil vedúci v 🧩 Funkcie. Uložené v localStorage uiDev = {kľúč: true/false}; čo tam nie je, ide podľa vedúceho.
 const DEV_UI_KEYS = ['cartBtns', 'paidNowBtn', 'cartWrite', 'cartAdd', 'plusOneStay'];
@@ -5164,8 +5192,9 @@ function renderSettings() {
   const funkcieTab = `<h2>🧩 Funkcie (zapnúť / vypnúť)</h2><div class="card">
       <p class="muted" style="font-size:13px;margin:0 0 10px">Čo nepoužívate, vypnite – zmizne zo všetkých zariadení. Údaje sa nestratia, po zapnutí sa vráti.</p>
       ${UI_FEATURES.map(([k, label]) => { const dv = DEV_UI_KEYS.includes(k) ? uiDev()[k] : undefined;
-        return `<label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px;cursor:pointer">
-        <input type="checkbox" style="width:22px;height:22px;flex:none" ${uiOnAll(k) ? 'checked' : ''} onchange="setUiFeature('${k}',this.checked)"><span>${label}${typeof dv === 'boolean' ? ` <small style="color:var(--warn)">(na tomto zariadení ${dv ? 'zapnuté' : 'vypnuté'} – hore v „Toto zariadenie“)</small>` : ''}</span></label>`; }).join('')}
+        return `<div style="display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)"><label style="flex:1;display:flex;align-items:center;gap:10px;padding:10px 0;font-size:15px;cursor:pointer">
+        <input type="checkbox" style="width:22px;height:22px;flex:none" ${uiOnAll(k) ? 'checked' : ''} onchange="setUiFeature('${k}',this.checked)"><span>${label}${typeof dv === 'boolean' ? ` <small style="color:var(--warn)">(na tomto zariadení ${dv ? 'zapnuté' : 'vypnuté'} – hore v „Toto zariadenie“)</small>` : ''}</span></label>
+        <button title="Čo to robí?" onclick="showFeatureInfo('${k}')" style="flex:none;width:34px;height:34px;border-radius:50%;border:2px solid var(--accent);background:var(--card);color:var(--accent);font-weight:900;font-size:16px;font-style:italic;font-family:Georgia,serif;cursor:pointer">i</button></div>`; }).join('')}
       <p class="muted" style="font-size:12px;margin:10px 0 0">Tlačidlá v košíku a „+1“ si zamestnanec vie zmeniť aj sám, len na svojom zariadení: Nastavenia → „🛒 Tlačidlá v košíku na tomto zariadení“ (zamestnanec tam vidí len nastavenia svojho zariadenia).</p></div>
     <h2>🛒 Poradie tlačidiel pod sumou v košíku</h2><div class="card">
       <p class="muted" style="font-size:13px;margin:0 0 6px">Platí pre všetky zariadenia (kto si na svojom nastavil vlastné poradie, má svoje). Vypnuté tlačidlá (🧩 vyššie) sa nezobrazia.</p>
