@@ -67,6 +67,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .line .n{flex:1}.line .n small{display:block;color:var(--muted)}
 .qb{width:34px;height:34px;background:var(--bg);font-weight:700;font-size:18px}
 .line .qcol{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:26px}
+.line .qrow{display:flex;align-items:center;gap:6px;flex:none}
 .line .qcol b{font-size:16px;line-height:1.2}
 .qmin{width:22px;height:18px;border:none;background:transparent;color:var(--muted);font-size:16px;line-height:1;font-weight:900;padding:0;display:grid;place-items:center;cursor:pointer}
 .btn{background:var(--accent);color:#fff;padding:13px 16px;font-weight:700;width:100%}
@@ -143,7 +144,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24d</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1705,12 +1706,12 @@ function renderMain() {
     }
   }
   const canUzavierka = isManager || !!(S.access && S.access.uzavierkaPin);
-  $('#tabNastavenia').classList.toggle('hide', !isManager);
+  // (2026-11-24) Nastavenia vidí aj zamestnanec – len „Toto zariadenie“ (meno, písmo, tlačidlá v košíku…), zvyšok len vedúci
+  $('#tabNastavenia').classList.remove('hide');
   if ($('#resLinkBox')) $('#resLinkBox').classList.toggle('hide', !isManager);
   $('#tabUzavierka').classList.toggle('hide', !canUzavierka);
   const boardMissing = S.board.filter(b => b.type !== 'buy' && !b.done).length;
   if ($('#boardTopBtn')) $('#boardTopBtn').innerHTML = '📦' + (boardMissing ? `<span style="display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin-left:4px;border-radius:99px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;vertical-align:middle">${boardMissing}</span>` : '');
-  if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
   if (role === 'uzavierka' && !canUzavierka) { role = 'casnik'; store.set('role', role); }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
   $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova' && orderDueNow(o) && !tkOld(o)));
@@ -3387,8 +3388,7 @@ function renderCartMain() {
       <small onclick="setDiscount(${i})" style="cursor:pointer;margin-left:8px">${(c.discountPct || c.discountAmt) ? '🏷️ zmeniť zľavu' : '🏷️ zľava'}</small>
       ${iceOf(c) ? `<button onclick="cycleIce(${i})" title="Ťukni: s ľadom → bez ľadu → ľad zvlášť" style="margin:4px 6px 0 0;padding:3px 9px;border-radius:99px;border:1px solid var(--accent);background:${iceOf(c) === 'with' ? 'var(--card)' : 'var(--warnbg)'};color:var(--ink);font-size:13px;font-weight:700">${ICE_TXT[iceOf(c)]}</button>` : ''}
       ${catExtra(menuCat(c.menuId)).glasses ? `<button onclick="askGlasses('${c.menuId}',${i})" style="margin:4px 0 0;padding:3px 9px;border-radius:99px;border:1px solid var(--accent);background:var(--card);color:var(--ink);font-size:13px;font-weight:700">🥤 ${glassesTxt(Number(c.glasses) || 0)}</button>` : ''}</div>
-      <div class="qcol"><button onclick="setQty(${i})" title="Ťukni a napíš počet" style="min-width:46px;padding:4px 8px;font-size:17px;font-weight:800;border:2px solid var(--accent);border-radius:8px;background:var(--card);color:var(--ink)">${c.qty} ✎</button><button class="qmin" onclick="changeQty(${i},-1)">−</button></div>
-      <button class="qb" onclick="changeQty(${i},1)">+</button></div>`).join('')}</div>
+      <div class="qrow"><button class="qb" title="O 1 menej" onclick="changeQty(${i},-1)">−</button><button onclick="setQty(${i})" title="Ťukni a napíš počet" style="min-width:40px;padding:4px 6px;font-size:17px;font-weight:800;border:2px solid var(--accent);border-radius:8px;background:var(--card);color:var(--ink)">${c.qty}<small style="font-size:11px;font-weight:400;opacity:.7"> ✎</small></button><button class="qb" title="O 1 viac" onclick="changeQty(${i},1)">+</button></div></div>`).join('')}</div>
     <input id="onote" placeholder="Poznámka k objednávke (nepovinné)" value="${esc(orderNote)}" oninput="orderNote=this.value" style="margin-bottom:8px">
     <div style="display:grid;gap:6px">
       ${barOrderForTable() ? `<button class="btn ok" id="addBarBtn" onclick="addToBarOrder()">➕ Pridať k #${barOrderForTable().no} (ešte na bare) · ${eur(total)}</button>` : ''}
@@ -3396,14 +3396,14 @@ function renderCartMain() {
       ${uiOn('later') && tableId !== PN_ID && !(addToBar && barOrderForTable()) ? `<button class="btn ghost" onclick="sendOrderLater()">⏰ Na bar neskôr (o určitej hodine)</button>` : ''}
       ${tableId === PN_ID ? '' : `<button class="btn ghost" id="writeBtn" onclick="writeOrder()">📝 Len zapísať do účtu (bez baru) · ${eur(total)}</button>`}
       ${paidNowBtnHtml(total)}
-    </div>
-    ${tableId === PN_ID ? '' : `<p style="text-align:center;margin:10px 0 0"><a href="#" onclick="openCartDevSettings();return false" style="font-size:13px">⚙ Tlačidlá v košíku na tomto zariadení</a></p>`}</div>`;
+    </div></div>`;
 }
 // ---------- (2026-11-24) ⚙ košík na tomto zariadení: zamestnanec si vie prepnúť tlačidlá a „+1“ a zmeniť ich poradie ----------
-// (platí len v tomto prehliadači; „Ako vedúci“ = podľa 🧩 Funkcie v Nastaveniach)
+// (platí len v tomto prehliadači; „Ako vedúci“ = podľa 🧩 Funkcie v Nastaveniach). Je v Nastavenia → Toto zariadenie
+// (zamestnanec tam má zjednodušené Nastavenia), už nie v rozbalenom košíku.
 const DEV_UI_LABELS = { cartBtns: '🛒 Tlačidlá pod sumou (zbalený košík)', paidNowBtn: '💶 Tlačidlo Zaplatené', cartWrite: '📝 Tlačidlo Zapísať', cartAdd: '➕ Tlačidlo „k #…“ (objednávka ešte na bare)', plusOneStay: '🧾 „+1“ v účte nechá košík zbalený' };
-function openCartDevSettings() { renderCartDevSettings(); $('#quickModal').classList.remove('hide'); }
-function renderCartDevSettings() {
+let devCartOpen = false;   // vedúci: rozbalené „Tlačidlá v košíku na tomto zariadení“ (zamestnanec ich má otvorené vždy)
+function cartDevHtml() {
   const d = uiDev(), ord = cartOrder(), own = Array.isArray(store.get('cartOrderDev', null));
   const row = k => {
     const st = typeof d[k] === 'boolean' ? (d[k] ? 'on' : 'off') : 'mgr';
@@ -3415,18 +3415,18 @@ function renderCartDevSettings() {
       <span style="flex:1;font-size:14px">${i + 1}. ${CART_BTN_INFO[k][0]} ${CART_BTN_INFO[k][1]}</span>
       <button class="btn ghost" style="width:auto;padding:4px 10px" ${i === 0 ? 'disabled' : ''} onclick="moveDevCartBtn('${k}',-1)">▲</button>
       <button class="btn ghost" style="width:auto;padding:4px 10px" ${i === ord.length - 1 ? 'disabled' : ''} onclick="moveDevCartBtn('${k}',1)">▼</button></div>`).join('');
-  $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 4px">⚙ Košík na tomto zariadení</h3>
-    <p class="muted" style="font-size:13px;margin:0 0 4px">Platí len na tomto mobile / tablete. „Ako vedúci“ = podľa Nastavení vedúceho.</p>
+  return `<details ${!isManager || devCartOpen ? 'open' : ''} ontoggle="devCartOpen=this.open" style="margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px">
+    <summary style="cursor:pointer;font-weight:700;font-size:15px">🛒 Tlačidlá v košíku na tomto zariadení</summary>
+    <p class="muted" style="font-size:13px;margin:6px 0 4px">Platí len na tomto mobile / tablete. „Ako vedúci“ = podľa Nastavení vedúceho.</p>
     ${DEV_UI_KEYS.map(row).join('')}
     <div style="margin-top:12px"><b style="font-size:14px">Poradie tlačidiel pod sumou</b> <small class="muted">${own ? '(vlastné na tomto zariadení)' : '(ako nastavil vedúci)'}</small>
       ${ordRows}
-      ${own ? `<button class="btn ghost" style="width:auto;padding:6px 12px;margin-top:8px" onclick="store.set('cartOrderDev',null);renderCartDevSettings();renderCart()">↺ Poradie ako vedúci</button>` : ''}</div>
-    <button class="btn" style="margin-top:14px" onclick="closeQuickModal()">Hotovo</button>`;
+      ${own ? `<button class="btn ghost" style="width:auto;padding:6px 12px;margin-top:8px" onclick="store.set('cartOrderDev',null);render()">↺ Poradie ako vedúci</button>` : ''}</div></details>`;
 }
-function setDevUi(k, s) { const d = uiDev(); if (s === 'mgr') delete d[k]; else d[k] = s === 'on'; store.set('uiDev', d); renderCartDevSettings(); renderCart(); }
+function setDevUi(k, s) { const d = uiDev(); if (s === 'mgr') delete d[k]; else d[k] = s === 'on'; store.set('uiDev', d); render(); }
 function moveDevCartBtn(k, dir) {
   const a = cartOrder(), i = a.indexOf(k), j = i + dir; if (i < 0 || j < 0 || j >= a.length) return;
-  [a[i], a[j]] = [a[j], a[i]]; store.set('cartOrderDev', a); renderCartDevSettings(); renderCart();
+  [a[i], a[j]] = [a[j], a[i]]; store.set('cartOrderDev', a); render();
 }
 
 // po odoslaní / zapísaní / pridaní k objednávke na bare -> späť na zoznam stolov (čašník ide hneď k ďalšiemu stolu).
@@ -4828,7 +4828,7 @@ function renderSettings() {
       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px">
         <input type="checkbox" style="width:auto" ${backAfterSend() ? 'checked' : ''} onchange="store.set('backAfterSend',this.checked);toast(this.checked?'Po odoslaní sa vráti na stoly':'Po odoslaní ostane na stole')">
         Po odoslaní na bar sa vrátiť na zoznam stolov</label>
-      <button class="btn ghost" style="width:auto;padding:6px 12px;margin-top:10px" onclick="openCartDevSettings()">⚙ Tlačidlá v košíku na tomto zariadení</button>
+      ${cartDevHtml()}
       <div class="row" style="gap:8px;align-items:center;margin-top:12px;font-size:14px">
         <span style="flex:1">🔠 Veľkosť písma na tomto zariadení</span>
         <button class="btn ghost" style="width:auto;padding:6px 14px" onclick="setUiZoom(-0.1)">A−</button>
@@ -4837,6 +4837,8 @@ function renderSettings() {
       </div>
       <p class="muted" style="font-size:13px;margin-top:10px">Prihlásený ako: ${esc(auth.currentUser?.email || '')}${isManager ? ' (vedúci)' : ''}</p>
       <button class="btn ghost" style="margin-top:10px" onclick="logout()">Odhlásiť</button></div>`;
+  // (2026-11-24) zamestnanec: zjednodušené Nastavenia – len toto zariadenie (menu, stoly, funkcie… mení vedúci)
+  if (!isManager) { $('#app').innerHTML = device + '<p class="muted" style="font-size:13px;text-align:center;margin:14px 0">🔒 Menu, stoly a ostatné nastavenia mení vedúci.</p>'; return; }
   if (!isManager) {
     $('#app').innerHTML = device + '<div class="empty">Úprava stolov a menu je dostupná len pre vedúceho.<br>Ak potrebuješ niečo zmeniť, odhlás toto zariadenie a prihlás sa účtom vedúceho.</div>';
     return;
@@ -5129,8 +5131,8 @@ function renderSettings() {
       <p class="muted" style="font-size:13px;margin:0 0 10px">Čo nepoužívate, vypnite – zmizne zo všetkých zariadení. Údaje sa nestratia, po zapnutí sa vráti.</p>
       ${UI_FEATURES.map(([k, label]) => { const dv = DEV_UI_KEYS.includes(k) ? uiDev()[k] : undefined;
         return `<label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px;cursor:pointer">
-        <input type="checkbox" style="width:22px;height:22px;flex:none" ${uiOnAll(k) ? 'checked' : ''} onchange="setUiFeature('${k}',this.checked)"><span>${label}${typeof dv === 'boolean' ? ` <small style="color:var(--warn)">(na tomto zariadení ${dv ? 'zapnuté' : 'vypnuté'} – ⚙ v košíku)</small>` : ''}</span></label>`; }).join('')}
-      <p class="muted" style="font-size:12px;margin:10px 0 0">Tlačidlá v košíku a „+1“ si zamestnanec vie zmeniť aj sám, len na svojom zariadení: v rozbalenom košíku dole „⚙ Tlačidlá v košíku na tomto zariadení“.</p></div>
+        <input type="checkbox" style="width:22px;height:22px;flex:none" ${uiOnAll(k) ? 'checked' : ''} onchange="setUiFeature('${k}',this.checked)"><span>${label}${typeof dv === 'boolean' ? ` <small style="color:var(--warn)">(na tomto zariadení ${dv ? 'zapnuté' : 'vypnuté'} – hore v „Toto zariadenie“)</small>` : ''}</span></label>`; }).join('')}
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Tlačidlá v košíku a „+1“ si zamestnanec vie zmeniť aj sám, len na svojom zariadení: Nastavenia → „🛒 Tlačidlá v košíku na tomto zariadení“ (zamestnanec tam vidí len nastavenia svojho zariadenia).</p></div>
     <h2>🛒 Poradie tlačidiel pod sumou v košíku</h2><div class="card">
       <p class="muted" style="font-size:13px;margin:0 0 6px">Platí pre všetky zariadenia (kto si na svojom nastavil vlastné poradie, má svoje). Vypnuté tlačidlá (🧩 vyššie) sa nezobrazia.</p>
       ${cartOrderAll().map((k, i, arr) => { const inf = CART_BTN_INFO[k], off = inf[2] && !uiOnAll(inf[2]);
