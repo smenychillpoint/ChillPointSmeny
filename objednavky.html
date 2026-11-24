@@ -143,7 +143,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -900,6 +900,41 @@ async function callInner(m, [col, id, action], body) {
     if (m === 'POST' && action === 'reorder') {
       const u = {}; (Array.isArray(body.ids) ? body.ids : []).forEach((mid, i) => { if (S.menu.some(x => x.id === mid)) u[mid + '/order'] = i; });
       return db.ref('menu').update(u);
+    }
+    // (2026-11-24) 📦 import celého menu z Excelu / CSV – jedným zápisom. items [{id?, name, price, category, fav?, customPrice?, opts?, sets?}],
+    // replace = staré položky sa zmažú; id = existujúca položka, ktorej sa len zmení cena/kategória (režim „Pridať“).
+    // Otvorené účty a história sa nezmenia – každá objednávka má uložený vlastný názov a cenu.
+    if (m === 'POST' && (action === 'import' || action === 'clear')) {
+      const replace = action === 'clear' || !!body.replace, u = {}, keep = [], base = replace ? 0 : now();
+      // (S.menu sa po zápise hneď zmení – poradie kategórií a počet zmazaných treba zobrať ešte pred ním)
+      const ord0 = replace ? [] : allCategories(), nDel = replace ? S.menu.length : 0, cats0 = S.categories.slice();
+      let nNew = 0, nUpd = 0;
+      if (action === 'import') (Array.isArray(body.items) ? body.items : []).slice(0, 1500).forEach((x, i) => {
+        const name = str(x && x.name, 60), price = num(x && x.price); if (!name || !(price >= 0) || price > 100000) return;
+        const r = { name, price, category: str(x.category, 40) || 'Ostatné' };
+        ['fav', 'customPrice'].forEach(k => { if (x[k] !== undefined) r[k] = !!x[k]; });
+        if (x.opts !== undefined) r.opts = str(x.opts, 500);
+        if (x.sets !== undefined) r.sets = str(x.sets, 300);
+        const old = !replace && x.id && S.menu.find(mi => mi.id === x.id);
+        if (old) { Object.keys(r).forEach(k => { u[old.id + '/' + k] = r[k]; }); keep.push({ ...old, ...r }); nUpd++; }
+        else { Object.keys(r).forEach(k => { if (r[k] === false || r[k] === '') delete r[k]; });
+          u[db.ref('menu').push().key] = { ...r, order: base + i }; keep.push(r); nNew++; }
+      });
+      if (action === 'import' && !nNew && !nUpd) fail('V súbore nie je žiadna položka s názvom a cenou');
+      if (replace) S.menu.forEach(mi => { u[mi.id] = null; });
+      else S.menu.forEach(mi => { if (!keep.some(k => k.id === mi.id)) keep.push(mi); });
+      if (Object.keys(u).length) await db.ref('menu').update(u);
+      // kategórie: chýbajúce sa založia (v poradí zo súboru), prázdne sa zmažú, ak to vedúci zaškrtol
+      const used = [...new Set(keep.map(k => k.category))], uc = {}, have = new Set();
+      cats0.forEach(c => { if (body.dropEmpty && !used.includes(c.name)) uc[c.id] = null; else have.add(c.name.toLowerCase()); });
+      used.forEach(c => { if (!have.has(c.toLowerCase())) { uc[db.ref('categories').push().key] = { name: c }; have.add(c.toLowerCase()); } });
+      if (Object.keys(uc).length) await db.ref('categories').update(uc);
+      if (action === 'import') {
+        const fileCats = [...new Set(keep.slice(0, nNew + nUpd).map(k => k.category))];
+        const catOrder = [...new Set([...ord0.filter(c => used.includes(c) || !body.dropEmpty), ...fileCats])].slice(0, 100);
+        if (catOrder.join('|') !== ((S.access && S.access.catOrder) || []).join('|')) await db.ref('access').update({ catOrder });
+      }
+      return { nNew, nUpd, nDel };
     }
     if (m === 'DELETE') return db.ref('menu/' + id).remove();
   }
@@ -4968,7 +5003,7 @@ function renderSettings() {
       <div class="row" style="gap:6px;margin-top:6px"><input id="newOptSet" maxlength="40" placeholder="Nové spoločné možnosti, napr. Kávy (Enter)" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addOptSet(this)}">
         <button class="btn" style="width:auto" onclick="addOptSet($('#newOptSet'))">+ Vytvoriť</button></div></div>`;
   // (2026-10-31) karta „🧊 Ľad a poháre podľa kategórie“ z Nastavení odstránená na želanie majiteľa (nič nebolo zaškrtnuté)
-  const menuTab = optSetsCard + `<h2>Kategórie</h2><div class="card">
+  const menuTab = menuIoCardHtml() + optSetsCard + `<h2>Kategórie</h2><div class="card">
       ${cats.map(c => `<div class="set-row t"><input value="${esc(c)}" disabled style="opacity:.75">
         <button class="del" onclick="delCategory('${c.replace(/'/g, "\\'")}')">Zmazať</button></div>`).join('') || '<p class="muted">Zatiaľ žiadne kategórie.</p>'}
       <div class="set-row t" style="margin-top:10px"><input id="newC" placeholder="Názov novej kategórie, napr. Panáky">
@@ -5220,6 +5255,241 @@ async function addItemToCat(enc, idx) {
   await call('POST', '/api/menu', { name, price, category });
   openMenuCats.add(category); render();
   const again = $('#nN-' + idx); if (again) again.focus();   // rovno písať ďalšiu položku
+}
+// ---------- 📦 (2026-11-24) celé menu: záloha (súbor pre Excel / schránka), nahratie z Excelu (.xlsx, CSV, vložené bunky), zmazanie ----------
+let menuIoOpen = false, menuImp = null, menuImpPaste = '', menuImpDropCats = true;
+const MENU_COLS = [
+  ['name', 'Názov', /n[aá]zov|polo[zž]k|produkt|tovar|name|item|n[aá]poj/i],
+  ['price', 'Cena', /cena|price|suma|€|eur/i],
+  ['category', 'Kategória', /kateg|skupin|categ|druh|sekci|oddiel/i],
+  ['opts', 'Možnosti', /mo[zž]nos|option/i],
+  ['sets', 'Spoločné možnosti', /spolo[cč]n/i],
+  ['fav', 'Obľúbená ⭐', /ob[lľ][uú]b|fav/i],
+  ['customPrice', 'Vlastná suma ✎€', /vlastn/i],
+];
+// poradie, v akom sa hľadajú nadpisy stĺpcov („Spoločné možnosti“ pred „Možnosti“, „Vlastná suma“ pred „Cena/suma“)
+const MENU_COL_DETECT = ['sets', 'customPrice', 'fav', 'opts', 'category', 'price', 'name'];
+const parsePrice = v => { const s = String(v ?? '').replace(/[\s €]|eur/gi, '').replace(',', '.'); return /^\d+(\.\d+)?$/.test(s) ? Math.round(+s * 100) / 100 : NaN; };
+const isPriceCell = v => !isNaN(parsePrice(v));
+const colLetter = ci => { let s = ''; ci++; while (ci > 0) { const m = (ci - 1) % 26; s = String.fromCharCode(65 + m) + s; ci = (ci - m - 1) / 26; } return s; };
+const stampNow = () => { const d = new Date(), p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`; };
+function menuRowsForExport() {
+  const sets = optSets(), rows = [['Kategória', 'Názov', 'Cena', 'Obľúbená', 'Vlastná suma', 'Možnosti', 'Spoločné možnosti']];
+  allCategories().forEach(c => S.menu.filter(m => m.category === c && (m.name || '').trim()).forEach(m => rows.push([c, m.name,
+    (Math.round((+m.price || 0) * 100) / 100).toFixed(2).replace('.', ','), m.fav ? 'áno' : '', m.customPrice ? 'áno' : '',
+    String(m.opts || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean).join(' | '),
+    itemSetIds(m).map(id => (sets.find(s => s.id === id) || {}).n).filter(Boolean).join(', ')])));
+  return rows;
+}
+function saveBlob(blob, fname) {
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+// share = na mobile ponúkne „Zdieľať“ (e-mail, Disk…); záloha pred zmazaním sa len rovno stiahne
+async function downloadMenuCsv(share) {
+  const rows = menuRowsForExport(); if (rows.length < 2) { toast('Menu je prázdne'); return false; }
+  const e = v => { const s = String(v ?? ''); return /[;"\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const fname = `menu_${stampNow()}.csv`, blob = new Blob(['﻿' + rows.map(r => r.map(e).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  if (share) try {
+    const file = new File([blob], fname, { type: 'text/csv' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: 'Menu ChillPoint' }); return true; }
+  } catch (err) { if (err && err.name === 'AbortError') return false; }
+  saveBlob(blob, fname); return true;
+}
+async function copyMenuTsv() {
+  const rows = menuRowsForExport(); if (rows.length < 2) return toast('Menu je prázdne');
+  const t = rows.map(r => r.map(v => String(v ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t')).join('\n');
+  try { await navigator.clipboard.writeText(t); toast(`📋 Skopírované (${rows.length - 1} položiek) – v Exceli daj Ctrl+V`); }
+  catch (e) { toast('Kopírovanie tu nejde – použi ⬇️ Stiahnuť'); }
+}
+// CSV / bunky skopírované z Excelu (tabulátor); oddeľovač sa zistí z prvého riadku
+function parseDelimited(text) {
+  text = String(text || '').replace(/^﻿/, '');
+  const first = text.split(/\r?\n/).find(l => l.trim()) || '', n = ch => first.split(ch).length - 1;
+  const d = n('\t') ? '\t' : (n(';') && n(';') >= n(',')) ? ';' : ',';
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) { const ch = text[i];
+    if (q) { if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; } else cell += ch; continue; }
+    if (ch === '"' && cell === '') q = true;
+    else if (ch === d) { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += ch; }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+// .xlsx bez knižnice: je to ZIP s XML – rozbalí sa cez DecompressionStream a prečíta sa prvý hárok
+async function readXlsx(buf) {
+  const b = new Uint8Array(buf), dv = new DataView(buf), dec = new TextDecoder();
+  let e = -1; for (let i = b.length - 22; i >= Math.max(0, b.length - 70000); i--) if (dv.getUint32(i, true) === 0x06054b50) { e = i; break; }
+  if (e < 0) throw new Error('Súbor sa nedá otvoriť – ulož ho v Exceli ako .xlsx alebo CSV');
+  const files = {}; let p = dv.getUint32(e + 16, true);
+  for (let k = dv.getUint16(e + 10, true); k > 0 && p + 46 <= b.length && dv.getUint32(p, true) === 0x02014b50; k--) {
+    const nl = dv.getUint16(p + 28, true);
+    files[dec.decode(b.subarray(p + 46, p + 46 + nl)).replace(/\\/g, '/').toLowerCase()] = { meth: dv.getUint16(p + 10, true), size: dv.getUint32(p + 20, true), off: dv.getUint32(p + 42, true) };
+    p += 46 + nl + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+  }
+  if (!files['xl/workbook.xml']) throw new Error('Toto nie je Excel .xlsx – ulož ho v Exceli ako .xlsx alebo CSV');
+  const read = async name => { const f = files[String(name).toLowerCase()]; if (!f) return null;
+    const st = f.off + 30 + dv.getUint16(f.off + 26, true) + dv.getUint16(f.off + 28, true), data = b.subarray(st, st + f.size);
+    if (f.meth === 0) return dec.decode(data);
+    if (f.meth !== 8 || typeof DecompressionStream === 'undefined') throw new Error('Tento prehliadač nevie otvoriť .xlsx – ulož ho v Exceli ako CSV');
+    return new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text(); };
+  const xml = s => new DOMParser().parseFromString(s || '<x/>', 'application/xml'), tags = (el, t) => [...el.getElementsByTagNameNS('*', t)];
+  const wb = xml(await read('xl/workbook.xml')), rels = xml(await read('xl/_rels/workbook.xml.rels'));
+  const sh = tags(wb, 'sheet')[0], rid = sh && (sh.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id') || sh.getAttribute('r:id'));
+  const rel = tags(rels, 'Relationship').find(r => r.getAttribute('Id') === rid), tg = rel ? rel.getAttribute('Target') : 'worksheets/sheet1.xml';
+  const sheetXml = (await read(tg.startsWith('/') ? tg.slice(1) : 'xl/' + tg.replace(/^\.\//, ''))) || (await read('xl/worksheets/sheet1.xml'));
+  if (!sheetXml) throw new Error('V súbore som nenašiel hárok s údajmi');
+  const ss = tags(xml(await read('xl/sharedStrings.xml')), 'si').map(si => tags(si, 't').filter(t => t.parentNode.localName !== 'rPh').map(t => t.textContent).join(''));
+  const colIx = r => { const m = /^([A-Z]+)/i.exec(r || ''); if (!m) return -1; let n = 0; for (const ch of m[1].toUpperCase()) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; };
+  return tags(xml(sheetXml), 'row').map(row => { const out = []; let next = 0;
+    tags(row, 'c').forEach(c => { let ci = colIx(c.getAttribute('r')); if (ci < 0) ci = next; next = ci + 1;
+      const t = c.getAttribute('t'), v = (tags(c, 'v')[0] || {}).textContent;
+      const val = t === 's' ? (ss[+v] ?? '') : t === 'inlineStr' ? tags(c, 't').map(x => x.textContent).join('') : t === 'b' ? (v === '1' ? 'áno' : '') : t === 'e' ? '' : (v ?? '');
+      if (ci < 100) out[ci] = val; });
+    return Array.from(out, x => x ?? ''); });
+}
+async function readMenuFile(input) {
+  const f = input.files && input.files[0]; if (!f) return;
+  try {
+    const buf = await f.arrayBuffer(), h = new Uint8Array(buf.slice(0, 4)); let rows;
+    if (h[0] === 0x50 && h[1] === 0x4b) rows = await readXlsx(buf);
+    else if (h[0] === 0xD0 && h[1] === 0xCF) throw new Error('Starý formát .xls – v Exceli daj Uložiť ako → .xlsx alebo CSV');
+    else { let text; try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('windows-1250').decode(buf); }
+      rows = parseDelimited(text); }
+    startMenuImport(rows, f.name);
+  } catch (e) { alert(e.message || 'Súbor sa nedá prečítať'); }
+  input.value = '';
+}
+function readMenuPaste() { const t = menuImpPaste.trim(); if (!t) return toast('Najprv vlož bunky skopírované z Excelu'); startMenuImport(parseDelimited(t), 'vložené z Excelu'); }
+function startMenuImport(rows, src) {
+  rows = (rows || []).map(r => (r || []).map(v => String(v ?? '').trim())).filter(r => r.some(Boolean));
+  if (!rows.length) return toast('Nenašiel som žiadne riadky');
+  const ncol = Math.min(100, Math.max(...rows.map(r => r.length)));
+  const hdrLike = v => v && !isPriceCell(v) && MENU_COLS.some(c => (c[0] === 'name' || c[0] === 'price' || c[0] === 'category') && c[2].test(v));
+  const hdr = rows.slice(0, 10).findIndex(r => r.some(hdrLike));
+  menuImp = { src, rows, hdr, ncol, map: {}, mode: S.menu.length ? 'add' : 'replace', defCat: 'Ostatné' };
+  guessMenuCols(); menuIoOpen = true; render();
+}
+// stĺpce podľa nadpisov; bez nadpisu: cena = stĺpec s najviac číslami, názov = prvý stĺpec s textom
+function guessMenuCols() {
+  const I = menuImp, map = {}, data = I.rows.slice(I.hdr + 1);
+  if (I.hdr >= 0) I.rows[I.hdr].forEach((v, ci) => { if (!v) return;
+    const k = MENU_COL_DETECT.find(k => map[k] === undefined && MENU_COLS.find(c => c[0] === k)[2].test(v)); if (k) map[k] = ci; });
+  if (map.price === undefined) { let best = -1, bc = 0;
+    for (let ci = 0; ci < I.ncol; ci++) { const c = data.filter(r => isPriceCell(r[ci])).length; if (c > bc && ci !== map.name) { best = ci; bc = c; } }
+    if (best >= 0) map.price = best; }
+  if (map.name === undefined) for (let ci = 0; ci < I.ncol; ci++)
+    if (ci !== map.price && ci !== map.category && data.filter(r => r[ci] && !isPriceCell(r[ci])).length >= data.length / 3) { map.name = ci; break; }
+  I.map = map;
+}
+function computeMenuImport() {
+  const I = menuImp; if (!I) return null;
+  const has = k => I.map[k] !== undefined && I.map[k] >= 0, g = (r, k) => has(k) ? String(r[I.map[k]] ?? '') : '';
+  const yes = v => /^(1|a|áno|ano|yes|y|x|✓|✔|true|pravda|⭐|\*)$/i.test(String(v || '').trim());
+  const one = v => String(v || '').replace(/\s+/g, ' ').trim();
+  const sets = optSets(), items = [], skip = [], badSets = new Set();
+  // fileCat = kategória je naozaj zo súboru (stĺpec alebo nadpis), nie len predvolená – inak existujúca položka ostane vo svojej
+  let cur = str(one(I.defCat), 40) || 'Ostatné', fileCat = has('category');
+  I.rows.slice(I.hdr + 1).forEach(r => {
+    const name = str(one(g(r, 'name')), 60), rawP = one(g(r, 'price')), pr = parsePrice(rawP);
+    if (has('category') && one(g(r, 'category'))) cur = str(one(g(r, 'category')), 40);
+    if (!name) return;
+    // riadok len s názvom (bez ceny) = nadpis kategórie, ak nie je stĺpec Kategória
+    if (isNaN(pr)) { if (!has('category') && !rawP) { cur = str(name, 40); fileCat = true; } else skip.push(`${name}${rawP ? ` (cena „${rawP}“)` : ' – chýba cena'}`); return; }
+    const it = { name, price: pr, category: cur };
+    if (has('fav')) it.fav = yes(g(r, 'fav'));
+    if (has('customPrice')) it.customPrice = yes(g(r, 'customPrice'));
+    if (has('opts')) it.opts = g(r, 'opts').split(/\r?\n|\s*\|\s*/).map(s => s.trim()).filter(Boolean).join('\n').slice(0, 500);
+    if (has('sets')) it.sets = g(r, 'sets').split(/[,;]/).map(s => s.trim()).filter(Boolean)
+      .map(n => { const s = sets.find(x => x.n.toLowerCase() === n.toLowerCase()); if (!s) badSets.add(n); return s && s.id; }).filter(Boolean).join(',');
+    // „Pridať“: rovnaký názov (v rovnakej kategórii, ak je ich viac) = len sa zmení cena, nepridá sa druhý raz
+    if (I.mode === 'add') { const nm = name.toLowerCase(), same = S.menu.filter(m => (m.name || '').trim().toLowerCase() === nm);
+      const hit = same.length === 1 ? same[0] : same.find(m => m.category === it.category);
+      if (hit) { it.id = hit.id; if (!fileCat) it.category = hit.category; } }
+    items.push(it);
+  });
+  return { items, skip, badSets: [...badSets], cats: [...new Set(items.map(i => i.category))] };
+}
+function setMenuImpCol(k, v) { if (!menuImp) return; v = +v; Object.keys(menuImp.map).forEach(x => { if (menuImp.map[x] === v && x !== k) delete menuImp.map[x]; });
+  if (v >= 0) menuImp.map[k] = v; else delete menuImp.map[k]; render(); }
+function setMenuImpHdr(v) { if (!menuImp) return; menuImp.hdr = +v; guessMenuCols(); render(); }
+function menuImpPreviewHtml() {
+  const I = menuImp, R = computeMenuImport(), hdrRow = I.hdr >= 0 ? I.rows[I.hdr] : [], first = I.rows[I.hdr + 1] || [];
+  const colSel = k => `<select style="width:100%;min-width:0" onchange="setMenuImpCol('${k}',this.value)"><option value="-1">— nie je —</option>${Array.from({ length: I.ncol }, (_, ci) =>
+    `<option value="${ci}" ${I.map[k] === ci ? 'selected' : ''}>${colLetter(ci)}: ${esc(String(hdrRow[ci] || first[ci] || '').slice(0, 22))}</option>`).join('')}</select>`;
+  const nUpd = R.items.filter(i => i.id).length, nNew = R.items.length - nUpd, nOld = S.menu.length;
+  let shown = 0; const MAX = 80;
+  const list = R.cats.map(c => { const its = R.items.filter(i => i.category === c); if (shown >= MAX) return '';
+    const part = its.slice(0, Math.max(0, MAX - shown)); shown += part.length;
+    return `<div style="margin-top:8px"><b>${esc(c)}</b> <span class="muted" style="font-size:12px">(${its.length})${allCategories().includes(c) ? '' : ' · nová kategória'}</span>
+      ${part.map(i => `<div style="font-size:14px;display:flex;gap:8px;padding:2px 0 2px 10px;border-bottom:1px dashed var(--line)"><span style="flex:1">${esc(i.name)}${i.fav ? ' ⭐' : ''}${i.customPrice ? ' ✎€' : ''}${i.opts || i.sets ? ' ⚙' : ''}</span>
+        <span>${eur(i.price)}</span>${I.mode === 'add' ? `<span class="muted" style="font-size:12px;width:78px;text-align:right">${i.id ? '✎ zmení sa' : 'nová'}</span>` : ''}</div>`).join('')}</div>`; }).join('');
+  return `<div class="card" style="margin-top:12px;border:2px solid var(--brand)">
+    <b>📄 ${esc(I.src)}</b> <span class="muted" style="font-size:13px">· ${I.rows.length} riadkov</span>
+    <div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-top:8px;font-size:14px">Nadpisy stĺpcov:
+      <select style="flex:1;min-width:0;max-width:100%" onchange="setMenuImpHdr(this.value)"><option value="-1" ${I.hdr < 0 ? 'selected' : ''}>nie sú (hneď položky)</option>
+        ${I.rows.slice(0, 10).map((r, ri) => `<option value="${ri}" ${I.hdr === ri ? 'selected' : ''}>${ri + 1}. riadok: ${esc(r.filter(Boolean).join(' · ').slice(0, 40))}</option>`).join('')}</select></div>
+    <div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 10px;align-items:center;margin-top:8px;font-size:14px">
+      ${MENU_COLS.map(([k, label]) => `<span>${label}${k === 'name' || k === 'price' ? ' *' : ''}</span>${colSel(k)}`).join('')}</div>
+    ${menuImp.map.category === undefined ? `<div class="row" style="gap:6px;align-items:center;margin-top:8px;font-size:14px"><span>Kategória, kde nie je napísaná:</span>
+      <input style="flex:1;min-width:120px" maxlength="40" value="${esc(I.defCat)}" onchange="menuImp.defCat=this.value;render()"></div>
+      <p class="muted" style="font-size:12px;margin:4px 0 0">Riadok, kde je len názov a cena je prázdna, sa berie ako nadpis kategórie (napr. „Víno“ a pod ním vína).</p>` : ''}
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn ${I.mode === 'add' ? '' : 'ghost'}" style="width:auto;padding:8px 12px" onclick="menuImp.mode='add';render()">➕ Pridať k terajšiemu menu</button>
+      <button class="btn ${I.mode === 'replace' ? '' : 'ghost'}" style="width:auto;padding:8px 12px" onclick="menuImp.mode='replace';render()">♻️ Nahradiť celé menu</button></div>
+    <p class="muted" style="font-size:12px;margin:6px 0 0">${I.mode === 'add' ? 'Položka s rovnakým názvom, aká už v menu je, sa nepridá druhýkrát – len sa jej zmení cena (a kategória).' : `Terajších ${nOld} položiek sa zmaže a nahradí týmito. Predtým sa ti stiahne záloha.`}</p>
+    <div style="margin-top:10px;font-size:14px"><b>${R.items.length} položiek</b>${I.mode === 'add' && R.items.length ? ` (${nNew} nových, ${nUpd} sa zmení)` : ''} v ${R.cats.length} kategóriách</div>
+    ${R.skip.length ? `<div style="margin-top:6px;font-size:13px;color:var(--warn)">⚠ Vynechané (bez ceny): ${esc(R.skip.slice(0, 8).join(', '))}${R.skip.length > 8 ? ` a ďalších ${R.skip.length - 8}` : ''}</div>` : ''}
+    ${R.badSets.length ? `<div style="margin-top:6px;font-size:13px;color:var(--warn)">⚠ Takéto spoločné možnosti nie sú (vynechajú sa): ${esc(R.badSets.join(', '))}</div>` : ''}
+    <div style="max-height:45vh;overflow:auto;margin-top:6px">${list}${R.items.length > MAX ? `<p class="muted" style="font-size:13px">… a ďalších ${R.items.length - MAX}</p>` : ''}</div>
+    <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn" style="width:auto" ${R.items.length ? '' : 'disabled'} onclick="runMenuImport()">✓ Nahrať ${R.items.length} položiek</button>
+      <button class="btn ghost" style="width:auto" onclick="menuImp=null;render()">Zrušiť</button></div>
+  </div>`;
+}
+async function runMenuImport() {
+  const R = computeMenuImport(); if (!R || !R.items.length) return toast('Nie je čo nahrať – skontroluj stĺpce Názov a Cena');
+  const replace = menuImp.mode === 'replace', nOld = S.menu.length, nUpd = R.items.filter(i => i.id).length;
+  if (replace && nOld) {
+    if (!confirm(`♻️ Nahradiť celé menu?\n\nZmaže sa ${nOld} terajších položiek a nahrá sa ${R.items.length} nových.\nNajprv sa ti stiahne záloha terajšieho menu. Otvorené účty a história ostanú.`)) return;
+    await downloadMenuCsv(false);
+  } else if (!confirm(`Nahrať ${R.items.length} položiek do menu?${nUpd ? `\n(${nUpd} z nich už v menu sú – zmení sa im len cena)` : ''}`)) return;
+  try {
+    const r = await call('POST', '/api/menu/_/import', { items: R.items, replace, dropEmpty: replace && menuImpDropCats });
+    toast(`✓ Menu nahraté: ${r.nNew} nových${r.nUpd ? `, ${r.nUpd} zmenených` : ''}${r.nDel ? `, ${r.nDel} starých zmazaných` : ''}`);
+    menuImp = null; menuImpPaste = ''; render();
+  } catch (e) {}
+}
+async function clearWholeMenu() {
+  const n = S.menu.length; if (!n) return toast('Menu je už prázdne');
+  if (!confirm(`🗑 Zmazať CELÉ menu (${n} položiek)?\n\nNajprv sa ti stiahne záloha (súbor pre Excel), ktorú vieš neskôr nahrať späť. Otvorené účty a história ostanú.`)) return;
+  const t = prompt('Pre istotu napíš: ZMAZAŤ'); if (t === null) return;
+  if (!/^zmaza[tť]$/i.test(t.trim())) return toast('Nezmazané – nenapísal si ZMAZAŤ');
+  if (!(await downloadMenuCsv(false))) return;
+  try { await call('POST', '/api/menu/_/clear', { dropEmpty: menuImpDropCats }); toast(`🗑 Menu zmazané (${n} položiek) – záloha je v Stiahnutých súboroch`); render(); } catch (e) {}
+}
+function menuIoCardHtml() {
+  const n = S.menu.length;
+  return `<details ${menuIoOpen || menuImp ? 'open' : ''} ontoggle="menuIoOpen=this.open" class="card" style="margin-bottom:14px">
+    <summary style="cursor:pointer;font-weight:700;font-size:16px">📦 Celé menu – záloha, nahratie z Excelu, zmazanie</summary>
+    <p class="muted" style="font-size:13px;margin:10px 0 6px">Záloha: stiahni si celé menu ako súbor pre Excel, alebo ho skopíruj a vlož do Excelu. Ten istý súbor vieš neskôr nahrať späť.</p>
+    <div class="row" style="gap:6px;flex-wrap:wrap">
+      <button class="btn ghost" style="width:auto" onclick="downloadMenuCsv(true)">⬇️ Stiahnuť menu (Excel)</button>
+      <button class="btn ghost" style="width:auto" onclick="copyMenuTsv()">📋 Skopírovať (vložíš do Excelu)</button></div>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)"><b>⬆️ Nahrať menu z Excelu</b>
+      <p class="muted" style="font-size:13px;margin:4px 0 8px">Stačia stĺpce <b>Názov</b> a <b>Cena</b>. Kategória, Obľúbená, Vlastná suma, Možnosti a Spoločné možnosti sú nepovinné. Pred nahratím uvidíš, čo sa pridá.</p>
+      <label class="btn" style="width:auto;display:inline-block;cursor:pointer">📂 Vybrať súbor (.xlsx alebo .csv)
+        <input type="file" accept=".xlsx,.csv,.txt,.tsv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" onchange="readMenuFile(this)"></label>
+      <textarea rows="2" style="margin-top:8px;width:100%;box-sizing:border-box;font:inherit;font-size:14px" placeholder="…alebo v Exceli označ bunky, Ctrl+C a vlož ich sem (Ctrl+V)" oninput="menuImpPaste=this.value"
+        onpaste="setTimeout(()=>{menuImpPaste=this.value;readMenuPaste()},0)">${esc(menuImpPaste)}</textarea>
+      ${menuImp ? menuImpPreviewHtml() : ''}
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Pozor: laser game hľadá položky podľa názvu (napr. „Laser game dospelý“, „študent“, „dieťa“) – nechaj ich v menu s podobným názvom.</p></div>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px"><input type="checkbox" style="width:auto" ${menuImpDropCats ? 'checked' : ''} onchange="menuImpDropCats=this.checked">pri nahradení alebo zmazaní menu zmazať aj kategórie, ktoré ostanú prázdne</label>
+      <button class="del" style="width:auto;padding:8px 14px;margin-top:8px" ${n ? '' : 'disabled'} onclick="clearWholeMenu()">🗑 Zmazať celé menu (${n} ${n === 1 ? 'položka' : n >= 2 && n <= 4 ? 'položky' : 'položiek'})</button></div>
+  </details>`;
 }
 // kategórie v poradí, ktoré nastavil vedúci (access.catOrder); nezaradené idú na koniec podľa abecedy
 function sortCats(arr) {
