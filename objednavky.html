@@ -59,6 +59,8 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .item .qminus{width:15px;height:24px;border:none;background:transparent;color:var(--muted);font-size:15px;line-height:1;font-weight:900;padding:0;display:grid;place-items:center;cursor:pointer}
 .cart{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));z-index:6;box-shadow:0 -6px 20px #0000001a}
 .cart-in{max-width:1100px;margin:0 auto}
+.cbtn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:6px 2px;min-height:56px;font-size:14px;line-height:1.15;text-align:center}
+.cbtn i{font-style:normal;font-size:19px}.cbtn small{font-size:11px;font-weight:400;opacity:.85}
 .row{display:flex;align-items:center;gap:8px}
 .line{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dashed var(--line)}
 .line:last-child{border-bottom:0}
@@ -141,7 +143,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 110px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-20</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -864,6 +866,12 @@ async function callInner(m, [col, id, action], body) {
         g: [...new Set((Array.isArray(x && x.g) ? x.g : []).map(v => str(v, 20)).filter(Boolean))].slice(0, 50),
         t: [...new Set((Array.isArray(x && x.t) ? x.t : []).map(v => str(v, 40)).filter(Boolean))].slice(0, 200)
       })).filter(x => x.n).slice(0, 30);
+      // (2026-11-24) 🛒 poradie tlačidiel pod sumou v zbalenom košíku (napr. ['paid','write','bar','add'])
+      if (body.cartOrder !== undefined) u.cartOrder = [...new Set((Array.isArray(body.cartOrder) ? body.cartOrder : []).filter(k => CART_KEYS.includes(k)))];
+      // (2026-11-24) 🧩 spoločné možnosti (napr. „Kávy“ – Mlieko: S mliekom, Bez mlieka): [{id, n: názov, o: otázky v rovnakom
+      // formáte ako opts pri položke}]; položka ich má v menu/<id>/sets (id oddelené čiarkou)
+      if (body.optSets !== undefined) u.optSets = (Array.isArray(body.optSets) ? body.optSets : [])
+        .map(x => ({ id: str(x && x.id, 20), n: str(x && x.n, 40), o: str(x && x.o, 1000) })).filter(x => x.id && x.n).slice(0, 60);
       ['tableGroups', 'hiddenGroups', 'groupOrder', 'uiOff'].forEach(k => {
         if (body[k] !== undefined) u[k] = [...new Set((Array.isArray(body[k]) ? body[k] : []).map(x => str(x, 20)).filter(Boolean))].slice(0, 100);
       });
@@ -885,6 +893,8 @@ async function callInner(m, [col, id, action], body) {
       // možnosti pri pridaní (napr. sóda/bez sódy, s ľadom/bez ľadu, príchuť) - jedna skupina na riadok,
       // formát "Názov: možnosť1, možnosť2"; prázdny reťazec = žiadne možnosti (zmaže sa)
       if (body.opts !== undefined) u.opts = str(body.opts, 500);
+      // (2026-11-24) 🧩 spoločné možnosti priradené k položke – id zo access.optSets oddelené čiarkou ('' = žiadne)
+      if (body.sets !== undefined) u.sets = str(body.sets, 300);
       return db.ref('menu/' + id).update(u); }
     // poradie produktov v kategórii: ids v novom poradí -> order = 0,1,2... (zobrazuje sa podľa "order")
     if (m === 'POST' && action === 'reorder') {
@@ -1608,7 +1618,20 @@ window.addEventListener('popstate', () => {
   render(); scrollTo(0, 0);         // render() podľa potreby pridá nový strážny záznam
 });
 let lmailFor = '';   // pre ktorý formulár je predvyplnený e-mail
+// (2026-11-24) Zoznamy s vlastným posúvaním (🧾 Účet stola, položky v košíku) po prekreslení ostanú tam, kde boli.
+// Predtým každá živá zmena (napr. iný čašník niečo zapísal) vrátila zoznam účtu na začiatok – „scrolluje ma naspäť hore“.
+const listScrollKey = () => role + '|' + (tableId || '') + '|' + view;
+function listScrollSave(root) { return { k: listScrollKey(), v: [...document.querySelectorAll(root + ' .cart-list')].map(el => el.scrollTop) }; }
+function listScrollRestore(root, s) {
+  if (!s || s.k !== listScrollKey()) return;
+  document.querySelectorAll(root + ' .cart-list').forEach((el, i) => { if (s.v[i]) el.scrollTop = s.v[i]; });
+}
 function render() {
+  const a = listScrollSave('#app'), c = listScrollSave('#cart');
+  renderMain();
+  listScrollRestore('#app', a); listScrollRestore('#cart', c);
+}
+function renderMain() {
   syncNavHistory();
   if (expireBizDay()) toast('🌙 Pracovný deň sa vrátil na automatický (dnešok)');
   // Prihlasovacie "brány": kým nie je nikto prihlásený (zariadenie ešte len skúša automatický vstup),
@@ -1740,13 +1763,35 @@ const UI_FEATURES = [
   ['offlineBar', '🔴 Veľký pás „Bez internetu“, keď vypadne spojenie'],
   ['laserSplit', '🎯 Laser game – dospelí / študenti / deti rozdeliť až pri platení'],
   ['paidNow', '💶 Dlaždica „Zaplatené hneď“ na Stoloch (zákazník zaplatí hneď, bar to pripraví)'],
-  ['paidNowBtn', '💶 Tlačidlo „Zaplatené hneď“ v košíku pri stole']
+  ['paidNowBtn', '💶 Tlačidlo „Zaplatené hneď“ v košíku pri stole'],
+  ['cartBtns', '🛒 Tlačidlá pod sumou v košíku (Zaplatené / Zapísať / Na bar) – vypnuté = len „Na bar“ vedľa sumy'],
+  ['cartWrite', '📝 Tlačidlo „Zapísať“ (do účtu, bez baru) pod sumou v košíku'],
+  ['cartAdd', '➕ Tlačidlo „k #…“ pod sumou – pridať k objednávke, ktorá je ešte na bare'],
+  ['plusOneStay', '🧾 „+1“ v účte stola nechá košík zbalený (neotvorí ho)']
 ];
-const uiOn = k => !(((S.access && S.access.uiOff) || []).includes(k));
+// (2026-11-24) Tieto si zamestnanec vie zmeniť len na svojom zariadení (⚙ dole v rozbalenom košíku) – inak platí,
+// čo nastavil vedúci v 🧩 Funkcie. Uložené v localStorage uiDev = {kľúč: true/false}; čo tam nie je, ide podľa vedúceho.
+const DEV_UI_KEYS = ['cartBtns', 'paidNowBtn', 'cartWrite', 'cartAdd', 'plusOneStay'];
+const uiDev = () => { const o = store.get('uiDev', {}); return o && typeof o === 'object' && !Array.isArray(o) ? o : {}; };
+const uiOnAll = k => !(((S.access && S.access.uiOff) || []).includes(k));   // nastavenie vedúceho (pre všetky zariadenia)
+const uiOn = k => { if (DEV_UI_KEYS.includes(k)) { const d = uiDev()[k]; if (typeof d === 'boolean') return d; } return uiOnAll(k); };
+// (2026-11-24) 🛒 tlačidlá pod sumou v zbalenom košíku – poradie nastaví vedúci (🧩 Funkcie, access.cartOrder),
+// zamestnanec si ho vie zmeniť na svojom zariadení (localStorage cartOrderDev)
+const CART_KEYS = ['paid', 'write', 'bar', 'add'];
+const CART_BTN_INFO = { paid: ['💶', 'Zaplatené', 'paidNowBtn'], write: ['📝', 'Zapísať', 'cartWrite'], bar: ['📤', 'Na bar', ''], add: ['➕', 'k objednávke na bare', 'cartAdd'] };
+const cartOrderOf = arr => [...new Set([...(Array.isArray(arr) ? arr : []).filter(k => CART_KEYS.includes(k)), ...CART_KEYS])];
+const cartOrderAll = () => cartOrderOf(S.access && S.access.cartOrder);
+const cartOrder = () => { const d = store.get('cartOrderDev', null); return Array.isArray(d) ? cartOrderOf(d) : cartOrderAll(); };
+async function moveCartBtn(k, dir) {
+  const a = cartOrderAll(), i = a.indexOf(k), j = i + dir; if (i < 0 || j < 0 || j >= a.length) return;
+  [a[i], a[j]] = [a[j], a[i]];
+  try { await call('PUT', '/api/access', { cartOrder: a }); S.access = { ...(S.access || {}), cartOrder: a }; } finally { render(); }
+}
 async function setUiFeature(k, on) {
   const off = new Set((S.access && S.access.uiOff) || []);
   if (on) off.delete(k); else off.add(k);
-  try { await call('PUT', '/api/access', { uiOff: [...off] }); toast(on ? 'Zapnuté ✓' : 'Vypnuté'); } finally { render(); }
+  // (2026-11-24) hneď aj v S – dve rýchle zmeny za sebou si tak neprepíšu zoznam vypnutých
+  try { await call('PUT', '/api/access', { uiOff: [...off] }); S.access = { ...(S.access || {}), uiOff: [...off] }; toast(on ? 'Zapnuté ✓' : 'Vypnuté'); } finally { render(); }
 }
 function tempTableAlive(t) {
   if (!t.temp) return true;
@@ -2872,14 +2917,32 @@ function renderFavs() {
 }
 // Rozparsuje nastavenie "možností pri pridaní" (napr. sóda/ľad/príchuť) z jednoduchého textového formátu:
 // jedna skupina na riadok, "Názov skupiny: možnosť1, možnosť2, možnosť3".
+// (2026-11-24) „Názov+: …“ (plus na konci názvu) = dá sa vybrať viac možností naraz (napr. šľahačka aj jahody).
 function parseOpts(raw) {
+  return parseOptsEdit(raw).filter(g => g.name && g.choices.length);
+}
+// to isté, ale nechá aj otázky bez možností (v editore v Nastaveniach – otázka sa vytvorí skôr než jej možnosti)
+function parseOptsEdit(raw) {
   return String(raw || '').split('\n').map(l => l.trim()).filter(Boolean).map(line => {
-    const idx = line.indexOf(':'); if (idx === -1) return null;
-    const name = line.slice(0, idx).trim();
-    const choices = line.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean);
-    if (!name || !choices.length) return null;
-    return { name, choices };
-  }).filter(Boolean);
+    const idx = line.indexOf(':');
+    let name = (idx === -1 ? line : line.slice(0, idx)).trim();
+    const multi = name.endsWith('+'); if (multi) name = name.slice(0, -1).trim();
+    const choices = idx === -1 ? [] : line.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean);
+    return { name, multi, choices };
+  });
+}
+const optQClean = s => String(s || '').replace(/[:\r\n]/g, ' ').replace(/\+\s*$/, '').replace(/\s+/g, ' ').trim().slice(0, 30);
+const optChClean = s => String(s || '').replace(/[,\r\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+function serializeOpts(qs) {
+  return qs.map(q => `${optQClean(q.name) || 'Výber'}${q.multi ? '+' : ''}: ${q.choices.map(optChClean).filter(Boolean).join(', ')}`).join('\n');
+}
+// 🧩 spoločné možnosti (access.optSets) + priradené k položke (menu.sets) + vlastné len pre položku (menu.opts)
+const optSets = () => ((S.access && S.access.optSets) || []).filter(x => x && x.id);
+const itemSetIds = mi => String((mi && mi.sets) || '').split(',').map(s => s.trim()).filter(Boolean);
+function itemQs(mi) {
+  if (!mi) return [];
+  const sets = optSets();
+  return [...itemSetIds(mi).flatMap(id => { const s = sets.find(x => x.id === id); return s ? parseOpts(s.o) : []; }), ...parseOpts(mi.opts)];
 }
 // Posledná objednávka tohto stola (akéhokoľvek stavu, aj zaplatená) - na "🔁 Zopakovať" (napr. ďalšie kolo rovnakých pív).
 function lastTableOrder() {
@@ -2915,7 +2978,7 @@ function addItem(id) {
   if (mi && mi.customPrice) return addCustomPriceItem(id);
   // položky s nastavenými "možnosťami" (napr. sóda/bez sódy, s ľadom/bez ľadu, príchuť) otvoria pred
   // pridaním do košíka malý výber, nech sa nemusí každý detail vypisovať ručne do poznámky
-  if (mi && mi.opts && parseOpts(mi.opts).length) return openItemOptions(id);
+  if (mi && itemQs(mi).length) return openItemOptions(id);
   // 🥤 kategória s pohármi (limonády, karafy) – opýta sa, koľko pohárov
   if (mi && catExtra(mi.category).glasses) return askGlasses(id);
   // 🧊 nový kus sa pridá k riadku "s ľadom" (predvolené), nie k riadku, ktorý sa prepol na "bez ľadu"
@@ -2967,18 +3030,22 @@ function clearBizDay() {
   toast('Pracovný deň späť na automatický (dnešok) ✓');
   render();
 }
+// (2026-11-24) pri otázke „dá sa vybrať viac“ je výber pole (napr. [0, 2] = šľahačka aj jahody), inak jedno číslo
+const optPicked = (gi, ci) => { const p = itemOptionsPicks[gi]; return Array.isArray(p) ? p.includes(ci) : p === ci; };
 function pickItemOption(gi, ci) {
-  itemOptionsPicks[gi] = (itemOptionsPicks[gi] === ci) ? undefined : ci;
+  const g = itemQs(S.menu.find(x => x.id === itemOptionsFor))[gi];
+  if (g && g.multi) { const a = Array.isArray(itemOptionsPicks[gi]) ? itemOptionsPicks[gi] : []; itemOptionsPicks[gi] = a.includes(ci) ? a.filter(x => x !== ci) : [...a, ci]; }
+  else itemOptionsPicks[gi] = (itemOptionsPicks[gi] === ci) ? undefined : ci;
   renderItemOptions();
 }
 function renderItemOptions() {
   const mi = S.menu.find(x => x.id === itemOptionsFor); if (!mi) return closeItemOptions();
-  const groups = parseOpts(mi.opts);
+  const groups = itemQs(mi);
   $('#itemOptionsTitle').textContent = mi.name;
   $('#itemOptionsBody').innerHTML = groups.map((g, gi) => `
-    <label class="muted" style="font-size:13px;display:block;margin-top:${gi ? 10 : 0}px">${esc(g.name)}</label>
+    <label class="muted" style="font-size:13px;display:block;margin-top:${gi ? 10 : 0}px">${esc(g.name)}${g.multi ? ' <small>(aj viac naraz)</small>' : ''}</label>
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">
-      ${g.choices.map((c, ci) => `<button type="button" class="btn ${itemOptionsPicks[gi] === ci ? '' : 'ghost'}" style="width:auto;padding:8px 12px" onclick="pickItemOption(${gi},${ci})">${esc(c)}</button>`).join('')}
+      ${g.choices.map((c, ci) => `<button type="button" class="btn ${optPicked(gi, ci) ? '' : 'ghost'}" style="width:auto;padding:8px 12px" onclick="pickItemOption(${gi},${ci})">${g.multi && optPicked(gi, ci) ? '✓ ' : ''}${esc(c)}</button>`).join('')}
     </div>`).join('') + `
     <label class="muted" style="font-size:13px;display:block;margin-top:12px">Počet kusov</label>
     <div class="row" style="gap:8px;align-items:center;margin-top:4px">
@@ -2990,8 +3057,10 @@ function renderItemOptions() {
 }
 function confirmItemOptions() {
   const mi = S.menu.find(x => x.id === itemOptionsFor); if (!mi) return;
-  const groups = parseOpts(mi.opts);
-  const note = groups.map((g, gi) => itemOptionsPicks[gi] != null ? g.choices[itemOptionsPicks[gi]] : null).filter(Boolean).join(' · ');
+  const groups = itemQs(mi);
+  const note = groups.map((g, gi) => { const p = itemOptionsPicks[gi];
+    if (Array.isArray(p)) return p.slice().sort((a, b) => a - b).map(ci => g.choices[ci]).filter(Boolean).join(' · ');
+    return p != null ? g.choices[p] : null; }).filter(Boolean).join(' · ');
   // (2026-10-19) rovnaká položka s rovnakým výberom sa v košíku zlúči do jedného riadka (2× Mattoni · jemne perlivá),
   // nie dva samostatné riadky; iný výber = iný riadok
   const n = itemOptionsQty || 1;
@@ -3002,11 +3071,6 @@ function confirmItemOptions() {
   renderItems(); renderFavs(); renderCart();
 }
 function toggleEditOpts(id) { editingOptsFor = editingOptsFor === id ? null : id; render(); }
-function saveOpts(id) {
-  const raw = ($('#optsRaw-' + id)?.value || '').trim();
-  call('PUT', '/api/menu/' + id, { opts: raw });
-  editingOptsFor = null;
-}
 function addCustomPriceItem(id) {
   const mi = S.menu.find(x => x.id === id); if (!mi) return;
   const raw = prompt(`Zadaj presnú sumu za "${mi.name}" (€):`, '');
@@ -3166,7 +3230,7 @@ function openQtyPicker(id) {
     ? `<button class="btn ok" style="margin-top:10px" onclick="setSoldOut('${id}',false)">✓ Už je – zrušiť „vypredané“</button>`
     : `<button class="btn ghost" style="margin-top:10px;color:var(--warn)" onclick="setSoldOut('${id}',true)">🚫 Dnes vypredané</button>`) : '';
   // položky s vlastnou sumou alebo s možnosťami idú po jednom (každá môže byť iná)
-  if (mi.customPrice || (mi.opts && parseOpts(mi.opts).length)) {
+  if (mi.customPrice || itemQs(mi).length) {
     if (!soldBtn) { lpFired = false; return addItem(id); }
     $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 10px">${esc(mi.name)}</h3>
       <button class="btn" onclick="closeQuickModal();addItem('${id}')">➕ Pridať</button>${soldBtn}
@@ -3199,13 +3263,34 @@ function acctPlusOne(name, price) {
   const mi = S.menu.find(x => x.name === name && Number(x.price) === Number(price)) || S.menu.find(x => x.name === name);
   if (!mi) return toast('Túto položku nejde pridať znova (nie je v menu)');
   if (mi.customPrice) cart.push({ menuId: mi.id, qty: 1, note: '', price: Number(price) });   // napr. biliard - rovnaká suma
-  else if (mi.opts && parseOpts(mi.opts).length) return addItem(mi.id);                       // vyberie možnosti
+  else if (itemQs(mi).length) return addItem(mi.id);                                          // vyberie možnosti
   else { const c = cart.find(x => x.menuId === mi.id && !x.lg && !x.note && x.price == null); c ? c.qty++ : cart.push({ menuId: mi.id, qty: 1, note: '' }); }
-  cartOpen = true; renderItems(); renderFavs(); renderCart();
+  // (2026-11-24) predvolene košík ostane zbalený (🧩 Funkcie → „+1“ … nechá košík zbalený), dá sa hneď ťukať ďalšie +1
+  if (!uiOn('plusOneStay')) cartOpen = true;
+  renderItems(); renderFavs(); renderCart();
   toast(`+1 ${mi.name} v košíku – odošli na bar`);
 }
 
-function renderCart() {
+// (2026-11-24) aj samotné prekreslenie košíka (zmena počtu) nechá jeho zoznam položiek tam, kde bol
+function renderCart() { const s = listScrollSave('#cart'); renderCartMain(); listScrollRestore('#cart', s); }
+// (2026-11-24) 🛒 zbalený košík: hore suma (ťuknutím sa rozbalí), pod ňou tlačidlá v poradí podľa Nastavení
+// (💶 Zaplatené · 📝 Zapísať · 📤 Na bar · ➕ k objednávke, ktorá je ešte na bare – tá sa ukáže, len keď taká je)
+function cartBarHtml(total, count) {
+  const bo = barOrderForTable(), toBar = addToBar && bo, addOn = bo && (uiOn('cartAdd') || toBar);
+  const b = (cls, id, fn, ico, txt, sub, st) => `<button class="btn ${cls} cbtn" id="${id}" onclick="${fn}"${st ? ` style="${st}"` : ''}><i>${ico}</i>${txt}${sub ? `<small>${sub}</small>` : ''}</button>`;
+  const btns = {
+    paid: uiOn('paidNowBtn') && !toBar ? b('ghost', 'paidNowBtn', 'sendPaidNow()', '💶', 'Zaplatené', '', 'border-color:var(--ok);color:var(--ok)') : '',
+    write: uiOn('cartWrite') ? b('ghost', 'writeBtn', 'writeOrder()', '📝', 'Zapísať', 'bez baru') : '',
+    bar: toBar ? '' : b('', 'sendBtn', 'sendOrder()', '📤', 'Na bar', addOn ? 'ako nová' : ''),
+    add: addOn ? b('ok', 'addBarBtn', 'addToBarOrder()', '➕', 'k #' + bo.no, 'na bare') : ''
+  };
+  const list = cartOrder().map(k => btns[k]).filter(Boolean);
+  return `<div class="cart-in">
+    <button class="btn ghost" style="display:flex;justify-content:space-between;align-items:center;gap:6px;padding:8px 14px;margin-bottom:6px" onclick="cartOpen=true;renderCart()">
+      <span>🛒 ${count} ks</span><span><b style="font-size:18px">${eur(total)}</b> ▲</span></button>
+    <div style="display:grid;grid-template-columns:repeat(${list.length},minmax(0,1fr));gap:6px">${list.join('')}</div></div>`;
+}
+function renderCartMain() {
   const el = $('#cart');
   if (!cart.length) { el.classList.add('hide'); cartOpen = false; return; }
   el.classList.remove('hide');
@@ -3222,6 +3307,7 @@ function renderCart() {
   const total = cart.reduce((a, c) => a + linePrice(c) * c.qty, 0);
   const count = cart.reduce((a, c) => a + c.qty, 0);
   if (!cartOpen) {
+    if (tableId !== PN_ID && uiOn('cartBtns')) { el.innerHTML = cartBarHtml(total, count); return; }
     // zbalený košík: vľavo rozbaliť, vpravo rovno odoslať (jedným ťuknutím, bez rozbaľovania)
     const bo = barOrderForTable(), toBar = addToBar && bo;
     el.innerHTML = `<div class="cart-in" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px">
@@ -3251,7 +3337,37 @@ function renderCart() {
       ${uiOn('later') && tableId !== PN_ID && !(addToBar && barOrderForTable()) ? `<button class="btn ghost" onclick="sendOrderLater()">⏰ Na bar neskôr (o určitej hodine)</button>` : ''}
       ${tableId === PN_ID ? '' : `<button class="btn ghost" id="writeBtn" onclick="writeOrder()">📝 Len zapísať do účtu (bez baru) · ${eur(total)}</button>`}
       ${paidNowBtnHtml(total)}
-    </div></div>`;
+    </div>
+    ${tableId === PN_ID ? '' : `<p style="text-align:center;margin:10px 0 0"><a href="#" onclick="openCartDevSettings();return false" style="font-size:13px">⚙ Tlačidlá v košíku na tomto zariadení</a></p>`}</div>`;
+}
+// ---------- (2026-11-24) ⚙ košík na tomto zariadení: zamestnanec si vie prepnúť tlačidlá a „+1“ a zmeniť ich poradie ----------
+// (platí len v tomto prehliadači; „Ako vedúci“ = podľa 🧩 Funkcie v Nastaveniach)
+const DEV_UI_LABELS = { cartBtns: '🛒 Tlačidlá pod sumou (zbalený košík)', paidNowBtn: '💶 Tlačidlo Zaplatené', cartWrite: '📝 Tlačidlo Zapísať', cartAdd: '➕ Tlačidlo „k #…“ (objednávka ešte na bare)', plusOneStay: '🧾 „+1“ v účte nechá košík zbalený' };
+function openCartDevSettings() { renderCartDevSettings(); $('#quickModal').classList.remove('hide'); }
+function renderCartDevSettings() {
+  const d = uiDev(), ord = cartOrder(), own = Array.isArray(store.get('cartOrderDev', null));
+  const row = k => {
+    const st = typeof d[k] === 'boolean' ? (d[k] ? 'on' : 'off') : 'mgr';
+    const b = (s, t) => `<button class="btn ${st === s ? '' : 'ghost'}" style="width:auto;padding:6px 10px;font-size:13px" onclick="setDevUi('${k}','${s}')">${t}</button>`;
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--line)"><div style="font-size:14px;margin-bottom:5px">${DEV_UI_LABELS[k]}</div>
+      <div class="row" style="gap:4px;flex-wrap:wrap">${b('mgr', `Ako vedúci (${uiOnAll(k) ? 'zapnuté' : 'vypnuté'})`)}${b('on', 'Zapnuté')}${b('off', 'Vypnuté')}</div></div>`;
+  };
+  const ordRows = ord.map((k, i) => `<div class="row" style="gap:6px;align-items:center;padding:5px 0;border-bottom:1px dashed var(--line)">
+      <span style="flex:1;font-size:14px">${i + 1}. ${CART_BTN_INFO[k][0]} ${CART_BTN_INFO[k][1]}</span>
+      <button class="btn ghost" style="width:auto;padding:4px 10px" ${i === 0 ? 'disabled' : ''} onclick="moveDevCartBtn('${k}',-1)">▲</button>
+      <button class="btn ghost" style="width:auto;padding:4px 10px" ${i === ord.length - 1 ? 'disabled' : ''} onclick="moveDevCartBtn('${k}',1)">▼</button></div>`).join('');
+  $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 4px">⚙ Košík na tomto zariadení</h3>
+    <p class="muted" style="font-size:13px;margin:0 0 4px">Platí len na tomto mobile / tablete. „Ako vedúci“ = podľa Nastavení vedúceho.</p>
+    ${DEV_UI_KEYS.map(row).join('')}
+    <div style="margin-top:12px"><b style="font-size:14px">Poradie tlačidiel pod sumou</b> <small class="muted">${own ? '(vlastné na tomto zariadení)' : '(ako nastavil vedúci)'}</small>
+      ${ordRows}
+      ${own ? `<button class="btn ghost" style="width:auto;padding:6px 12px;margin-top:8px" onclick="store.set('cartOrderDev',null);renderCartDevSettings();renderCart()">↺ Poradie ako vedúci</button>` : ''}</div>
+    <button class="btn" style="margin-top:14px" onclick="closeQuickModal()">Hotovo</button>`;
+}
+function setDevUi(k, s) { const d = uiDev(); if (s === 'mgr') delete d[k]; else d[k] = s === 'on'; store.set('uiDev', d); renderCartDevSettings(); renderCart(); }
+function moveDevCartBtn(k, dir) {
+  const a = cartOrder(), i = a.indexOf(k), j = i + dir; if (i < 0 || j < 0 || j >= a.length) return;
+  [a[i], a[j]] = [a[j], a[i]]; store.set('cartOrderDev', a); renderCartDevSettings(); renderCart();
 }
 
 // po odoslaní / zapísaní / pridaní k objednávke na bare -> späť na zoznam stolov (čašník ide hneď k ďalšiemu stolu).
@@ -4650,6 +4766,7 @@ function renderSettings() {
       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px">
         <input type="checkbox" style="width:auto" ${backAfterSend() ? 'checked' : ''} onchange="store.set('backAfterSend',this.checked);toast(this.checked?'Po odoslaní sa vráti na stoly':'Po odoslaní ostane na stole')">
         Po odoslaní na bar sa vrátiť na zoznam stolov</label>
+      <button class="btn ghost" style="width:auto;padding:6px 12px;margin-top:10px" onclick="openCartDevSettings()">⚙ Tlačidlá v košíku na tomto zariadení</button>
       <div class="row" style="gap:8px;align-items:center;margin-top:12px;font-size:14px">
         <span style="flex:1">🔠 Veľkosť písma na tomto zariadení</span>
         <button class="btn ghost" style="width:auto;padding:6px 14px" onclick="setUiZoom(-0.1)">A−</button>
@@ -4736,18 +4853,19 @@ function renderSettings() {
       <select class="cat" onchange="call('PUT','/api/menu/${m.id}',{category:this.value})">${cats.map(c2 => `<option value="${esc(c2)}" ${c2 === m.category ? 'selected' : ''}>${esc(c2)}</option>`).join('')}</select>
       <div style="display:flex;gap:4px"><button class="btn ghost" style="width:auto;padding:4px 8px" title="${m.fav ? 'Obľúbené – klikni pre zrušenie' : 'Označiť ako obľúbené'}" onclick="call('PUT','/api/menu/${m.id}',{fav:${!m.fav}})">${m.fav ? '⭐' : '☆'}</button>
       <button class="btn ghost" style="width:auto;padding:4px 8px" title="${m.customPrice ? 'Vlastná suma pri pridaní (napr. biliard) – klikni pre zrušenie' : 'Zapnúť vlastnú sumu pri pridaní (napr. biliard – zadáš presnú sumu namiesto pevnej ceny)'}" onclick="call('PUT','/api/menu/${m.id}',{customPrice:${!m.customPrice}})">${m.customPrice ? '✎€' : '€'}</button>
-      <button class="btn ghost" style="width:auto;padding:4px 8px" title="${m.opts ? 'Možnosti pri pridaní (napr. s ľadom/bez ľadu) – klikni pre úpravu' : 'Pridať možnosti pri pridaní (napr. sóda, ľad, príchuť)'}" onclick="toggleEditOpts('${m.id}')">${m.opts ? '⚙️' : '⚙'}</button>
+      <button class="btn ghost" style="width:auto;padding:4px 8px" title="${itemQs(m).length ? 'Možnosti pri pridaní (napr. s ľadom/bez ľadu) – klikni pre úpravu' : 'Pridať možnosti pri pridaní (napr. sóda, ľad, príchuť)'}" onclick="toggleEditOpts('${m.id}')">${itemQs(m).length ? '⚙️' : '⚙'}</button>
       <button class="btn ghost" style="width:auto;padding:4px 8px" title="Posunúť vyššie" ${mi === 0 ? 'disabled' : ''} onclick="moveMenuItem('${m.id}',-1)">▲</button>
       <button class="btn ghost" style="width:auto;padding:4px 8px" title="Posunúť nižšie" ${mi === arr.length - 1 ? 'disabled' : ''} onclick="moveMenuItem('${m.id}',1)">▼</button>
       <button class="del" onclick="delItem('${m.id}')">✕</button></div></div>
       ${editingOptsFor === m.id ? `<div class="card" style="margin:4px 0 10px">
-        <label class="muted" style="font-size:13px">Možnosti pri pridaní „${esc(m.name)}“ – jedna skupina na riadok, formát „Názov: možnosť1, možnosť2“</label>
-        <textarea id="optsRaw-${m.id}" rows="4" style="margin-top:6px;width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink)" placeholder="Sóda: So sódou, Bez sódy&#10;Ľad: S ľadom, Bez ľadu&#10;Príchuť: Vanilka, Malina, Čokoláda">${esc(m.opts || '')}</textarea>
-        <div class="row" style="gap:6px;margin-top:8px">
-          <button class="btn" style="width:auto;padding:8px 14px" onclick="saveOpts('${m.id}')">Uložiť</button>
-          ${m.opts ? `<button class="btn ghost" style="width:auto;padding:8px 14px" onclick="call('PUT','/api/menu/${m.id}',{opts:''});editingOptsFor=null;render()">Vymazať možnosti</button>` : ''}
-          <button class="btn ghost" style="width:auto;padding:8px 14px" onclick="editingOptsFor=null;render()">Zavrieť</button>
-        </div>
+        <b style="font-size:15px">Možnosti pri pridaní „${esc(m.name)}“</b>
+        ${optSets().length ? `<div class="muted" style="font-size:13px;margin-top:8px">🧩 Spoločné možnosti – ťukni = pridať / odobrať:</div>
+        <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">${optSets().map(s => { const on = itemSetIds(m).includes(s.id);
+          return `<button class="btn ${on ? '' : 'ghost'}" style="width:auto;padding:7px 12px" onclick="setItemOptSet('${m.id}','${s.id}',${!on})">${on ? '✓ ' : ''}${esc(s.n)}</button>`; }).join('')}</div>`
+          : '<p class="muted" style="font-size:13px;margin:8px 0 0">Spoločné možnosti pre viac položiek naraz (napr. všetky kávy) vytvoríš hore v „🧩 Spoločné možnosti“.</p>'}
+        <div class="muted" style="font-size:13px;margin-top:12px">Len pre túto položku (napr. čokoláda: Mliečna, Biela):</div>
+        ${optEditorHtml('m:' + m.id)}
+        <button class="btn ghost" style="width:auto;padding:8px 14px;margin-top:10px" onclick="editingOptsFor=null;render()">Zavrieť</button>
       </div>` : ''}`).join('') || '<p class="muted" style="font-size:13px">Zatiaľ žiadne položky.</p>') + `
       <div class="set-row" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line);grid-template-columns:1fr 90px auto">
         <input id="nN-${ci}" placeholder="Nová položka v ${esc(c)}" onkeydown="if(event.key==='Enter'){event.preventDefault();$('#nP-${ci}').focus()}">
@@ -4826,8 +4944,31 @@ function renderSettings() {
       ${S.tables.length > 1 ? '<p class="muted" style="font-size:12px;margin:6px 0 0">Ťukni na skupinu – rozbalí sa a uvidíš jej stoly. Podrž ⠿ a potiahni – zmení sa poradie stolov. Do inej skupiny stôl presunieš tak, že ho pustíš na jej stôl alebo na jej nadpis (ide to aj pri zbalenej skupine), prípadne výberom skupiny v riadku.</p>' : ''}
       <p class="muted" style="font-size:12px;margin-top:6px">🙈 Skrytú skupinu v Objednávkach nevidí čašník ani vedúci, ostáva len tu v Nastaveniach. Stôl zo skrytej skupiny, na ktorom je otvorený účet, sa ukáže aj tak – nech sa nestratí nezaplatený účet. Nový stôl v skupine prevezme farbu skupiny.</p></div>`;
 
+  // (2026-11-24) 🧩 spoločné možnosti: vytvoria sa raz (napr. Kávy – Mlieko), priradia sa k viacerým položkám naraz
+  const optSetsCard = `<h2>🧩 Spoločné možnosti</h2><div class="card">
+      <p class="muted" style="font-size:13px;margin:0 0 8px">Napr. „Kávy“ s otázkou Mlieko (S mliekom, Bez mlieka) – vytvoríš raz a priradíš ku všetkým kávam. Keď tu niečo zmeníš, zmení sa to pri všetkých naraz. Čašník pri pridaní len ťukne, čo chce (vybrať nemusí nič).</p>
+      ${optSets().map(s => { const used = S.menu.filter(m => itemSetIds(m).includes(s.id)), nq = parseOpts(s.o).length;
+        return `<details ${openOptSets.has(s.id) ? 'open' : ''} ontoggle="toggleOptSetOpen('${s.id}',this.open)" style="border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px">
+        <summary style="cursor:pointer;font-weight:700">${esc(s.n)} <span class="muted" style="font-weight:400">· ${nq} ${nq === 1 ? 'otázka' : nq >= 2 && nq <= 4 ? 'otázky' : 'otázok'} · pri ${used.length} ${used.length === 1 ? 'položke' : 'položkách'}</span></summary>
+        <div class="row" style="gap:6px;align-items:center;margin-top:10px"><span class="muted" style="font-size:12px;white-space:nowrap">Názov:</span>
+          <input value="${esc(s.n)}" maxlength="40" onkeydown="if(event.key==='Enter')this.blur()" onchange="renameOptSet('${s.id}',this.value)"></div>
+        ${optEditorHtml('s:' + s.id)}
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
+          <div style="font-size:14px"><b>Pri položkách:</b> ${used.length ? used.map(m => esc(m.name)).join(', ') : '<span class="muted">zatiaľ pri žiadnej</span>'}</div>
+          <button class="btn ${optAssignFor === s.id ? '' : 'ghost'}" style="width:auto;padding:8px 14px;margin-top:8px" onclick="optAssignFor=optAssignFor==='${s.id}'?null:'${s.id}';render()">${optAssignFor === s.id ? '✓ Hotovo' : '➕ Priradiť k položkám'}</button>
+          ${optAssignFor === s.id ? cats.map(c => { const items = S.menu.filter(m => m.category === c && (m.name || '').trim()); if (!items.length) return '';
+            const nOn = items.filter(m => itemSetIds(m).includes(s.id)).length;
+            return `<div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:14px">
+              <input type="checkbox" style="width:auto" ${nOn === items.length ? 'checked' : ''} onchange="setCatOptSet('${grpArg(c)}','${s.id}',this.checked)">${esc(c)} <span class="muted" style="font-weight:400">(celá kategória${nOn && nOn < items.length ? ` · ${nOn} z ${items.length}` : ''})</span></label>
+              <div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin:4px 0 0 24px">${items.map(m => `<label style="display:flex;align-items:center;gap:5px;font-size:14px">
+                <input type="checkbox" style="width:auto" ${itemSetIds(m).includes(s.id) ? 'checked' : ''} onchange="setItemOptSet('${m.id}','${s.id}',this.checked)">${esc(m.name)}</label>`).join('')}</div></div>`; }).join('') : ''}
+        </div>
+        <button class="del" style="width:auto;padding:6px 12px;margin-top:12px" onclick="delOptSet('${s.id}')">🗑 Zmazať „${esc(s.n)}“</button>
+      </details>`; }).join('')}
+      <div class="row" style="gap:6px;margin-top:6px"><input id="newOptSet" maxlength="40" placeholder="Nové spoločné možnosti, napr. Kávy (Enter)" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addOptSet(this)}">
+        <button class="btn" style="width:auto" onclick="addOptSet($('#newOptSet'))">+ Vytvoriť</button></div></div>`;
   // (2026-10-31) karta „🧊 Ľad a poháre podľa kategórie“ z Nastavení odstránená na želanie majiteľa (nič nebolo zaškrtnuté)
-  const menuTab = `<h2>Kategórie</h2><div class="card">
+  const menuTab = optSetsCard + `<h2>Kategórie</h2><div class="card">
       ${cats.map(c => `<div class="set-row t"><input value="${esc(c)}" disabled style="opacity:.75">
         <button class="del" onclick="delCategory('${c.replace(/'/g, "\\'")}')">Zmazať</button></div>`).join('') || '<p class="muted">Zatiaľ žiadne kategórie.</p>'}
       <div class="set-row t" style="margin-top:10px"><input id="newC" placeholder="Názov novej kategórie, napr. Panáky">
@@ -4924,8 +5065,23 @@ function renderSettings() {
 
   const funkcieTab = `<h2>🧩 Funkcie (zapnúť / vypnúť)</h2><div class="card">
       <p class="muted" style="font-size:13px;margin:0 0 10px">Čo nepoužívate, vypnite – zmizne zo všetkých zariadení. Údaje sa nestratia, po zapnutí sa vráti.</p>
-      ${UI_FEATURES.map(([k, label]) => `<label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px;cursor:pointer">
-        <input type="checkbox" style="width:22px;height:22px;flex:none" ${uiOn(k) ? 'checked' : ''} onchange="setUiFeature('${k}',this.checked)"><span>${label}</span></label>`).join('')}</div>`;
+      ${UI_FEATURES.map(([k, label]) => { const dv = DEV_UI_KEYS.includes(k) ? uiDev()[k] : undefined;
+        return `<label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px;cursor:pointer">
+        <input type="checkbox" style="width:22px;height:22px;flex:none" ${uiOnAll(k) ? 'checked' : ''} onchange="setUiFeature('${k}',this.checked)"><span>${label}${typeof dv === 'boolean' ? ` <small style="color:var(--warn)">(na tomto zariadení ${dv ? 'zapnuté' : 'vypnuté'} – ⚙ v košíku)</small>` : ''}</span></label>`; }).join('')}
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Tlačidlá v košíku a „+1“ si zamestnanec vie zmeniť aj sám, len na svojom zariadení: v rozbalenom košíku dole „⚙ Tlačidlá v košíku na tomto zariadení“.</p></div>
+    <h2>🛒 Poradie tlačidiel pod sumou v košíku</h2><div class="card">
+      <p class="muted" style="font-size:13px;margin:0 0 6px">Platí pre všetky zariadenia (kto si na svojom nastavil vlastné poradie, má svoje). Vypnuté tlačidlá (🧩 vyššie) sa nezobrazia.</p>
+      ${cartOrderAll().map((k, i, arr) => { const inf = CART_BTN_INFO[k], off = inf[2] && !uiOnAll(inf[2]);
+        return `<div class="row" style="gap:6px;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line);${off ? 'opacity:.45' : ''}">
+        <span style="flex:1;font-size:14px">${i + 1}. ${inf[0]} ${inf[1]}${off ? ' <small class="muted">(vypnuté)</small>' : ''}${k === 'add' ? ' <small class="muted">(len keď je objednávka ešte na bare)</small>' : ''}</span>
+        <button class="btn ghost" style="width:auto;padding:4px 10px" ${i === 0 ? 'disabled' : ''} onclick="moveCartBtn('${k}',-1)">▲</button>
+        <button class="btn ghost" style="width:auto;padding:4px 10px" ${i === arr.length - 1 ? 'disabled' : ''} onclick="moveCartBtn('${k}',1)">▼</button></div>`; }).join('')}
+      <div style="margin-top:10px"><div class="muted" style="font-size:12px;margin-bottom:4px">Náhľad (keď je na bare objednávka #12):</div>
+        <div style="border:1px solid var(--line);border-radius:12px;padding:8px;max-width:420px">
+          <div class="row" style="justify-content:space-between;padding:6px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;font-size:14px"><span>🛒 3 ks</span><span><b>9,00 €</b> ▲</span></div>
+          ${(() => { const l = cartOrderAll().filter(k => { const f = CART_BTN_INFO[k][2]; return !f || uiOnAll(f); });
+            return `<div style="display:grid;grid-template-columns:repeat(${l.length},minmax(0,1fr));gap:6px">${l.map(k => `<div class="btn ${k === 'bar' ? '' : k === 'add' ? 'ok' : 'ghost'} cbtn" style="pointer-events:none;${k === 'paid' ? 'border-color:var(--ok);color:var(--ok)' : ''}"><i>${CART_BTN_INFO[k][0]}</i>${k === 'add' ? 'k #12' : CART_BTN_INFO[k][1]}</div>`).join('')}</div>`; })()}
+        </div>${uiOnAll('cartBtns') ? '' : '<p style="color:var(--warn);font-size:13px;margin:6px 0 0">⚠ „🛒 Tlačidlá pod sumou“ sú vyššie vypnuté – v košíku je zatiaľ len „Na bar“.</p>'}</div></div>`;
   const TAB_HTML = { stoly: stolyTab, menu: menuTab, obrazovka: obrazovkaTab, atrakcie: atrakcieTab, zamestnanci: zamestnanciTab, funkcie: funkcieTab, zariadenie: zariadenieTab };
   $('#app').innerHTML = device + nav + TAB_HTML[settingsTab];
 }
@@ -4966,6 +5122,97 @@ let openNoPctCats = new Set();   // rozbalené kategórie v "Bez % z tržby" (Na
 function toggleNoPctCatOpen(enc, open) { const c = decodeURIComponent(enc); if (open) openNoPctCats.add(c); else openNoPctCats.delete(c); }
 let openMenuCats = new Set();   // rozbalené kategórie v Nastaveniach -> Menu (prežije prekreslenie)
 function toggleMenuCatOpen(enc, open) { const c = decodeURIComponent(enc); if (open) openMenuCats.add(c); else openMenuCats.delete(c); }
+// ---------- (2026-11-24) 🧩 editor možností: otázky (napr. Mlieko) a ich možnosti ťukaním, bez písania „Názov: a, b“ ----------
+// ctx = 'm:<id položky>' (možnosti len pre položku, menu.opts) alebo 's:<id sady>' (spoločné možnosti, access.optSets[].o)
+let openOptSets = new Set(), optAssignFor = null;   // rozbalené spoločné možnosti / pri ktorých je otvorené „Priradiť k položkám“
+function toggleOptSetOpen(id, open) { if (open) openOptSets.add(id); else openOptSets.delete(id); }
+const optDomId = ctx => ctx.replace(/[^a-zA-Z0-9_-]/g, '_');
+function optRaw(ctx) {
+  const id = ctx.slice(2);
+  if (ctx[0] === 'm') { const m = S.menu.find(x => x.id === id); return m ? m.opts || '' : ''; }
+  const s = optSets().find(x => x.id === id); return s ? s.o || '' : '';
+}
+function optEditorHtml(ctx) {
+  const qs = parseOptsEdit(optRaw(ctx)), d = optDomId(ctx);
+  return qs.map((q, qi) => `<div style="border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-top:8px">
+      <div class="row" style="gap:6px;align-items:center">
+        <input value="${esc(q.name)}" maxlength="30" placeholder="Otázka, napr. Mlieko" style="flex:1;font-weight:700" onkeydown="if(event.key==='Enter')this.blur()" onchange="optRenameQ('${ctx}',${qi},this.value)">
+        <button class="del" style="width:auto;padding:6px 10px" title="Zmazať celú otázku" onclick="optDelQ('${ctx}',${qi})">✕</button></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;margin:6px 0"><input type="checkbox" style="width:auto" ${q.multi ? 'checked' : ''} onchange="optMultiQ('${ctx}',${qi},this.checked)">dá sa vybrať viac naraz (napr. šľahačka aj jahody)</label>
+      <div class="row" style="flex-wrap:wrap;gap:6px">${q.choices.map((c, ci) => `<span style="display:inline-flex;align-items:center;gap:2px;padding:4px 4px 4px 11px;border-radius:99px;border:1px solid var(--line);background:var(--bg);font-size:14px">${esc(c)}<button title="Odobrať" onclick="optDelChoice('${ctx}',${qi},${ci})" style="border:none;background:none;color:var(--warn);font-size:15px;cursor:pointer;padding:0 6px">✕</button></span>`).join('') || '<span class="muted" style="font-size:13px">zatiaľ žiadne možnosti – napíš ich nižšie</span>'}</div>
+      <div class="row" style="gap:6px;margin-top:6px"><input id="optNew-${d}-${qi}" maxlength="40" placeholder="Nová možnosť" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();optAddChoice('${ctx}',${qi},this)}">
+        <button class="btn" style="width:auto;padding:8px 14px" onclick="optAddChoice('${ctx}',${qi},$('#optNew-${d}-${qi}'))">+</button></div>
+    </div>`).join('') + `<div class="row" style="gap:6px;margin-top:8px"><input id="optNewQ-${d}" maxlength="30" placeholder="${qs.length ? 'Ďalšia otázka, napr. Cukor' : 'Otázka, napr. Mlieko alebo Aká'} (Enter)" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();optAddQ('${ctx}',this)}">
+      <button class="btn ghost" style="width:auto;padding:8px 12px" onclick="optAddQ('${ctx}',$('#optNewQ-${d}'))">+ Otázka</button></div>`;
+}
+// zmena → uloží sa hneď (položka: menu.opts, sada: access.optSets) → prekreslí sa a kurzor ostane v políčku na ďalšie písanie
+async function optEdit(ctx, fn, focusId) {
+  const qs = parseOptsEdit(optRaw(ctx));
+  if (fn(qs) === false) return;
+  const raw = serializeOpts(qs), id = ctx.slice(2);
+  if (raw.length > (ctx[0] === 'm' ? 500 : 1000)) return toast('Príliš veľa možností naraz – rozdeľ ich, prosím');
+  try {
+    if (ctx[0] === 'm') { await call('PUT', '/api/menu/' + id, { opts: raw }); const m = S.menu.find(x => x.id === id); if (m) m.opts = raw; }
+    else optSetsLocal(await putOptSets(optSets().map(s => s.id === id ? { ...s, o: raw } : s)));
+  } catch (e) { return; }
+  render();   // (S je už aktualizované hneď – nové políčko existuje a kurzor sa doň vráti)
+  const el = focusId && document.getElementById(focusId); if (el) el.focus();
+}
+function optAddChoice(ctx, qi, el) {
+  const v = optChClean(el && el.value); if (!v) return;
+  optEdit(ctx, qs => { if (!qs[qi]) return false; if (qs[qi].choices.some(c => c.toLowerCase() === v.toLowerCase())) { toast('Táto možnosť tam už je'); return false; } qs[qi].choices.push(v); }, `optNew-${optDomId(ctx)}-${qi}`);
+}
+function optDelChoice(ctx, qi, ci) { optEdit(ctx, qs => { if (!qs[qi]) return false; qs[qi].choices.splice(ci, 1); }); }
+function optAddQ(ctx, el) {
+  const v = optQClean(el && el.value); if (!v) return;
+  const qi = parseOptsEdit(optRaw(ctx)).length;
+  optEdit(ctx, qs => { qs.push({ name: v, multi: false, choices: [] }); }, `optNew-${optDomId(ctx)}-${qi}`);
+}
+function optRenameQ(ctx, qi, v) { v = optQClean(v); if (!v) return render(); optEdit(ctx, qs => { if (!qs[qi]) return false; qs[qi].name = v; }); }
+function optMultiQ(ctx, qi, on) { optEdit(ctx, qs => { if (!qs[qi]) return false; qs[qi].multi = !!on; }); }
+function optDelQ(ctx, qi) {
+  const q = parseOptsEdit(optRaw(ctx))[qi]; if (!q) return;
+  if (q.choices.length && !confirm(`Zmazať otázku „${q.name}“ aj s možnosťami (${q.choices.join(', ')})?`)) return;
+  optEdit(ctx, qs => { qs.splice(qi, 1); });
+}
+async function addOptSet(el) {
+  const n = String((el && el.value) || '').trim().slice(0, 40); if (!n) return;
+  if (optSets().some(s => s.n.toLowerCase() === n.toLowerCase())) return toast('Spoločné možnosti s týmto názvom už sú');
+  const id = 's' + Date.now().toString(36);
+  try { optSetsLocal(await putOptSets([...optSets(), { id, n, o: '' }])); } catch (e) { return; }
+  openOptSets.add(id); render();
+  const q = document.getElementById('optNewQ-' + optDomId('s:' + id)); if (q) q.focus();   // rovno napísať prvú otázku
+}
+async function renameOptSet(id, v) {
+  const n = String(v || '').trim().slice(0, 40);
+  if (n) try { optSetsLocal(await putOptSets(optSets().map(s => s.id === id ? { ...s, n } : s))); } catch (e) {}
+  render();
+}
+// uloží spoločné možnosti a hneď ich prepíše aj v S (nečaká sa na živú zmenu z Firebase – inak by sa prekreslilo staré)
+async function putOptSets(list) { await call('PUT', '/api/access', { optSets: list }); return list; }
+function optSetsLocal(list) { S.access = { ...(S.access || {}), optSets: list }; }
+async function delOptSet(id) {
+  const s = optSets().find(x => x.id === id); if (!s) return;
+  const used = S.menu.filter(m => itemSetIds(m).includes(id));
+  if (!confirm(`Zmazať spoločné možnosti „${s.n}“?${used.length ? `\nZmiznú aj z ${used.length} ${used.length === 1 ? 'položky' : 'položiek'} (${used.map(m => m.name).join(', ')}).` : ''}`)) return;
+  try {
+    for (const m of used) { const ids = itemSetIds(m).filter(x => x !== id).join(','); await call('PUT', '/api/menu/' + m.id, { sets: ids }); m.sets = ids; }
+    optSetsLocal(await putOptSets(optSets().filter(x => x.id !== id)));
+  } catch (e) {}
+  if (optAssignFor === id) optAssignFor = null;
+  render();
+}
+async function setItemOptSet(mid, sid, on, noRender) {
+  const m = S.menu.find(x => x.id === mid); if (!m) return;
+  const ids = itemSetIds(m).filter(x => x !== sid); if (on) ids.push(sid);
+  if (ids.join(',') !== itemSetIds(m).join(',')) try { await call('PUT', '/api/menu/' + mid, { sets: ids.join(',') }); m.sets = ids.join(','); } catch (e) {}
+  if (!noRender) render();
+}
+async function setCatOptSet(enc, sid, on) {
+  const c = decodeURIComponent(enc);
+  for (const m of S.menu.filter(x => x.category === c && (x.name || '').trim())) await setItemOptSet(m.id, sid, on, true);
+  render();
+}
 async function addItemToCat(enc, idx) {
   const category = decodeURIComponent(enc), nEl = $('#nN-' + idx), pEl = $('#nP-' + idx);
   const name = nEl ? nEl.value.trim() : '', price = pEl ? pEl.value.replace(',', '.') : '';
