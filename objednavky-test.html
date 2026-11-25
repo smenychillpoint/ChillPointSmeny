@@ -154,7 +154,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-25</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-25b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -232,6 +232,10 @@ const $ = s => document.querySelector(s);
 // (2026-11-24) 🧪 testovacia verzia = ten istý súbor nahratý ako objednavky-test.html (rovnaké údaje, len iný kód)
 const IS_TEST = /objednavky-test\.html$/i.test(location.pathname);
 if (IS_TEST) { const tb = document.getElementById('testBar'); if (tb) tb.classList.remove('hide'); }
+// (2026-11-25) odkaz na testovaciu verziu (tu aj dlaždica na úvode) len keď si ju vedúci zapne – localStorage cp_testOn
+// (spoločný s index.html, rovnaká adresa); po uvoľnení noviniek zamestnancom sa vypne a test sa schová
+const testOn = () => { try { return localStorage.getItem('cp_testOn') === '1'; } catch (e) { return false; } };
+function setTestOn(on) { try { localStorage.setItem('cp_testOn', on ? '1' : '0'); } catch (e) {} toast(on ? '🧪 Testovacia verzia zapnutá – odkaz je tu aj na úvode' : 'Testovacia verzia schovaná'); render(); }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const eur = n => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',') + ' €';
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } },
@@ -4975,7 +4979,10 @@ function renderSettings() {
         <b style="min-width:52px;text-align:center">${Math.round(uiZoom * 100)} %</b>
         <button class="btn ghost" style="width:auto;padding:6px 14px;font-size:18px" onclick="setUiZoom(0.1)">A+</button>
       </div>
-      ${isManager ? `<a class="btn ghost" style="display:block;text-align:center;text-decoration:none;margin-top:12px" href="${IS_TEST ? 'objednavky.html' : 'objednavky-test.html'}">${IS_TEST ? '↩ Späť na ostrú verziu (ako majú zamestnanci)' : '🧪 Testovacia verzia – novinky najprv len pre mňa'}</a>` : ''}
+      ${isManager ? (IS_TEST
+        ? `<a class="btn ghost" style="display:block;text-align:center;text-decoration:none;margin-top:12px" href="objednavky.html">↩ Späť na ostrú verziu (ako majú zamestnanci)</a>`
+        : `<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px"><input type="checkbox" style="width:auto" ${testOn() ? 'checked' : ''} onchange="setTestOn(this.checked)">🧪 Testovacia verzia (novinky najprv len pre mňa) – ukázať tu a na úvode</label>
+          ${testOn() ? `<a class="btn ghost" style="display:block;text-align:center;text-decoration:none;margin-top:8px" href="objednavky-test.html">🧪 Otvoriť testovaciu verziu</a>` : ''}`) : ''}
       <p class="muted" style="font-size:13px;margin-top:10px">Prihlásený ako: ${esc(auth.currentUser?.email || '')}${isManager ? ' (vedúci)' : ''}</p>
       <button class="btn ghost" style="margin-top:10px" onclick="logout()">Odhlásiť</button></div>`;
   // (2026-11-24) zamestnanec: zjednodušené Nastavenia – len toto zariadenie (menu, stoly, funkcie… mení vedúci)

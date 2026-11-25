@@ -67,6 +67,15 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .line .n{flex:1}.line .n small{display:block;color:var(--muted)}
 .qb{width:34px;height:34px;background:var(--bg);font-weight:700;font-size:18px}
 .line .qcol{display:flex;flex-direction:column;align-items:center;gap:1px;min-width:26px}
+.line .qrow{display:flex;align-items:center;gap:6px;flex:none}
+details.secx{margin:0 0 10px}
+details.secx>summary{list-style:none;cursor:pointer;border:1px solid var(--line);border-radius:var(--r);background:var(--card);padding:0 14px}
+details.secx>summary::-webkit-details-marker{display:none}
+details.secx>summary h2{margin:14px 0;display:flex;align-items:center;gap:8px;color:var(--ink)}
+details.secx>summary h2::after{content:'▸';margin-left:auto;font-size:18px;color:var(--muted)}
+details.secx[open]>summary h2::after{content:'▾'}
+details.secx[open]>summary{border-bottom-left-radius:0;border-bottom-right-radius:0;border-bottom:none}
+details.secx[open]>.card{border-top-left-radius:0;border-top-right-radius:0}
 .line .qcol b{font-size:16px;line-height:1.2}
 .qmin{width:22px;height:18px;border:none;background:transparent;color:var(--muted);font-size:16px;line-height:1;font-weight:900;padding:0;display:grid;place-items:center;cursor:pointer}
 .btn{background:var(--accent);color:#fff;padding:13px 16px;font-weight:700;width:100%}
@@ -121,6 +130,8 @@ body:has(.login:not(.hide)){overflow:hidden}
 <header>
   <!-- (2026-11-05) ⏰ hodiny zariadenia sa líšia od servera o viac ako 5 min (text dopĺňa showClockBar) -->
   <div id="clockBar" class="hide" style="margin:0 -12px;padding:8px 12px;background:#c62828;color:#fff;font-weight:800;font-size:14px;text-align:center"></div>
+  <!-- (2026-11-24) 🧩 testovacia verzia (objednavky-test.html): novinky si vedúci vyskúša sám, zamestnanci majú ostrú objednavky.html -->
+  <div id="testBar" class="hide" style="margin:0 -12px;padding:5px 12px;background:#6e56cf;color:#fff;font-weight:800;font-size:13px;text-align:center">🧪 TESTOVACIA VERZIA – zamestnanci ju nevidia (údaje sú ale ostré) · <a href="objednavky.html" style="color:#fff">ostrá ›</a></div>
   <div class="bar">
     <button id="backBtn" class="back hide">‹ Stoly</button>
     <h1 id="title">Objednávky</h1>
@@ -143,7 +154,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-25b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -170,7 +181,7 @@ body:has(.login:not(.hide)){overflow:hidden}
   <div class="card">
     <h2 style="margin-top:0" id="itemOptionsTitle"></h2>
     <div id="itemOptionsBody"></div>
-    <button class="btn" style="margin-top:14px" onclick="confirmItemOptions()">Pridať do košíka</button>
+    <button class="btn" id="itemOptionsOk" style="margin-top:14px" onclick="confirmItemOptions()">Pridať do košíka</button>
     <p style="text-align:center;margin-top:10px"><a href="#" onclick="closeItemOptions();return false" style="font-size:13px">Zrušiť</a></p>
   </div>
 </div>
@@ -218,6 +229,13 @@ window.FIREBASE_CONFIG = {
 </script>
 <script>
 const $ = s => document.querySelector(s);
+// (2026-11-24) 🧪 testovacia verzia = ten istý súbor nahratý ako objednavky-test.html (rovnaké údaje, len iný kód)
+const IS_TEST = /objednavky-test\.html$/i.test(location.pathname);
+if (IS_TEST) { const tb = document.getElementById('testBar'); if (tb) tb.classList.remove('hide'); }
+// (2026-11-25) odkaz na testovaciu verziu (tu aj dlaždica na úvode) len keď si ju vedúci zapne – localStorage cp_testOn
+// (spoločný s index.html, rovnaká adresa); po uvoľnení noviniek zamestnancom sa vypne a test sa schová
+const testOn = () => { try { return localStorage.getItem('cp_testOn') === '1'; } catch (e) { return false; } };
+function setTestOn(on) { try { localStorage.setItem('cp_testOn', on ? '1' : '0'); } catch (e) {} toast(on ? '🧪 Testovacia verzia zapnutá – odkaz je tu aj na úvode' : 'Testovacia verzia schovaná'); render(); }
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const eur = n => (Math.round(n * 100) / 100).toFixed(2).replace('.', ',') + ' €';
 const store = { get(k, d) { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } },
@@ -613,6 +631,18 @@ async function callInner(m, [col, id, action], body) {
     if (m === 'DELETE') { if (!isManager) fail('Stoly smie mazať len vedúci');
       if (tableOrders(id).length) fail('Stôl má nezaplatené objednávky'); return db.ref('tables/' + id).remove(); }
     // Rozdelenie platby: zaplatí sa len zadaný počet kusov z každej položky, zvyšok ostane na stole otvorený.
+    // (2026-11-24) 🗑 zmazať celý účet stola – len vedúci. Všetky nezaplatené objednávky stola (aj tie na bare) jedným zápisom,
+    // každá ide do 🗑 Zmazané v Uzávierke (logDeleted). Zaplatené lístky na bare a bežiace hry sa nemenia.
+    if (m === 'POST' && action === 'clearAccount') {
+      if (!isManager) fail('Celý účet smie zmazať len vedúci');
+      const os = tableOrders(id); if (!os.length) fail('Na stole nie je žiadny účet');
+      const u = {}; os.forEach(o => { u[o.id] = null; });
+      await db.ref('orders').update(u);
+      os.forEach(o => logDeleted(o));
+      if (guestOf(id)) clearGuest(id);
+      if (isStaffTable(id)) db.ref('meta/staffTables/' + id).remove().catch(() => {});
+      return { n: os.length };
+    }
     if (m === 'POST' && action === 'paySome') {
       const need = {};
       (body.items || []).forEach(i => { const k = i.name + '|' + i.price; need[k] = (need[k] || 0) + Math.max(0, i.qty | 0); });
@@ -1705,12 +1735,12 @@ function renderMain() {
     }
   }
   const canUzavierka = isManager || !!(S.access && S.access.uzavierkaPin);
-  $('#tabNastavenia').classList.toggle('hide', !isManager);
+  // (2026-11-24) Nastavenia vidí aj zamestnanec – len „Toto zariadenie“ (meno, písmo, tlačidlá v košíku…), zvyšok len vedúci
+  $('#tabNastavenia').classList.remove('hide');
   if ($('#resLinkBox')) $('#resLinkBox').classList.toggle('hide', !isManager);
   $('#tabUzavierka').classList.toggle('hide', !canUzavierka);
   const boardMissing = S.board.filter(b => b.type !== 'buy' && !b.done).length;
   if ($('#boardTopBtn')) $('#boardTopBtn').innerHTML = '📦' + (boardMissing ? `<span style="display:inline-grid;place-items:center;min-width:16px;height:16px;padding:0 4px;margin-left:4px;border-radius:99px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;vertical-align:middle">${boardMissing}</span>` : '');
-  if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
   if (role === 'uzavierka' && !canUzavierka) { role = 'casnik'; store.set('role', role); }
   document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.role === role));
   $('#barDot').classList.toggle('hide', !open().some(o => o.status === 'nova' && orderDueNow(o) && !tkOld(o)));
@@ -1809,6 +1839,34 @@ const UI_FEATURES = [
   ['cartAdd', '➕ Tlačidlo „k #…“ pod sumou – pridať k objednávke, ktorá je ešte na bare'],
   ['plusOneStay', '🧾 „+1“ v účte stola nechá košík zbalený (neotvorí ho)']
 ];
+// (2026-11-24) ⓘ pri funkcii v Nastaveniach → 🧩 Funkcie: čo funkcia robí a čo sa stane, keď ju vypneš
+const UI_FEATURE_INFO = {
+  tableGames: 'Na dlaždici stola (zoznam Stolov) vidno, ktorá atrakcia na tom stole práve beží (biliard, PlayStation…) a ako dlho.\n\nVypnuté: dlaždica ukazuje len účet stola.',
+  tableRes: 'Ak má stôl na dnes rezerváciu, na dlaždici stola sa ukáže 📌. Hodinu pred príchodom zoranžovie, nech stôl nikto neobsadí.\n\nVypnuté: rezervácie na dlaždiciach nevidno (v Rezerváciách ostanú).',
+  onlyBusy: 'Na Stoloch tlačidlo „🔴 Len obsadené“ – skryje voľné stoly a ukáže len tie, kde je otvorený účet. Hodí sa, keď je stolov veľa.',
+  tempTable: 'Na Stoloch tlačidlo „➕ Dočasný stôl“ – čašník si pridá stôl navyše (napr. hostia pri bare alebo na terase). Po zaplatení sám zmizne.\n\nV Nastaveniach → Stoly nastavíš, či sú dočasné stoly hore alebo dole.',
+  nextAttr: 'Pri obsadenej atrakcii (napr. biliard) sa ukáže, kto je ďalší na rade z čakacieho zoznamu / rezervácií – nech vieš, komu ju dať, keď sa uvoľní.',
+  barSummary: 'Na Bare hore súhrn všetkých čakajúcich objednávok spolu, napr. „6× Pivo · 3× Kofola“ – barman natočí všetko naraz. Ukáže sa, keď čakajú aspoň 2 objednávky.',
+  soldOut: 'Pri objednávaní podržíš prst na položke → „🚫 Dnes vypredané“. Položka zošedne a keď ju niekto pridá, appka sa spýta, či naozaj. Ráno (nový pracovný deň) je znova dostupná.',
+  later: 'V rozbalenom košíku tlačidlo „⏰ Na bar neskôr“ – objednávka sa na Bare ukáže až o hodine, ktorú zadáš (napr. jedlo alebo torta na 19:30).',
+  barCheck: 'Na Bare je pri každej položke štvorček ☑ – barman odškrtá, čo už pripravil. Keď je odškrtnuté všetko, objednávka sa sama presunie do „🚶 Odniesť“.',
+  offlineBar: 'Keď vypadne internet, hore sa ukáže veľký červený pás „Bez internetu“, nech každý hneď vie, že sa objednávky práve neposielajú.',
+  laserSplit: 'Pri laser game stačí zadať, koľko hráčov a koľko hier. Na dospelých / študentov / deti sa to rozdelí až pri platení (cena sa vtedy prepočíta).\n\nVypnuté: treba hneď pridať správne položky (dospelý, študent, dieťa).',
+  paidNow: 'Na Stoloch hore veľká dlaždica „💶 Zaplatené hneď“ – pre zákazníka, ktorý zaplatí hneď pri bare, bez stola. Objednávka ide na bar označená ako ZAPLATENÁ.',
+  paidNowBtn: 'V košíku pri stole tlačidlo „💶 Zaplatené“ – zákazník zaplatí hneď. Objednávka ide na bar ako ZAPLATENÁ a na účet stola sa nepripíše.\n\nZamestnanec si ho vie vypnúť / zapnúť aj len na svojom zariadení.',
+  cartBtns: 'V zbalenom košíku (dole pri objednávaní): hore suma a pod ňou tlačidlá Zaplatené / Zapísať / Na bar (a „k #…“, keď je objednávka ešte na bare). Poradie nastavíš nižšie v „🛒 Poradie tlačidiel“.\n\nVypnuté: starý košík – len suma a „Na bar“.',
+  cartWrite: 'Tlačidlo „📝 Zapísať“ – položky sa zapíšu rovno na účet stola a NEJDÚ na bar (napr. niečo, čo netreba pripravovať, alebo čo už hostia dostali).',
+  cartAdd: 'Keď má stôl objednávku, ktorá je ešte na bare (nepripravená), ukáže sa tlačidlo „➕ k #12“ – nové položky sa pridajú k nej, nevznikne ďalšia objednávka.',
+  plusOneStay: 'V „🧾 Účet stola“ je pri každej položke „+1“ – pridá ešte raz to isté do košíka (napr. ďalšie kolo).\n\nZapnuté: košík ostane zbalený, môžeš ťukať ďalej. Vypnuté: po „+1“ sa košík otvorí.'
+};
+function showFeatureInfo(k) {
+  const f = UI_FEATURES.find(x => x[0] === k); if (!f) return;
+  $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 10px;font-size:17px">${esc(f[1])}</h3>
+    <p style="margin:0;font-size:15px;line-height:1.5;white-space:pre-line">${esc(UI_FEATURE_INFO[k] || 'Bez popisu.')}</p>
+    <p class="muted" style="font-size:13px;margin:12px 0 0">Teraz: <b>${uiOnAll(k) ? '✓ zapnuté' : 'vypnuté'}</b> · platí pre všetky zariadenia${DEV_UI_KEYS.includes(k) ? ' (zamestnanec si to vie zmeniť na svojom zariadení)' : ''}.</p>
+    <button class="btn" style="margin-top:14px" onclick="closeQuickModal()">Rozumiem</button>`;
+  $('#quickModal').classList.remove('hide');
+}
 // (2026-11-24) Tieto si zamestnanec vie zmeniť len na svojom zariadení (⚙ dole v rozbalenom košíku) – inak platí,
 // čo nastavil vedúci v 🧩 Funkcie. Uložené v localStorage uiDev = {kľúč: true/false}; čo tam nie je, ide podľa vedúceho.
 const DEV_UI_KEYS = ['cartBtns', 'paidNowBtn', 'cartWrite', 'cartAdd', 'plusOneStay'];
@@ -2751,6 +2809,7 @@ function renderTable() {
             ${moveOrderId === o.id ? '' : moveOrderBlock(o)}
           </div>${moveOrderId === o.id ? moveOrderBlock(o) : ''}</div>`).join('')}</div>` : ''}
       <div style="margin-top:14px"><button class="btn ghost" onclick="billSel={};view='bill';render()">💶 Platba · ${eur(acctTotal)}</button></div>
+      ${isManager ? `<button class="del" style="width:100%;margin-top:14px;padding:10px" title="Len vedúci – zmaže všetky nezaplatené objednávky stola (zapíše sa do 🗑 Zmazané v Uzávierke)" onclick="clearTableAccount()">🗑 Zmazať celý účet stola (${eur(acctTotal)})</button>` : ''}
     </div>` : ''}
   </div>` : '';
 
@@ -3051,9 +3110,14 @@ function addLaserSplit() {
   toast(`🎯 ${p} × ${g} – dospelých / študentov / deti rozdelíš pri platení`);
 }
 let itemOptionsQty = 1;   // (2026-10-19) koľko kusov s týmto výberom (napr. 3× Mattoni jemne perlivá)
+// (2026-11-25) položka s JEDNOU otázkou s jedným výberom (napr. vodka: Jednoduchá / Dvojitá / Trojitá) – každé ťuknutie
+// na možnosť = +1 kus tej možnosti (2× Dvojitá + 1× Trojitá naraz), do košíka ide každá ako vlastný riadok.
+let itemOptionsCounts = {};   // index možnosti → počet
+const optCountMode = groups => groups.length === 1 && !groups[0].multi;
 function setItemOptionsQty(d) { itemOptionsQty = Math.max(1, Math.min(999, itemOptionsQty + d)); renderItemOptions(); }
+function stepOptCount(ci, d) { itemOptionsCounts[ci] = Math.max(0, Math.min(99, (itemOptionsCounts[ci] || 0) + d)); if (!itemOptionsCounts[ci]) delete itemOptionsCounts[ci]; renderItemOptions(); }
 function openItemOptions(id) {
-  itemOptionsFor = id; itemOptionsPicks = {}; itemOptionsQty = 1;
+  itemOptionsFor = id; itemOptionsPicks = {}; itemOptionsQty = 1; itemOptionsCounts = {};
   renderItemOptions();
   $('#itemOptionsModal').classList.remove('hide');
 }
@@ -3084,7 +3148,8 @@ function clearBizDay() {
 // (2026-11-24) pri otázke „dá sa vybrať viac“ je výber pole (napr. [0, 2] = šľahačka aj jahody), inak jedno číslo
 const optPicked = (gi, ci) => { const p = itemOptionsPicks[gi]; return Array.isArray(p) ? p.includes(ci) : p === ci; };
 function pickItemOption(gi, ci) {
-  const g = itemQs(S.menu.find(x => x.id === itemOptionsFor))[gi];
+  const groups = itemQs(S.menu.find(x => x.id === itemOptionsFor)), g = groups[gi];
+  if (optCountMode(groups)) return stepOptCount(ci, 1);
   if (g && g.multi) { const a = Array.isArray(itemOptionsPicks[gi]) ? itemOptionsPicks[gi] : []; itemOptionsPicks[gi] = a.includes(ci) ? a.filter(x => x !== ci) : [...a, ci]; }
   else itemOptionsPicks[gi] = (itemOptionsPicks[gi] === ci) ? undefined : ci;
   renderItemOptions();
@@ -3093,6 +3158,8 @@ function renderItemOptions() {
   const mi = S.menu.find(x => x.id === itemOptionsFor); if (!mi) return closeItemOptions();
   const groups = itemQs(mi);
   $('#itemOptionsTitle').textContent = mi.name;
+  if (optCountMode(groups)) return renderItemOptionsCount(mi, groups[0]);
+  const ok = $('#itemOptionsOk'); if (ok) ok.textContent = 'Pridať do košíka';
   $('#itemOptionsBody').innerHTML = groups.map((g, gi) => `
     <label class="muted" style="font-size:13px;display:block;margin-top:${gi ? 10 : 0}px">${esc(g.name)}${g.multi ? ' <small>(aj viac naraz)</small>' : ''}</label>
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">
@@ -3107,6 +3174,27 @@ function renderItemOptions() {
       ${[2, 3, 4, 6].map(n => `<button type="button" class="btn ${itemOptionsQty === n ? '' : 'ghost'}" style="width:auto;padding:8px 10px" onclick="itemOptionsQty=${n};renderItemOptions()">${n}×</button>`).join('')}
     </div>`;
 }
+// počítanie ťukaním (jedna otázka): tlačidlá možností s počtom, pod nimi riadky [−] počet [+] a spolu
+function renderItemOptionsCount(mi, g) {
+  const cnt = itemOptionsCounts, used = g.choices.map((c, ci) => ci).filter(ci => cnt[ci] > 0);
+  const pcs = used.reduce((s, ci) => s + cnt[ci], 0), units = used.reduce((s, ci) => s + cnt[ci] * optChoice(g.choices[ci]).mult, 0);
+  const sq = 'width:40px;height:40px;flex:none;padding:0;font-size:20px;font-weight:800';
+  $('#itemOptionsBody').innerHTML = `<label class="muted" style="font-size:13px;display:block">${esc(g.name)} <small>– ťukni toľkokrát, koľko kusov (napr. 2× Dvojitá a 1× Trojitá)</small></label>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">
+      ${g.choices.map((c, ci) => { const o = optChoice(c), n = cnt[ci] || 0; return `<button type="button" class="btn ${n ? '' : 'ghost'}" style="width:auto;padding:9px 13px" onclick="pickItemOption(0,${ci})">${esc(o.label)}${o.mult > 1 ? ` <small style="opacity:.75">×${o.mult}</small>` : ''}${n ? ` <b style="margin-left:4px;padding:0 6px;border-radius:99px;background:var(--bg);color:var(--ink)">${n}</b>` : ''}</button>`; }).join('')}
+    </div>
+    ${used.length ? `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:8px">${used.map(ci => { const o = optChoice(g.choices[ci]);
+      return `<div class="row" style="align-items:center;gap:8px;padding:4px 0"><span style="flex:1;font-size:15px">${esc(o.label)}${o.mult > 1 ? ` <small class="muted">(${eur(mi.price * o.mult)})</small>` : ''}</span>
+        <button type="button" class="btn ghost" style="${sq}" onclick="stepOptCount(${ci},-1)">−</button><b style="min-width:30px;text-align:center;font-size:18px">${cnt[ci]}</b>
+        <button type="button" class="btn ghost" style="${sq}" onclick="stepOptCount(${ci},1)">+</button></div>`; }).join('')}
+      <div style="margin-top:6px;font-size:14px">Spolu <b>${pcs} ks</b>${units !== pcs ? ` (= ${units}× ${esc(mi.name)})` : ''} · <b>${eur(units * mi.price)}</b></div></div>`
+    : `<label class="muted" style="font-size:13px;display:block;margin-top:12px">Bez výberu – počet kusov</label>
+    <div class="row" style="gap:8px;align-items:center;margin-top:4px">
+      <button type="button" class="btn ghost" style="width:52px;padding:8px 0;font-size:20px" onclick="setItemOptionsQty(-1)">−</button>
+      <b style="min-width:40px;text-align:center;font-size:20px">${itemOptionsQty}</b>
+      <button type="button" class="btn ghost" style="width:52px;padding:8px 0;font-size:20px" onclick="setItemOptionsQty(1)">+</button></div>`}`;
+  const ok = $('#itemOptionsOk'); if (ok) ok.textContent = pcs ? `Pridať do košíka (${pcs} ks)` : 'Pridať do košíka';
+}
 // vybrané možnosti → poznámka (bez „×2“) a násobok (súčin ×N všetkých vybraných, najviac 10)
 function itemOptionsSel(mi) {
   const groups = itemQs(mi); let mult = 1;
@@ -3116,14 +3204,29 @@ function itemOptionsSel(mi) {
     return p != null && g.choices[p] ? pick(g.choices[p]) : null; }).filter(Boolean).join(' · ');
   return { note, mult: Math.min(10, mult) };
 }
+// pridá riadok do košíka (rovnaká položka + výber + násobok sa zlúči s existujúcim riadkom)
+function addOptLine(mi, note, mult, n) {
+  const same = cart.find(x => x.menuId === mi.id && (x.note || '') === note && (x.mult || 1) === mult && x.price == null && !x.discountPct && !x.discountAmt);
+  if (same) same.qty = Math.min(999, same.qty + n); else cart.push({ menuId: mi.id, qty: n, note, ...(mult > 1 ? { mult } : {}) });
+}
 function confirmItemOptions() {
   const mi = S.menu.find(x => x.id === itemOptionsFor); if (!mi) return;
+  const groups = itemQs(mi);
+  // počítanie ťukaním: každá možnosť s počtom = vlastný riadok (2× Absolut · Dvojitá, 1× Absolut · Trojitá)
+  if (optCountMode(groups) && Object.keys(itemOptionsCounts).length) {
+    const parts = [];
+    groups[0].choices.forEach((c, ci) => { const n = itemOptionsCounts[ci] || 0; if (!n) return; const o = optChoice(c);
+      addOptLine(mi, o.label, o.mult, n); parts.push(`${n}× ${o.label}`); });
+    toast(`+ ${mi.name}: ${parts.join(', ')}`);
+    closeItemOptions();
+    renderItems(); renderFavs(); renderCart();
+    return;
+  }
   const { note, mult } = itemOptionsSel(mi);
   // (2026-10-19) rovnaká položka s rovnakým výberom sa v košíku zlúči do jedného riadka (2× Mattoni · jemne perlivá),
   // nie dva samostatné riadky; iný výber = iný riadok
   const n = itemOptionsQty || 1;
-  const same = cart.find(x => x.menuId === mi.id && (x.note || '') === note && (x.mult || 1) === mult && x.price == null && !x.discountPct && !x.discountAmt);
-  if (same) same.qty = Math.min(999, same.qty + n); else cart.push({ menuId: mi.id, qty: n, note, ...(mult > 1 ? { mult } : {}) });
+  addOptLine(mi, note, mult, n);
   toast(`+${n}× ${mi.name}${note ? ' · ' + note : ''}${mult > 1 ? ` (= ${n * mult} ks)` : ''}`);
   closeItemOptions();
   renderItems(); renderFavs(); renderCart();
@@ -3183,7 +3286,8 @@ function setDiscount(i) {
 // ---------- rýchla poznámka k položke v košíku: ťuknutím na hotové možnosti (+ vlastný text) ----------
 const QUICK_NOTES = ['bez ľadu', 's ľadom', 's citrónom', 'bez slamky', 'veľké', 'malé', 'teplé', 'studené', 'bez cukru', 'neskôr'];
 let noteEdit = null;   // { i, picks: Set, text }
-function closeQuickModal() { $('#quickModal').classList.add('hide'); noteEdit = null; lgS = null; }
+function closeQuickModal() { $('#quickModal').classList.add('hide'); noteEdit = null; lgS = null;
+  if (remQtyResolve) { const r = remQtyResolve; remQtyResolve = null; r(0); } }   // zavreté okno „Odstrániť“ = nič
 // ---------- 🎯 rozdelenie laser game na dospelých / študentov / deti (okno #quickModal) ----------
 // lgS = { mode: 'players' (hráči × hry) | 'entries' (vstupy – keď niekto hral menej hier), g, a, s, c, P, E }
 let lgS = null, lgSaving = false;
@@ -3387,8 +3491,7 @@ function renderCartMain() {
       <small onclick="setDiscount(${i})" style="cursor:pointer;margin-left:8px">${(c.discountPct || c.discountAmt) ? '🏷️ zmeniť zľavu' : '🏷️ zľava'}</small>
       ${iceOf(c) ? `<button onclick="cycleIce(${i})" title="Ťukni: s ľadom → bez ľadu → ľad zvlášť" style="margin:4px 6px 0 0;padding:3px 9px;border-radius:99px;border:1px solid var(--accent);background:${iceOf(c) === 'with' ? 'var(--card)' : 'var(--warnbg)'};color:var(--ink);font-size:13px;font-weight:700">${ICE_TXT[iceOf(c)]}</button>` : ''}
       ${catExtra(menuCat(c.menuId)).glasses ? `<button onclick="askGlasses('${c.menuId}',${i})" style="margin:4px 0 0;padding:3px 9px;border-radius:99px;border:1px solid var(--accent);background:var(--card);color:var(--ink);font-size:13px;font-weight:700">🥤 ${glassesTxt(Number(c.glasses) || 0)}</button>` : ''}</div>
-      <div class="qcol"><button onclick="setQty(${i})" title="Ťukni a napíš počet" style="min-width:46px;padding:4px 8px;font-size:17px;font-weight:800;border:2px solid var(--accent);border-radius:8px;background:var(--card);color:var(--ink)">${c.qty} ✎</button><button class="qmin" onclick="changeQty(${i},-1)">−</button></div>
-      <button class="qb" onclick="changeQty(${i},1)">+</button></div>`).join('')}</div>
+      <div class="qrow"><button class="qb" title="O 1 menej" onclick="changeQty(${i},-1)">−</button><button onclick="setQty(${i})" title="Ťukni a napíš počet" style="min-width:40px;padding:4px 6px;font-size:17px;font-weight:800;border:2px solid var(--accent);border-radius:8px;background:var(--card);color:var(--ink)">${c.qty}<small style="font-size:11px;font-weight:400;opacity:.7"> ✎</small></button><button class="qb" title="O 1 viac" onclick="changeQty(${i},1)">+</button></div></div>`).join('')}</div>
     <input id="onote" placeholder="Poznámka k objednávke (nepovinné)" value="${esc(orderNote)}" oninput="orderNote=this.value" style="margin-bottom:8px">
     <div style="display:grid;gap:6px">
       ${barOrderForTable() ? `<button class="btn ok" id="addBarBtn" onclick="addToBarOrder()">➕ Pridať k #${barOrderForTable().no} (ešte na bare) · ${eur(total)}</button>` : ''}
@@ -3396,14 +3499,14 @@ function renderCartMain() {
       ${uiOn('later') && tableId !== PN_ID && !(addToBar && barOrderForTable()) ? `<button class="btn ghost" onclick="sendOrderLater()">⏰ Na bar neskôr (o určitej hodine)</button>` : ''}
       ${tableId === PN_ID ? '' : `<button class="btn ghost" id="writeBtn" onclick="writeOrder()">📝 Len zapísať do účtu (bez baru) · ${eur(total)}</button>`}
       ${paidNowBtnHtml(total)}
-    </div>
-    ${tableId === PN_ID ? '' : `<p style="text-align:center;margin:10px 0 0"><a href="#" onclick="openCartDevSettings();return false" style="font-size:13px">⚙ Tlačidlá v košíku na tomto zariadení</a></p>`}</div>`;
+    </div></div>`;
 }
 // ---------- (2026-11-24) ⚙ košík na tomto zariadení: zamestnanec si vie prepnúť tlačidlá a „+1“ a zmeniť ich poradie ----------
-// (platí len v tomto prehliadači; „Ako vedúci“ = podľa 🧩 Funkcie v Nastaveniach)
+// (platí len v tomto prehliadači; „Ako vedúci“ = podľa 🧩 Funkcie v Nastaveniach). Je v Nastavenia → Toto zariadenie
+// (zamestnanec tam má zjednodušené Nastavenia), už nie v rozbalenom košíku.
 const DEV_UI_LABELS = { cartBtns: '🛒 Tlačidlá pod sumou (zbalený košík)', paidNowBtn: '💶 Tlačidlo Zaplatené', cartWrite: '📝 Tlačidlo Zapísať', cartAdd: '➕ Tlačidlo „k #…“ (objednávka ešte na bare)', plusOneStay: '🧾 „+1“ v účte nechá košík zbalený' };
-function openCartDevSettings() { renderCartDevSettings(); $('#quickModal').classList.remove('hide'); }
-function renderCartDevSettings() {
+let devCartOpen = false;   // vedúci: rozbalené „Tlačidlá v košíku na tomto zariadení“ (zamestnanec ich má otvorené vždy)
+function cartDevHtml() {
   const d = uiDev(), ord = cartOrder(), own = Array.isArray(store.get('cartOrderDev', null));
   const row = k => {
     const st = typeof d[k] === 'boolean' ? (d[k] ? 'on' : 'off') : 'mgr';
@@ -3415,18 +3518,18 @@ function renderCartDevSettings() {
       <span style="flex:1;font-size:14px">${i + 1}. ${CART_BTN_INFO[k][0]} ${CART_BTN_INFO[k][1]}</span>
       <button class="btn ghost" style="width:auto;padding:4px 10px" ${i === 0 ? 'disabled' : ''} onclick="moveDevCartBtn('${k}',-1)">▲</button>
       <button class="btn ghost" style="width:auto;padding:4px 10px" ${i === ord.length - 1 ? 'disabled' : ''} onclick="moveDevCartBtn('${k}',1)">▼</button></div>`).join('');
-  $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 4px">⚙ Košík na tomto zariadení</h3>
-    <p class="muted" style="font-size:13px;margin:0 0 4px">Platí len na tomto mobile / tablete. „Ako vedúci“ = podľa Nastavení vedúceho.</p>
+  return `<details ${!isManager || devCartOpen ? 'open' : ''} ontoggle="devCartOpen=this.open" style="margin-top:12px;border:1px solid var(--line);border-radius:12px;padding:10px 12px">
+    <summary style="cursor:pointer;font-weight:700;font-size:15px">🛒 Tlačidlá v košíku na tomto zariadení</summary>
+    <p class="muted" style="font-size:13px;margin:6px 0 4px">Platí len na tomto mobile / tablete. „Ako vedúci“ = podľa Nastavení vedúceho.</p>
     ${DEV_UI_KEYS.map(row).join('')}
     <div style="margin-top:12px"><b style="font-size:14px">Poradie tlačidiel pod sumou</b> <small class="muted">${own ? '(vlastné na tomto zariadení)' : '(ako nastavil vedúci)'}</small>
       ${ordRows}
-      ${own ? `<button class="btn ghost" style="width:auto;padding:6px 12px;margin-top:8px" onclick="store.set('cartOrderDev',null);renderCartDevSettings();renderCart()">↺ Poradie ako vedúci</button>` : ''}</div>
-    <button class="btn" style="margin-top:14px" onclick="closeQuickModal()">Hotovo</button>`;
+      ${own ? `<button class="btn ghost" style="width:auto;padding:6px 12px;margin-top:8px" onclick="store.set('cartOrderDev',null);render()">↺ Poradie ako vedúci</button>` : ''}</div></details>`;
 }
-function setDevUi(k, s) { const d = uiDev(); if (s === 'mgr') delete d[k]; else d[k] = s === 'on'; store.set('uiDev', d); renderCartDevSettings(); renderCart(); }
+function setDevUi(k, s) { const d = uiDev(); if (s === 'mgr') delete d[k]; else d[k] = s === 'on'; store.set('uiDev', d); render(); }
 function moveDevCartBtn(k, dir) {
   const a = cartOrder(), i = a.indexOf(k), j = i + dir; if (i < 0 || j < 0 || j >= a.length) return;
-  [a[i], a[j]] = [a[j], a[i]]; store.set('cartOrderDev', a); renderCartDevSettings(); renderCart();
+  [a[i], a[j]] = [a[j], a[i]]; store.set('cartOrderDev', a); render();
 }
 
 // po odoslaní / zapísaní / pridaní k objednávke na bare -> späť na zoznam stolov (čašník ide hneď k ďalšiemu stolu).
@@ -3531,16 +3634,57 @@ async function cancelOrder(id) { if (confirm('Zrušiť túto objednávku?')) awa
 // Odstráni 1 kus danej položky z účtu stola (nezaplatené) - napr. keď sa niečo objednalo omylom.
 // Funguje rovnako ako mínus v košíku, len na už odoslané/zapísané položky na účte.
 // (2026-10-17) keď je na účte viac kusov, opýta sa koľko odstrániť (predvolene 1, dá sa napísať aj všetky)
+// (2026-11-24) odstránenie z účtu stola / z baru: okno s tlačidlami („Všetky 5×“ alebo 1×, 2×…), netreba písať číslo.
+// Vráti Promise s počtom (0 = zrušené).
+// „Všetky“ hore, pod tým len časť: [−] počet [+] (počet sa dá aj napísať) a „Odstrániť N×“.
+let remQtyResolve = null, remQtyHave = 1, remQtyN = 1;
 function askRemoveQty(name, have) {
-  if (have <= 1) return confirm(`Odstrániť "${name}"? (nezaplatené)`) ? 1 : 0;
-  const v = prompt(`Koľko kusov "${name}" odstrániť? (je ich ${have})\nNapíš číslo 1 – ${have}.`, '1');
-  if (v === null) return 0;
-  const n = parseInt(String(v).trim(), 10);
-  if (!n || n < 1) { toast('Zadaj počet kusov'); return 0; }
-  return Math.min(have, n);
+  have = Math.max(1, have | 0);
+  if (remQtyResolve) { const r = remQtyResolve; remQtyResolve = null; r(0); }
+  return new Promise(resolve => {
+    remQtyResolve = resolve; remQtyHave = have; remQtyN = 1;
+    const sq = 'width:56px;height:56px;flex:none;padding:0;font-size:26px;font-weight:800';
+    $('#quickModalBody').innerHTML = `<h3 style="margin:0 0 4px">🗑 Odstrániť</h3>
+      <p style="margin:0 0 12px;font-size:16px"><b>${esc(name)}</b>${have > 1 ? ` <span class="muted">· je ich ${have}×</span>` : ''}</p>
+      <button class="del" style="width:100%;padding:13px;font-size:17px;font-weight:800" onclick="remQtyPick(${have})">${have > 1 ? `Všetky (${have}×)` : 'Odstrániť'}</button>
+      ${have > 1 ? `<div class="muted" style="font-size:13px;margin:16px 0 8px">alebo len časť:</div>
+      <div class="row" style="gap:10px;align-items:center;justify-content:center">
+        <button class="btn ghost" style="${sq}" onclick="remQtyStep(-1)">−</button>
+        <input id="remQtyIn" type="text" inputmode="numeric" value="1" style="width:84px;height:56px;text-align:center;font-size:24px;font-weight:800;flex:none"
+          onfocus="this.select()" oninput="remQtyType(this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();remQtyOk()}">
+        <button class="btn ghost" style="${sq}" onclick="remQtyStep(1)">+</button>
+      </div>
+      <button class="btn" id="remQtyOkBtn" style="margin-top:10px;padding:12px;font-size:16px;font-weight:800" onclick="remQtyOk()">Odstrániť 1×</button>` : ''}
+      <button class="btn ghost" style="margin-top:12px" onclick="remQtyPick(0)">Zrušiť</button>`;
+    $('#quickModal').classList.remove('hide');
+  });
+}
+function remQtyPick(n) { const r = remQtyResolve; remQtyResolve = null; $('#quickModal').classList.add('hide'); if (r) r(n); }
+function remQtyShow() {
+  const b = $('#remQtyOkBtn'); if (b) b.textContent = remQtyN >= remQtyHave ? `Odstrániť všetky (${remQtyHave}×)` : `Odstrániť ${remQtyN}×`;
+}
+function remQtyStep(d) {
+  remQtyN = Math.max(1, Math.min(remQtyHave, remQtyN + d));
+  const i = $('#remQtyIn'); if (i) i.value = remQtyN; remQtyShow();
+}
+function remQtyType(v) { const n = parseInt(String(v).replace(/\D/g, ''), 10); remQtyN = Math.max(1, Math.min(remQtyHave, n || 1)); remQtyShow(); }
+function remQtyOk() {
+  const i = $('#remQtyIn'), n = parseInt(String(i ? i.value : remQtyN).replace(/\D/g, ''), 10);
+  if (!n || n < 1) { toast('Zadaj počet kusov'); if (i) i.focus(); return; }
+  remQtyPick(Math.min(remQtyHave, n));
+}
+// (2026-11-24) 🗑 zmazať celý účet stola (len vedúci): potvrdenie + napísať ZMAZAŤ, nech sa to nestane omylom
+async function clearTableAccount() {
+  if (!isManager) return;
+  const t = S.tables.find(x => x.id === tableId), os = tableOrders(tableId); if (!t || !os.length) return toast('Na stole nie je žiadny účet');
+  const total = sumOrders(os), ks = os.reduce((s, o) => s + o.items.reduce((a, i) => a + i.qty, 0), 0), onBar = os.filter(o => o.status !== 'vydana').length;
+  if (!confirm(`🗑 Zmazať CELÝ účet stola ${t.name}?\n\n${ks} ks za ${eur(total)}${onBar ? `\n(${onBar === 1 ? '1 objednávka je' : onBar + ' objednávky sú'} ešte na bare – zmizne aj odtiaľ)` : ''}\n\nNezapíše sa to do tržby. Čo sa zmazalo, uvidíš v Uzávierke → 🗑 Zmazané.`)) return;
+  const v = prompt('Pre istotu napíš: ZMAZAŤ'); if (v === null) return;
+  if (!/^zmaza[tť]$/i.test(v.trim())) return toast('Nezmazané – nenapísal si ZMAZAŤ');
+  try { await call('POST', `/api/tables/${tableId}/clearAccount`, {}); toast(`🗑 Účet ${t.name} zmazaný (${eur(total)})`); render(); } catch (e) {}
 }
 async function removeAcctItem(name, price, have) {
-  const n = askRemoveQty(name, have || 1); if (!n) return;
+  const n = await askRemoveQty(name, have || 1); if (!n) return;
   await call('POST', `/api/tables/${tableId}/removeItem`, { name, price, qty: n });
   toast(`Odstránené: ${n}× ${name}`);
 }
@@ -3893,10 +4037,10 @@ async function barRemoveItem(orderId, idx) {
   if (!it || barRemoving) return;
   // (2026-11-24) pri ×2 (2 dl, dvojitá) sa odoberá po celých pohároch – 1 pohár = mult kusov
   const mu = (it.mult > 1 && it.qty % it.mult === 0) ? it.mult : 1, g = it.qty / mu, nm = it.name + (mu > 1 && it.note ? ` (${it.note})` : '');
-  let n = 1;
-  if (g > 1) { n = askRemoveQty(nm, g); if (!n) return; }
+  // (okno s tlačidlami je zároveň potvrdenie – navyše sa pýta len pri poslednej položke a pri zaplatenom lístku)
+  const n = await askRemoveQty(nm, g); if (!n) return;
   const last = o.items.length === 1 && n >= g, paidTk = isTicket(o);
-  if ((g === 1 || last || paidTk) && !confirm(`Odobrať ${n}× ${nm} z objednávky ${o.tableName} #${o.no}?${last ? '\nJe to posledná položka – zruší sa celá objednávka.' : ''}${paidTk ? paidWarn(o, eur(it.price * n * mu)) : ''}`)) return;
+  if ((last || paidTk) && !confirm(`Odobrať ${n}× ${nm} z objednávky ${o.tableName} #${o.no}?${last ? '\nJe to posledná položka – zruší sa celá objednávka.' : ''}${paidTk ? paidWarn(o, eur(it.price * n * mu)) : ''}`)) return;
   barRemoving = true;
   try { await call('POST', `/api/orders/${orderId}/removeItem`, { idx, name: it.name, qty: n * mu }); toast(`Odobrané: ${n}× ${nm}`); }
   finally { barRemoving = false; }
@@ -4828,15 +4972,21 @@ function renderSettings() {
       <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px">
         <input type="checkbox" style="width:auto" ${backAfterSend() ? 'checked' : ''} onchange="store.set('backAfterSend',this.checked);toast(this.checked?'Po odoslaní sa vráti na stoly':'Po odoslaní ostane na stole')">
         Po odoslaní na bar sa vrátiť na zoznam stolov</label>
-      <button class="btn ghost" style="width:auto;padding:6px 12px;margin-top:10px" onclick="openCartDevSettings()">⚙ Tlačidlá v košíku na tomto zariadení</button>
+      ${cartDevHtml()}
       <div class="row" style="gap:8px;align-items:center;margin-top:12px;font-size:14px">
         <span style="flex:1">🔠 Veľkosť písma na tomto zariadení</span>
         <button class="btn ghost" style="width:auto;padding:6px 14px" onclick="setUiZoom(-0.1)">A−</button>
         <b style="min-width:52px;text-align:center">${Math.round(uiZoom * 100)} %</b>
         <button class="btn ghost" style="width:auto;padding:6px 14px;font-size:18px" onclick="setUiZoom(0.1)">A+</button>
       </div>
+      ${isManager ? (IS_TEST
+        ? `<a class="btn ghost" style="display:block;text-align:center;text-decoration:none;margin-top:12px" href="objednavky.html">↩ Späť na ostrú verziu (ako majú zamestnanci)</a>`
+        : `<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:14px"><input type="checkbox" style="width:auto" ${testOn() ? 'checked' : ''} onchange="setTestOn(this.checked)">🧪 Testovacia verzia (novinky najprv len pre mňa) – ukázať tu a na úvode</label>
+          ${testOn() ? `<a class="btn ghost" style="display:block;text-align:center;text-decoration:none;margin-top:8px" href="objednavky-test.html">🧪 Otvoriť testovaciu verziu</a>` : ''}`) : ''}
       <p class="muted" style="font-size:13px;margin-top:10px">Prihlásený ako: ${esc(auth.currentUser?.email || '')}${isManager ? ' (vedúci)' : ''}</p>
       <button class="btn ghost" style="margin-top:10px" onclick="logout()">Odhlásiť</button></div>`;
+  // (2026-11-24) zamestnanec: zjednodušené Nastavenia – len toto zariadenie (menu, stoly, funkcie… mení vedúci)
+  if (!isManager) { $('#app').innerHTML = device + '<p class="muted" style="font-size:13px;text-align:center;margin:14px 0">🔒 Menu, stoly a ostatné nastavenia mení vedúci.</p>'; return; }
   if (!isManager) {
     $('#app').innerHTML = device + '<div class="empty">Úprava stolov a menu je dostupná len pre vedúceho.<br>Ak potrebuješ niečo zmeniť, odhlás toto zariadenie a prihlás sa účtom vedúceho.</div>';
     return;
@@ -5128,9 +5278,10 @@ function renderSettings() {
   const funkcieTab = `<h2>🧩 Funkcie (zapnúť / vypnúť)</h2><div class="card">
       <p class="muted" style="font-size:13px;margin:0 0 10px">Čo nepoužívate, vypnite – zmizne zo všetkých zariadení. Údaje sa nestratia, po zapnutí sa vráti.</p>
       ${UI_FEATURES.map(([k, label]) => { const dv = DEV_UI_KEYS.includes(k) ? uiDev()[k] : undefined;
-        return `<label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px;cursor:pointer">
-        <input type="checkbox" style="width:22px;height:22px;flex:none" ${uiOnAll(k) ? 'checked' : ''} onchange="setUiFeature('${k}',this.checked)"><span>${label}${typeof dv === 'boolean' ? ` <small style="color:var(--warn)">(na tomto zariadení ${dv ? 'zapnuté' : 'vypnuté'} – ⚙ v košíku)</small>` : ''}</span></label>`; }).join('')}
-      <p class="muted" style="font-size:12px;margin:10px 0 0">Tlačidlá v košíku a „+1“ si zamestnanec vie zmeniť aj sám, len na svojom zariadení: v rozbalenom košíku dole „⚙ Tlačidlá v košíku na tomto zariadení“.</p></div>
+        return `<div style="display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)"><label style="flex:1;display:flex;align-items:center;gap:10px;padding:10px 0;font-size:15px;cursor:pointer">
+        <input type="checkbox" style="width:22px;height:22px;flex:none" ${uiOnAll(k) ? 'checked' : ''} onchange="setUiFeature('${k}',this.checked)"><span>${label}${typeof dv === 'boolean' ? ` <small style="color:var(--warn)">(na tomto zariadení ${dv ? 'zapnuté' : 'vypnuté'} – hore v „Toto zariadenie“)</small>` : ''}</span></label>
+        <button title="Čo to robí?" onclick="showFeatureInfo('${k}')" style="flex:none;width:34px;height:34px;border-radius:50%;border:2px solid var(--accent);background:var(--card);color:var(--accent);font-weight:900;font-size:16px;font-style:italic;font-family:Georgia,serif;cursor:pointer">i</button></div>`; }).join('')}
+      <p class="muted" style="font-size:12px;margin:10px 0 0">Tlačidlá v košíku a „+1“ si zamestnanec vie zmeniť aj sám, len na svojom zariadení: Nastavenia → „🛒 Tlačidlá v košíku na tomto zariadení“ (zamestnanec tam vidí len nastavenia svojho zariadenia).</p></div>
     <h2>🛒 Poradie tlačidiel pod sumou v košíku</h2><div class="card">
       <p class="muted" style="font-size:13px;margin:0 0 6px">Platí pre všetky zariadenia (kto si na svojom nastavil vlastné poradie, má svoje). Vypnuté tlačidlá (🧩 vyššie) sa nezobrazia.</p>
       ${cartOrderAll().map((k, i, arr) => { const inf = CART_BTN_INFO[k], off = inf[2] && !uiOnAll(inf[2]);
@@ -5146,6 +5297,23 @@ function renderSettings() {
         </div>${uiOnAll('cartBtns') ? '' : '<p style="color:var(--warn);font-size:13px;margin:6px 0 0">⚠ „🛒 Tlačidlá pod sumou“ sú vyššie vypnuté – v košíku je zatiaľ len „Na bar“.</p>'}</div></div>`;
   const TAB_HTML = { stoly: stolyTab, menu: menuTab, obrazovka: obrazovkaTab, atrakcie: atrakcieTab, zamestnanci: zamestnanciTab, funkcie: funkcieTab, zariadenie: zariadenieTab };
   $('#app').innerHTML = device + nav + TAB_HTML[settingsTab];
+  if (['menu', 'atrakcie', 'zamestnanci', 'funkcie'].includes(settingsTab)) collapseSettingsSections();
+}
+// (2026-11-24) sekcie v Nastaveniach (Menu, Atrakcie, Zamestnanci, Funkcie) sú zbalené – ťuknutím na nadpis sa otvoria,
+// otvorené ostanú otvorené aj po prekreslení (openSecs). Nadpis „h2“ + karta hneď za ním → <details>.
+let openSecs = new Set();
+function collapseSettingsSections() {
+  const app = $('#app');
+  [...app.children].filter(h => h.tagName === 'H2').forEach(h => {
+    // do sekcie patrí všetko až po ďalší nadpis (karta + napr. „Iné % pre kategóriu“)
+    const parts = []; for (let n = h.nextElementSibling; n && n.tagName !== 'H2'; n = n.nextElementSibling) parts.push(n);
+    if (!parts.length || !parts[0].classList.contains('card') || /Toto zariadenie/i.test(h.textContent)) return;
+    const key = settingsTab + '|' + h.textContent.replace(/[\d()]+/g, '').trim();
+    const d = document.createElement('details'), s = document.createElement('summary');
+    d.className = 'secx'; if (openSecs.has(key)) d.open = true;
+    h.replaceWith(d); s.appendChild(h); d.appendChild(s); parts.forEach(p => d.appendChild(p));
+    d.addEventListener('toggle', () => { if (d.open) openSecs.add(key); else openSecs.delete(key); });
+  });
 }
 // paleta pre kategórie menu (viac farieb než pri stoloch) + dá sa vybrať aj úplne vlastná farba
 const CAT_COLORS = ['', '#e5484d', '#f76b15', '#f2994a', '#f2c94c', '#c9d43a', '#7cc242', '#27ae60', '#2fbf8f', '#17a398', '#12a5c4',
