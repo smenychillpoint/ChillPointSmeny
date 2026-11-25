@@ -154,7 +154,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-24h</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-25</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -181,7 +181,7 @@ body:has(.login:not(.hide)){overflow:hidden}
   <div class="card">
     <h2 style="margin-top:0" id="itemOptionsTitle"></h2>
     <div id="itemOptionsBody"></div>
-    <button class="btn" style="margin-top:14px" onclick="confirmItemOptions()">Pridať do košíka</button>
+    <button class="btn" id="itemOptionsOk" style="margin-top:14px" onclick="confirmItemOptions()">Pridať do košíka</button>
     <p style="text-align:center;margin-top:10px"><a href="#" onclick="closeItemOptions();return false" style="font-size:13px">Zrušiť</a></p>
   </div>
 </div>
@@ -3106,9 +3106,14 @@ function addLaserSplit() {
   toast(`🎯 ${p} × ${g} – dospelých / študentov / deti rozdelíš pri platení`);
 }
 let itemOptionsQty = 1;   // (2026-10-19) koľko kusov s týmto výberom (napr. 3× Mattoni jemne perlivá)
+// (2026-11-25) položka s JEDNOU otázkou s jedným výberom (napr. vodka: Jednoduchá / Dvojitá / Trojitá) – každé ťuknutie
+// na možnosť = +1 kus tej možnosti (2× Dvojitá + 1× Trojitá naraz), do košíka ide každá ako vlastný riadok.
+let itemOptionsCounts = {};   // index možnosti → počet
+const optCountMode = groups => groups.length === 1 && !groups[0].multi;
 function setItemOptionsQty(d) { itemOptionsQty = Math.max(1, Math.min(999, itemOptionsQty + d)); renderItemOptions(); }
+function stepOptCount(ci, d) { itemOptionsCounts[ci] = Math.max(0, Math.min(99, (itemOptionsCounts[ci] || 0) + d)); if (!itemOptionsCounts[ci]) delete itemOptionsCounts[ci]; renderItemOptions(); }
 function openItemOptions(id) {
-  itemOptionsFor = id; itemOptionsPicks = {}; itemOptionsQty = 1;
+  itemOptionsFor = id; itemOptionsPicks = {}; itemOptionsQty = 1; itemOptionsCounts = {};
   renderItemOptions();
   $('#itemOptionsModal').classList.remove('hide');
 }
@@ -3139,7 +3144,8 @@ function clearBizDay() {
 // (2026-11-24) pri otázke „dá sa vybrať viac“ je výber pole (napr. [0, 2] = šľahačka aj jahody), inak jedno číslo
 const optPicked = (gi, ci) => { const p = itemOptionsPicks[gi]; return Array.isArray(p) ? p.includes(ci) : p === ci; };
 function pickItemOption(gi, ci) {
-  const g = itemQs(S.menu.find(x => x.id === itemOptionsFor))[gi];
+  const groups = itemQs(S.menu.find(x => x.id === itemOptionsFor)), g = groups[gi];
+  if (optCountMode(groups)) return stepOptCount(ci, 1);
   if (g && g.multi) { const a = Array.isArray(itemOptionsPicks[gi]) ? itemOptionsPicks[gi] : []; itemOptionsPicks[gi] = a.includes(ci) ? a.filter(x => x !== ci) : [...a, ci]; }
   else itemOptionsPicks[gi] = (itemOptionsPicks[gi] === ci) ? undefined : ci;
   renderItemOptions();
@@ -3148,6 +3154,8 @@ function renderItemOptions() {
   const mi = S.menu.find(x => x.id === itemOptionsFor); if (!mi) return closeItemOptions();
   const groups = itemQs(mi);
   $('#itemOptionsTitle').textContent = mi.name;
+  if (optCountMode(groups)) return renderItemOptionsCount(mi, groups[0]);
+  const ok = $('#itemOptionsOk'); if (ok) ok.textContent = 'Pridať do košíka';
   $('#itemOptionsBody').innerHTML = groups.map((g, gi) => `
     <label class="muted" style="font-size:13px;display:block;margin-top:${gi ? 10 : 0}px">${esc(g.name)}${g.multi ? ' <small>(aj viac naraz)</small>' : ''}</label>
     <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">
@@ -3162,6 +3170,27 @@ function renderItemOptions() {
       ${[2, 3, 4, 6].map(n => `<button type="button" class="btn ${itemOptionsQty === n ? '' : 'ghost'}" style="width:auto;padding:8px 10px" onclick="itemOptionsQty=${n};renderItemOptions()">${n}×</button>`).join('')}
     </div>`;
 }
+// počítanie ťukaním (jedna otázka): tlačidlá možností s počtom, pod nimi riadky [−] počet [+] a spolu
+function renderItemOptionsCount(mi, g) {
+  const cnt = itemOptionsCounts, used = g.choices.map((c, ci) => ci).filter(ci => cnt[ci] > 0);
+  const pcs = used.reduce((s, ci) => s + cnt[ci], 0), units = used.reduce((s, ci) => s + cnt[ci] * optChoice(g.choices[ci]).mult, 0);
+  const sq = 'width:40px;height:40px;flex:none;padding:0;font-size:20px;font-weight:800';
+  $('#itemOptionsBody').innerHTML = `<label class="muted" style="font-size:13px;display:block">${esc(g.name)} <small>– ťukni toľkokrát, koľko kusov (napr. 2× Dvojitá a 1× Trojitá)</small></label>
+    <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">
+      ${g.choices.map((c, ci) => { const o = optChoice(c), n = cnt[ci] || 0; return `<button type="button" class="btn ${n ? '' : 'ghost'}" style="width:auto;padding:9px 13px" onclick="pickItemOption(0,${ci})">${esc(o.label)}${o.mult > 1 ? ` <small style="opacity:.75">×${o.mult}</small>` : ''}${n ? ` <b style="margin-left:4px;padding:0 6px;border-radius:99px;background:var(--bg);color:var(--ink)">${n}</b>` : ''}</button>`; }).join('')}
+    </div>
+    ${used.length ? `<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:8px">${used.map(ci => { const o = optChoice(g.choices[ci]);
+      return `<div class="row" style="align-items:center;gap:8px;padding:4px 0"><span style="flex:1;font-size:15px">${esc(o.label)}${o.mult > 1 ? ` <small class="muted">(${eur(mi.price * o.mult)})</small>` : ''}</span>
+        <button type="button" class="btn ghost" style="${sq}" onclick="stepOptCount(${ci},-1)">−</button><b style="min-width:30px;text-align:center;font-size:18px">${cnt[ci]}</b>
+        <button type="button" class="btn ghost" style="${sq}" onclick="stepOptCount(${ci},1)">+</button></div>`; }).join('')}
+      <div style="margin-top:6px;font-size:14px">Spolu <b>${pcs} ks</b>${units !== pcs ? ` (= ${units}× ${esc(mi.name)})` : ''} · <b>${eur(units * mi.price)}</b></div></div>`
+    : `<label class="muted" style="font-size:13px;display:block;margin-top:12px">Bez výberu – počet kusov</label>
+    <div class="row" style="gap:8px;align-items:center;margin-top:4px">
+      <button type="button" class="btn ghost" style="width:52px;padding:8px 0;font-size:20px" onclick="setItemOptionsQty(-1)">−</button>
+      <b style="min-width:40px;text-align:center;font-size:20px">${itemOptionsQty}</b>
+      <button type="button" class="btn ghost" style="width:52px;padding:8px 0;font-size:20px" onclick="setItemOptionsQty(1)">+</button></div>`}`;
+  const ok = $('#itemOptionsOk'); if (ok) ok.textContent = pcs ? `Pridať do košíka (${pcs} ks)` : 'Pridať do košíka';
+}
 // vybrané možnosti → poznámka (bez „×2“) a násobok (súčin ×N všetkých vybraných, najviac 10)
 function itemOptionsSel(mi) {
   const groups = itemQs(mi); let mult = 1;
@@ -3171,14 +3200,29 @@ function itemOptionsSel(mi) {
     return p != null && g.choices[p] ? pick(g.choices[p]) : null; }).filter(Boolean).join(' · ');
   return { note, mult: Math.min(10, mult) };
 }
+// pridá riadok do košíka (rovnaká položka + výber + násobok sa zlúči s existujúcim riadkom)
+function addOptLine(mi, note, mult, n) {
+  const same = cart.find(x => x.menuId === mi.id && (x.note || '') === note && (x.mult || 1) === mult && x.price == null && !x.discountPct && !x.discountAmt);
+  if (same) same.qty = Math.min(999, same.qty + n); else cart.push({ menuId: mi.id, qty: n, note, ...(mult > 1 ? { mult } : {}) });
+}
 function confirmItemOptions() {
   const mi = S.menu.find(x => x.id === itemOptionsFor); if (!mi) return;
+  const groups = itemQs(mi);
+  // počítanie ťukaním: každá možnosť s počtom = vlastný riadok (2× Absolut · Dvojitá, 1× Absolut · Trojitá)
+  if (optCountMode(groups) && Object.keys(itemOptionsCounts).length) {
+    const parts = [];
+    groups[0].choices.forEach((c, ci) => { const n = itemOptionsCounts[ci] || 0; if (!n) return; const o = optChoice(c);
+      addOptLine(mi, o.label, o.mult, n); parts.push(`${n}× ${o.label}`); });
+    toast(`+ ${mi.name}: ${parts.join(', ')}`);
+    closeItemOptions();
+    renderItems(); renderFavs(); renderCart();
+    return;
+  }
   const { note, mult } = itemOptionsSel(mi);
   // (2026-10-19) rovnaká položka s rovnakým výberom sa v košíku zlúči do jedného riadka (2× Mattoni · jemne perlivá),
   // nie dva samostatné riadky; iný výber = iný riadok
   const n = itemOptionsQty || 1;
-  const same = cart.find(x => x.menuId === mi.id && (x.note || '') === note && (x.mult || 1) === mult && x.price == null && !x.discountPct && !x.discountAmt);
-  if (same) same.qty = Math.min(999, same.qty + n); else cart.push({ menuId: mi.id, qty: n, note, ...(mult > 1 ? { mult } : {}) });
+  addOptLine(mi, note, mult, n);
   toast(`+${n}× ${mi.name}${note ? ' · ' + note : ''}${mult > 1 ? ` (= ${n * mult} ks)` : ''}`);
   closeItemOptions();
   renderItems(); renderFavs(); renderCart();
