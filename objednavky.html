@@ -154,7 +154,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-26</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-26b</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -905,8 +905,13 @@ async function callInner(m, [col, id, action], body) {
       if (body.cartOrder !== undefined) u.cartOrder = [...new Set((Array.isArray(body.cartOrder) ? body.cartOrder : []).filter(k => CART_KEYS.includes(k)))];
       // (2026-11-24) 🧩 spoločné možnosti (napr. „Kávy“ – Mlieko: S mliekom, Bez mlieka): [{id, n: názov, o: otázky v rovnakom
       // formáte ako opts pri položke}]; položka ich má v menu/<id>/sets (id oddelené čiarkou)
+      // (2026-11-26) cats = priradené celým kategóriám (platí aj pre nové položky v nich), ex = id položiek, kde to v takej kategórii odklikol
       if (body.optSets !== undefined) u.optSets = (Array.isArray(body.optSets) ? body.optSets : [])
-        .map(x => ({ id: str(x && x.id, 20), n: str(x && x.n, 40), o: str(x && x.o, 1000) })).filter(x => x.id && x.n).slice(0, 60);
+        .map(x => { const r = { id: str(x && x.id, 20), n: str(x && x.n, 40), o: str(x && x.o, 1000) };
+          const arr = (a, max, n) => [...new Set((Array.isArray(a) ? a : []).map(v => str(v, max)).filter(Boolean))].slice(0, n);
+          const cats = arr(x && x.cats, 40, 100), ex = arr(x && x.ex, 30, 500);
+          if (cats.length) r.cats = cats; if (ex.length) r.ex = ex; return r; })
+        .filter(x => x.id && x.n).slice(0, 60);
       ['tableGroups', 'hiddenGroups', 'groupOrder', 'uiOff'].forEach(k => {
         if (body[k] !== undefined) u[k] = [...new Set((Array.isArray(body[k]) ? body[k] : []).map(x => str(x, 20)).filter(Boolean))].slice(0, 100);
       });
@@ -988,6 +993,9 @@ async function callInner(m, [col, id, action], body) {
       const acc = S.access || {}, ua = {};
       if (acc.catColors) ua.catColors = acc.catColors.map(x => x && x.n === from ? { ...x, n: to } : x).filter(Boolean);
       if (acc.catOrder) ua.catOrder = acc.catOrder.map(x => x === from ? to : x);
+      // 🧩 spoločné možnosti priradené celej kategórii idú s ňou
+      if ((acc.optSets || []).some(s => s && Array.isArray(s.cats) && s.cats.includes(from)))
+        ua.optSets = acc.optSets.map(s => s && Array.isArray(s.cats) && s.cats.includes(from) ? { ...s, cats: s.cats.map(x => x === from ? to : x) } : s).filter(Boolean);
       if (Object.keys(ua).length) await db.ref('access').update(ua);
       return;
     }
@@ -3046,7 +3054,12 @@ function serializeOpts(qs) {
 }
 // 🧩 spoločné možnosti (access.optSets) + priradené k položke (menu.sets) + vlastné len pre položku (menu.opts)
 const optSets = () => ((S.access && S.access.optSets) || []).filter(x => x && x.id);
-const itemSetIds = mi => String((mi && mi.sets) || '').split(',').map(s => s.trim()).filter(Boolean);
+// vlastné priradenie položky (menu.sets)
+const itemOwnSetIds = mi => String((mi && mi.sets) || '').split(',').map(s => s.trim()).filter(Boolean);
+// (2026-11-26) sada priradená celej kategórii (cats) platí pre všetky jej položky, aj nové – okrem odkliknutých (ex)
+const setOnCat = (s, mi) => !!(s && mi && Array.isArray(s.cats) && s.cats.includes(mi.category) && !(Array.isArray(s.ex) && s.ex.includes(mi.id)));
+// všetky sady, ktoré položka naozaj má (vlastné + z kategórie)
+const itemSetIds = mi => { const own = itemOwnSetIds(mi); return [...own, ...optSets().filter(s => !own.includes(s.id) && setOnCat(s, mi)).map(s => s.id)]; };
 function itemQs(mi) {
   if (!mi) return [];
   const sets = optSets();
@@ -5111,8 +5124,8 @@ function renderSettings() {
       ${editingOptsFor === m.id ? `<div class="card" style="margin:4px 0 10px">
         <b style="font-size:15px">Možnosti pri pridaní „${esc(m.name)}“</b>
         ${optSets().length ? `<div class="muted" style="font-size:13px;margin-top:8px">🧩 Spoločné možnosti – ťukni = pridať / odobrať:</div>
-        <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">${optSets().map(s => { const on = itemSetIds(m).includes(s.id);
-          return `<button class="btn ${on ? '' : 'ghost'}" style="width:auto;padding:7px 12px" onclick="setItemOptSet('${m.id}','${s.id}',${!on})">${on ? '✓ ' : ''}${esc(s.n)}</button>`; }).join('')}</div>`
+        <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">${optSets().map(s => { const on = itemSetIds(m).includes(s.id), catSet = Array.isArray(s.cats) && s.cats.includes(m.category);
+          return `<button class="btn ${on ? '' : 'ghost'}" style="width:auto;padding:7px 12px" onclick="setItemOptSet('${m.id}','${s.id}',${!on})">${on ? '✓ ' : ''}${esc(s.n)}${catSet ? ` <small style="opacity:.8">· ${on ? 'z kategórie' : 'kategória – tu nie'}</small>` : ''}</button>`; }).join('')}</div>`
           : '<p class="muted" style="font-size:13px;margin:8px 0 0">Spoločné možnosti pre viac položiek naraz (napr. všetky kávy) vytvoríš hore v „🧩 Spoločné možnosti“.</p>'}
         <div class="muted" style="font-size:13px;margin-top:12px">Len pre túto položku (napr. čokoláda: Mliečna, Biela):</div>
         ${optEditorHtml('m:' + m.id)}
@@ -5205,12 +5218,16 @@ function renderSettings() {
           <input value="${esc(s.n)}" maxlength="40" onkeydown="if(event.key==='Enter')this.blur()" onchange="renameOptSet('${s.id}',this.value)"></div>
         ${optEditorHtml('s:' + s.id)}
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--line)">
-          <div style="font-size:14px"><b>Pri položkách:</b> ${used.length ? used.map(m => esc(m.name)).join(', ') : '<span class="muted">zatiaľ pri žiadnej</span>'}</div>
-          <button class="btn ${optAssignFor === s.id ? '' : 'ghost'}" style="width:auto;padding:8px 14px;margin-top:8px" onclick="optAssignFor=optAssignFor==='${s.id}'?null:'${s.id}';render()">${optAssignFor === s.id ? '✓ Hotovo' : '➕ Priradiť k položkám'}</button>
+          <div class="muted" style="font-size:13px">📂 Celé kategórie – ťukni = pridať / odobrať (platí aj pre nové položky v nej):</div>
+          <div class="row" style="flex-wrap:wrap;gap:6px;margin-top:4px">${cats.filter(c => S.menu.some(m => m.category === c && (m.name || '').trim())).map(c => {
+            const on = Array.isArray(s.cats) && s.cats.includes(c), nEx = on ? S.menu.filter(m => m.category === c && (m.name || '').trim() && !itemSetIds(m).includes(s.id)).length : 0;
+            return `<button class="btn ${on ? '' : 'ghost'}" style="width:auto;padding:7px 12px" onclick="setCatOptSet('${grpArg(c)}','${s.id}',${!on})">${on ? '✓ ' : ''}${esc(c)}${nEx ? ` <small style="opacity:.85">(okrem ${nEx})</small>` : ''}</button>`; }).join('')}</div>
+          <div style="font-size:14px;margin-top:10px"><b>Pri položkách:</b> ${used.length ? used.map(m => esc(m.name)).join(', ') : '<span class="muted">zatiaľ pri žiadnej</span>'}</div>
+          <button class="btn ${optAssignFor === s.id ? '' : 'ghost'}" style="width:auto;padding:8px 14px;margin-top:8px" onclick="optAssignFor=optAssignFor==='${s.id}'?null:'${s.id}';render()">${optAssignFor === s.id ? '✓ Hotovo' : '✏️ Jednotlivé položky (pridať / odkliknúť)'}</button>
           ${optAssignFor === s.id ? cats.map(c => { const items = S.menu.filter(m => m.category === c && (m.name || '').trim()); if (!items.length) return '';
-            const nOn = items.filter(m => itemSetIds(m).includes(s.id)).length;
+            const nOn = items.filter(m => itemSetIds(m).includes(s.id)).length, catOn = Array.isArray(s.cats) && s.cats.includes(c);
             return `<div style="margin-top:10px"><label style="display:flex;align-items:center;gap:6px;font-weight:700;font-size:14px">
-              <input type="checkbox" style="width:auto" ${nOn === items.length ? 'checked' : ''} onchange="setCatOptSet('${grpArg(c)}','${s.id}',this.checked)">${esc(c)} <span class="muted" style="font-weight:400">(celá kategória${nOn && nOn < items.length ? ` · ${nOn} z ${items.length}` : ''})</span></label>
+              <input type="checkbox" style="width:auto" ${catOn ? 'checked' : ''} onchange="setCatOptSet('${grpArg(c)}','${s.id}',this.checked)">${esc(c)} <span class="muted" style="font-weight:400">(celá kategória, aj nové${nOn && nOn < items.length ? ` · ${nOn} z ${items.length}` : ''})</span></label>
               <div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin:4px 0 0 24px">${items.map(m => `<label style="display:flex;align-items:center;gap:5px;font-size:14px">
                 <input type="checkbox" style="width:auto" ${itemSetIds(m).includes(s.id) ? 'checked' : ''} onchange="setItemOptSet('${m.id}','${s.id}',this.checked)">${esc(m.name)}</label>`).join('')}</div></div>`; }).join('') : ''}
         </div>
@@ -5479,21 +5496,40 @@ async function delOptSet(id) {
   const used = S.menu.filter(m => itemSetIds(m).includes(id));
   if (!confirm(`Zmazať spoločné možnosti „${s.n}“?${used.length ? `\nZmiznú aj z ${used.length} ${used.length === 1 ? 'položky' : 'položiek'} (${used.map(m => m.name).join(', ')}).` : ''}`)) return;
   try {
-    for (const m of used) { const ids = itemSetIds(m).filter(x => x !== id).join(','); await call('PUT', '/api/menu/' + m.id, { sets: ids }); m.sets = ids; }
+    for (const m of used.filter(m => itemOwnSetIds(m).includes(id))) { const ids = itemOwnSetIds(m).filter(x => x !== id).join(','); await call('PUT', '/api/menu/' + m.id, { sets: ids }); m.sets = ids; }
     optSetsLocal(await putOptSets(optSets().filter(x => x.id !== id)));
   } catch (e) {}
   if (optAssignFor === id) optAssignFor = null;
   render();
 }
+// výnimky len pre položky, ktoré ešte sú v menu (zmazané sa časom nehromadia)
+const cleanEx = ex => ex.filter(id => S.menu.some(m => m.id === id));
 async function setItemOptSet(mid, sid, on, noRender) {
-  const m = S.menu.find(x => x.id === mid); if (!m) return;
-  const ids = itemSetIds(m).filter(x => x !== sid); if (on) ids.push(sid);
-  if (ids.join(',') !== itemSetIds(m).join(',')) try { await call('PUT', '/api/menu/' + mid, { sets: ids.join(',') }); m.sets = ids.join(','); } catch (e) {}
+  const m = S.menu.find(x => x.id === mid), s = optSets().find(x => x.id === sid); if (!m || !s) return;
+  const inCat = Array.isArray(s.cats) && s.cats.includes(m.category);
+  try {
+    // vlastné priradenie (menu.sets) – v priradenej kategórii netreba, tá ho dá sama
+    const own = itemOwnSetIds(m), ids = own.filter(x => x !== sid); if (on && !inCat) ids.push(sid);
+    if (ids.join(',') !== own.join(',')) { await call('PUT', '/api/menu/' + mid, { sets: ids.join(',') }); m.sets = ids.join(','); }
+    // položka v priradenej kategórii: odkliknutie = výnimka „na toto nie“, zakliknutie výnimku zruší
+    const ex0 = Array.isArray(s.ex) ? s.ex : [], ex = cleanEx(ex0.filter(x => x !== mid)); if (!on && inCat) ex.push(mid);
+    if (ex.join(',') !== ex0.join(',')) optSetsLocal(await putOptSets(optSets().map(x => x.id === sid ? { ...x, ex } : x)));
+  } catch (e) {}
   if (!noRender) render();
 }
+// (2026-11-26) celá kategória: sada sa uloží na kategóriu (cats) → platí pre všetky jej položky, aj neskôr pridané.
+// Zapnutie aj vypnutie začne odznova (zruší výnimky v tej kategórii); vypnutie zruší sadu aj pri jej položkách priradených jednotlivo.
 async function setCatOptSet(enc, sid, on) {
-  const c = decodeURIComponent(enc);
-  for (const m of S.menu.filter(x => x.category === c && (x.name || '').trim())) await setItemOptSet(m.id, sid, on, true);
+  const c = decodeURIComponent(enc), s = optSets().find(x => x.id === sid); if (!s) return;
+  const inCat = S.menu.filter(x => x.category === c), ids = new Set(inCat.map(m => m.id));
+  try {
+    if (!on) for (const m of inCat.filter(m => itemOwnSetIds(m).includes(sid))) {
+      const own = itemOwnSetIds(m).filter(x => x !== sid).join(','); await call('PUT', '/api/menu/' + m.id, { sets: own }); m.sets = own; }
+    const cats = (Array.isArray(s.cats) ? s.cats : []).filter(x => x !== c); if (on) cats.push(c);
+    const ex = cleanEx((Array.isArray(s.ex) ? s.ex : []).filter(x => !ids.has(x)));
+    optSetsLocal(await putOptSets(optSets().map(x => x.id === sid ? { ...x, cats, ex } : x)));
+    toast(on ? `🧩 „${s.n}“ je teraz pri celej kategórii ${c} (aj pri nových položkách)` : `🧩 „${s.n}“ odobraté z kategórie ${c}`);
+  } catch (e) {}
   render();
 }
 async function addItemToCat(enc, idx) {
