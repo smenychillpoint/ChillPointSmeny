@@ -7,6 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Objednávky</title>
+<link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
 <style>
 :root{
   --bg:#f4f1ea;--card:#fff;--ink:#1d2320;--muted:#6b716c;--line:#e3ddd1;
@@ -120,6 +121,24 @@ body:has(.login:not(.hide)){overflow:hidden}
 /* mobil na ležato: nižšia hlavička, okná od vrchu, košík menší - nech ostane miesto na obsah */
 @media(max-height:500px){.bar{height:42px}.tabs{padding-bottom:4px}.tabs button{padding:6px}.login{place-items:start center;padding:8px}.login > .card,.login > form{max-height:calc(100dvh - 16px)}.cart-list{max-height:26dvh}}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;z-index:20;max-width:90vw}
+/* 🕐 (2026-11-26) čas ťuknutím – vždy 24 h (hodina → minúty = hotovo) */
+.tpin{cursor:pointer;caret-color:transparent;font-variant-numeric:tabular-nums}
+.tpov{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
+@media (min-width:600px){.tpov{align-items:center}}
+.tpbox{background:var(--card);color:var(--ink);border-radius:16px 16px 0 0;width:min(460px,100%);max-height:100%;overflow:auto;padding:12px 12px calc(14px + env(safe-area-inset-bottom));box-shadow:0 -6px 24px #0005}
+@media (min-width:600px){.tpbox{border-radius:16px}}
+.tphd{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+.tphd b{font-size:32px;color:var(--accent);font-variant-numeric:tabular-nums}
+.tpx{background:var(--bg);width:40px;height:40px;font-size:18px}
+.tpl{font-size:12px;color:var(--muted);margin:10px 0 5px;text-transform:uppercase;letter-spacing:.05em}
+.tpl small{text-transform:none;letter-spacing:0}
+.tpg{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px}
+.tpg button{background:var(--bg);border:1px solid var(--line);font-size:19px;font-weight:700;padding:12px 0;font-variant-numeric:tabular-nums;min-width:0}
+.tpg button.late{color:#2b7bbf}
+.tpg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.tpg button:disabled{opacity:.3;cursor:default}
+.tpa{display:flex;gap:8px;margin-top:12px}
+.tpa button{flex:1;padding:12px;background:var(--bg);border:1px solid var(--line);font-weight:600}
 .hide{display:none!important}
 /* PIN / kód: bodky ako pri hesle, ale nie je to políčko na heslo (prehliadač neponúka uložené heslá) */
 .pinmask{-webkit-text-security:disc;text-security:disc}
@@ -154,7 +173,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-26b</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-26c</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -217,6 +236,17 @@ window.FIREBASE_CONFIG = {
   messagingSenderId: "251580957782",
   appId: "1:251580957782:web:801f838e4cd65abb4027f7"
 };
+// ⚡ (2026-11-26) rýchlejší štart: Firebase prihlásenie sa spustí hneď tu – beží počas sťahovania a spracovania veľkého skriptu
+// nižšie (predtým až po ňom). A bez Google iframe: Auth ho na mobiloch a v Safari pri KAŽDOM štarte najprv načítaval
+// (apis.google.com + firebaseapp.com/__/auth/iframe, namerané 1,2–1,9 s) kvôli prihláseniu cez Google okno, ktoré appka
+// nepoužíva (len e-mail + heslo). Viazané na SDK 10.13.2 (pri inej verzii sa nič nemení). Pri prihlásení cez Google/popup zmazať.
+function cpFastAuth() {
+  try {
+    const r = firebase.auth()._delegate._popupRedirectResolver;
+    if (r && firebase.SDK_VERSION === '10.13.2') Object.defineProperty(r, '_shouldInitProactively', { get: () => false, configurable: true });
+  } catch (e) {}
+}
+try { if (!firebase.apps.length) firebase.initializeApp(window.FIREBASE_CONFIG); cpFastAuth(); } catch (e) { console.warn('[firebase]', e); }
 // (2026-10-26) Prehliadač nemá ponúkať uložené heslá v bežných políčkach (poznámka, suma, PIN Uzávierky…):
 // každé políčko bez vlastného autocomplete dostane autocomplete="off" (aj tie, čo appka dokreslí neskôr).
 // Heslo sa ponúka len v prihlásení vedúceho (#login – vlastný <form> s username/current-password).
@@ -333,7 +363,8 @@ function expireBizDay() {
   if (!setAt) { setAt = Date.now(); store.set('bizDaySetAt', setAt); }   // starý záznam bez času – odpočet od teraz
   const y = new Date(bizTodayDate()); y.setDate(y.getDate() - 1);
   const yKey = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
-  if (Date.now() - setAt > 14 * 3600e3 || bizDay < yKey) { bizDay = ''; store.set('bizDay', ''); store.set('bizDaySetAt', 0); return true; }
+  // (2026-11-26) aj budúci deň (zo staršej verzie bez kontroly) – len so známym časom servera, zlé hodiny tabletu by zrušili platný deň
+  if (Date.now() - setAt > 14 * 3600e3 || bizDay < yKey || (serverOffset !== null && bizDay > bizTodayISO())) { bizDay = ''; store.set('bizDay', ''); store.set('bizDaySetAt', 0); return true; }
   return false;
 }
 let payroll = store.get('payroll', { pct: '', days: {}, tips: {} });  // výplatná kalkulačka v uzávierke: % z tržby + odpracované hodiny + trinkgeľ za deň
@@ -350,8 +381,20 @@ if (!window.FIREBASE_CONFIG || String(window.FIREBASE_CONFIG.apiKey || '').inclu
   document.body.innerHTML = '<div class="empty" style="padding:60px 20px">Chýba nastavenie Firebase.<br>Vyplňte súbor <b>firebase-config.js</b> podľa návodu.</div>';
   throw new Error('config');
 }
-firebase.initializeApp(window.FIREBASE_CONFIG);
+// (2026-11-26) knižnica Firebase sa nenačítala (prvé otvorenie bez internetu, blokovaný gstatic): hláška namiesto prázdnej stránky
+if (typeof firebase === 'undefined' || !firebase.auth || !firebase.database) {
+  document.getElementById('app').innerHTML = '<div class="empty" style="padding:60px 20px">Nepodarilo sa načítať Firebase – skontroluj internet a obnov stránku.</div>';
+  throw new Error('firebase');
+}
+if (!firebase.apps.length) { firebase.initializeApp(window.FIREBASE_CONFIG); cpFastAuth(); }   // (2026-11-26) zvyčajne už hore v hlavičke
 const auth = firebase.auth(), db = firebase.database();
+// (2026-11-26) stránka vrátená z pamäte prehliadača (Späť, bfcache – hlavne Safari) by ukazovala staré účty → radšej načítať znova
+// Bez internetu, s rozpísaným košíkom alebo počas platby sa nenačítava – čakajúce zápisy Firebase by sa stratili (pošle ich sám po pripojení)
+window.addEventListener('pageshow', e => {
+  if (!e.persisted) return;
+  const draft = cart.length || qForm.name || qForm.time || qForm.note || qfS.name || qfS.table || qfS.time || Object.keys(stPick).length || finishSessionId;
+  if (isOnline && !draft && !payBusy && !paidNowSaving && !finishingSession && !qcSaving) location.reload(); else safeRender();   // safeRender nechá rozpísanú sumu „Ukončiť“
+});
 // dnešný dátum vo formáte YYYY-MM-DD podľa lokálneho času (nie UTC, ako by dal toISOString())
 const todayISO = () => { const d = new Date(now()); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 // dátum (Date objekt) -> YYYY-MM-DD, lokálny čas
@@ -366,6 +409,7 @@ const orderDayKey = o => o.businessDay || dateKey(new Date(o.paidAt - DAY_START_
 const bizKeyOfTs = t => dateKey(new Date(t - DAY_START_H * 3600e3));
 const toBizDay = t => !!bizDay && !(typeof t === 'number' && bizKeyOfTs(t) > bizDay);
 const bizTodayISO = () => dateKey(bizTodayDate());
+const bizYesterdayISO = () => { const y = bizTodayDate(); y.setDate(y.getDate() - 1); return dateKey(y); };
 // Staré "rozdelené rovným dielom" platby (pred opravou): pôvodné objednávky ostali ako zaplatené popri podieloch
 // "Podiel účtu (i/N)" -> tržba 2×. Takúto pôvodnú objednávku (ten istý stôl, zaplatená do 15 s od podielu)
 // vynecháme zo súčtov aj zoznamov. Nové rozdelenia pôvodné objednávky rovno mažú, tam sa nič nefiltruje.
@@ -577,7 +621,7 @@ function logDeleted(o) {
     const tkPay = !paid && isTicket(o) ? S.orders.find(x => x.id === o.paidIn && x.status === 'zaplatena') : null;
     const rec = { no: Number(o.no) || 0, tableName: str(o.tableName, 40), total: Math.round(sumOrders([o]) * 100) / 100,
       items: str((o.items || []).map(i => `${i.qty}× ${i.name}`).join(', '), 400), status: str(isTicket(o) ? 'zaplateny-listok' : o.status, 20),
-      day: paid ? orderDayKey(o) : tkPay ? orderDayKey(tkPay) : (bizDay || bizTodayISO()), deletedAt: now(), by: str(who, 60), ...((paid ? o.staff : tkPay && tkPay.staff) ? { staff: true } : {}), ...(!paid && isTicket(o) && !tkPay ? { noPay: true } : {}) };
+      day: paid ? orderDayKey(o) : tkPay ? orderDayKey(tkPay) : (bizDay || bizTodayISO()), deletedAt: now(), by: str(who, 60), ...((paid ? o.staff : tkPay && tkPay.staff) ? { staff: true } : {}), ...(!paid && isTicket(o) && !tkPay && !tkUnsure(o) ? { noPay: true } : {}) };
     db.ref('deletedLog').push(rec).then(() => { if (!delLogLoading) { delLog = null; safeRender(); } }).catch(() => {});
   } catch (e) {}
 }
@@ -1377,6 +1421,11 @@ function prune() {
   if (!isManager) return;
   const u = {}, limit = now() - 30 * 864e5;
   S.orders.forEach(o => { if (o.status === 'zaplatena' && o.paidAt < limit) u[o.id] = null; });
+  // (2026-11-26) staré zaplatené už v S.orders nie sú (živé sú len posledné ~2 dni) → nájde ich dopyt podľa paidAt
+  if (ordMode === 'idx') ordQ().startAt(0).endAt(limit).once('value').then(s => {
+    const old = {}; Object.entries(s.val() || {}).forEach(([k, o]) => { if (o && o.status === 'zaplatena' && o.paidAt < limit) old[k] = null; });
+    if (Object.keys(old).length) return db.ref('orders').update(old);
+  }).catch(() => {});
   // (2026-11-07) 💶 lístky k zaplateným (peniaze sú v platbe): odnesené pred viac ako 12 h a všetky staršie ako 48 h
   const tkLimit = now() - 12 * 3600e3, tkMax = now() - 48 * 3600e3;
   S.orders.forEach(o => { if (isTicket(o) && ((o.status === 'vydana' && (o.vydanaAt || o.createdAt || 0) < tkLimit) || (o.createdAt || 0) < tkMax)) u[o.id] = null; });
@@ -1410,17 +1459,114 @@ function prune() {
   if (Object.keys(ub).length) db.ref('board').update(ub).catch(() => {});
 }
 
+// ---------- ⚡ (2026-11-26) objednávky: zaplatené zo starších dní až na požiadanie ----------
+// Predtým sa pri KAŽDOM otvorení na každom zariadení sťahovali všetky zaplatené objednávky za 30 dní (~675 kB a rastie s tržbou).
+// Teraz živo len nezaplatené (bez paidAt) + zaplatené za posledných 50 h (celý včerajší pracovný deň 6:00–6:00 aj lístky na bare,
+// tie majú najviac 48 h). Starší deň sa stiahne, až keď si ho niekto otvorí v 📜 Histórii platieb alebo 📊 Uzávierke (potom ostane živý).
+// Zaplatená objednávka má vždy paidAt (dáva sa pri zápise platby, pravidlá ho strážia) a nezaplatená nikdy – zaplatenú nejde vrátiť.
+// Potrebuje ".indexOn": ["paidAt"] na orders v pravidlách Firebase. Kým tam nie je, ide to po starom (celé orders naraz) – bez indexu
+// by Firebase posielal celé orders pre každý dopyt zvlášť. Či index je, overí raz za deň malý dopyt cez REST (bez indexu vráti chybu).
+const PAID_LIVE_MS = 50 * 3600e3;
+let ordMode = '', ordOpen = null, ordPaid = null, ordAll = null, ordPaidWant = 0, ordPaidFrom = 0, ordPaidLive = null, ordQs = [];
+let ordDays = {};   // 'YYYY-MM-DD' → { st: 'loading' | 'ok' | 'err', v: {}, l } – starší deň stiahnutý na požiadanie
+const ordQ = () => db.ref('orders').orderByChild('paidAt');
+function ordChanged() {
+  if (ordMode === 'full') live.orders = ordAll;
+  else if (ordOpen === null || ordPaid === null) live.orders = null;
+  else { const m = {}; Object.values(ordDays).forEach(d => { if (d.v) Object.assign(m, d.v); }); live.orders = Object.assign(m, ordPaid, ordOpen); }
+  tryRender();
+}
+function ordListen(q, fn, onErr) { const l = { q, cb: null }; ordQs.push(l); l.cb = q.on('value', s => fn(s.val() || {}), onErr); return l; }
+function ordUnlisten(l) { if (!l) return; try { l.q.off('value', l.cb); } catch (e) {} ordQs = ordQs.filter(x => x !== l); }
+function ordersOff() { ordQs.slice().forEach(ordUnlisten); ordMode = ''; ordOpen = ordPaid = ordAll = null; ordPaidWant = ordPaidFrom = 0; ordPaidLive = null; ordDays = {}; }
+function ordersOn(errH) {
+  ordersOff();
+  const idx = Number(store.get('ordIdx', 0)) || 0;
+  if (idx > 0) { ordMode = 'idx'; ordListen(ordQ().equalTo(null), v => { ordOpen = v; ordChanged(); }, errH); ordPaidSub(); }
+  else { ordMode = 'full'; ordListen(db.ref('orders'), v => { ordAll = v; ordChanged(); }, errH); }
+  if (!(idx > 0) || Date.now() - idx > 864e5) setTimeout(ordIdxProbe, 5000);
+}
+// živé okno zaplatených (od now − 50 h, na celú hodinu); posunie sa raz za deň, alebo keď sa ukáže, že hodiny zariadenia išli napred
+function ordPaidSub() {
+  const from = Math.floor((now() - PAID_LIVE_MS) / 3600e3) * 3600e3, old = ordPaidLive, q = ordQ().startAt(from), l = { q, cb: null };
+  ordPaidWant = from; ordPaidLive = l; ordQs.push(l);
+  l.cb = q.on('value', s => {
+    if (ordPaidLive !== l) return;   // staré okno – už ho nahradilo nové
+    ordPaid = s.val() || {};
+    if (ordPaidFrom !== from) {
+      ordPaidFrom = from; ordUnlisten(old);   // staré okno odpojiť, až keď prišlo nové
+      // dni stiahnuté zvlášť, ktoré nové okno už pokrýva (hodiny zariadenia išli napred), netreba držať
+      Object.keys(ordDays).forEach(k => { if (parseISODate(k).getTime() + (DAY_START_H - 1) * 3600e3 >= from) { ordUnlisten(ordDays[k].l); delete ordDays[k]; } });
+    }
+    ordChanged();
+  }, e => { console.warn('[objednávky] zaplatené', e); if (ordPaidLive === l && ordPaid === null) { ordPaid = {}; ordChanged(); } });
+}
+function ordPaidCheck() {
+  if (ordMode !== 'idx' || !ordPaidLive || !isOnline) return;   // bez internetu okno neposúvať (nové by nemalo dáta)
+  const want = now() - PAID_LIVE_MS;
+  if (want < ordPaidWant - 3600e3 || want - ordPaidWant > 24 * 3600e3) ordPaidSub();
+}
+// zaplatené za deň k (📜 História, 📊 Uzávierka) → 'ok' | 'loading' | 'err'; prvé zavolanie deň začne sťahovať
+function paidDayState(k) {
+  if (ordMode !== 'idx') return 'ok';
+  const d0 = parseISODate(k).getTime() + DAY_START_H * 3600e3;   // začiatok pracovného dňa 6:00
+  if (ordPaid === null) return 'loading';   // kým nepríde živé okno, deň nezakladať (dnešok a včerajšok v ňom budú)
+  if (ordPaidFrom && d0 - 3600e3 >= ordPaidFrom) return 'ok';   // je v živom okne
+  if (ordDays[k]) return ordDays[k].st;
+  // živý ostane najviac 1 predtým otvorený starší deň – bar tablet sa neodhlasuje a listovaním v Histórii by sa znova nazbierali
+  // týždne platieb. Ich dáta z live.orders vypadnú pri najbližšom ordChanged (tu nie – sme v render()).
+  Object.keys(ordDays).slice(0, -1).forEach(x => { ordUnlisten(ordDays[x].l); delete ordDays[x]; });
+  const e = ordDays[k] = { st: 'loading', v: null, l: null };
+  // od 6:00 (s rezervou) po 6:00 o dva dni: 🌙 pracovný deň zapisuje platby pod tento deň ešte aj nasledujúci deň.
+  // Až po vykreslení – Firebase môže z pamäte zavolať hneď, kým sa ešte kreslí.
+  setTimeout(() => {
+    if (ordDays[k] !== e || ordMode !== 'idx') return;
+    e.l = ordListen(ordQ().startAt(d0 - 3600e3).endAt(d0 + 49 * 3600e3), v => { e.v = v; e.st = 'ok'; ordChanged(); },
+      err => { console.warn('[objednávky] platby dňa', k, err); e.st = 'err'; safeRender(); });
+  }, 0);
+  return 'loading';
+}
+function paidDayRetry(k) { const d = ordDays[k]; if (d) { ordUnlisten(d.l); delete ordDays[k]; } render(); }
+const paidDayWaitHtml = (k, st) => st === 'err'
+  ? `<div class="empty">Platby za tento deň sa nepodarilo načítať.<br><button class="btn ghost" style="width:auto;margin-top:10px" onclick="paidDayRetry('${k}')">Skúsiť znova</button></div>`
+  : `<div class="empty">⏳ Načítavam platby za tento deň…${isOnline ? '' : '<br><small>Bez internetu – načíta sa, keď sa zariadenie pripojí.</small>'}</div>`;
+// je v pravidlách ".indexOn": ["paidAt"]? REST dopyt bez indexu skončí chybou „Index not defined“ (SDK by potichu stiahol všetko)
+async function ordIdxProbe() {
+  try {
+    const u = auth.currentUser, base = window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.databaseURL; if (!u || !base) return;
+    const r = await fetch(`${base}/orders.json?orderBy=%22paidAt%22&limitToFirst=1&auth=${encodeURIComponent(await u.getIdToken())}`, { cache: 'no-store' });
+    if (r.ok) store.set('ordIdx', Date.now());
+    else if (r.status === 400 && /index/i.test(await r.text())) store.set('ordIdx', 0);
+  } catch (e) {}
+}
+
 let listening = false;
 // Databáza je zdieľaná so smenami, takže pravidlá povoľujú čítanie len po jednotlivých
 // uzloch (tables/menu/orders), nie naraz z koreňa - preto samostatné listenery.
 let live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null, attractions: null, sessions: null, queueLog: null, board: null };
 let pruned = false;
+// (2026-11-26) všetky odbery dát (pri odhlásení sa odpoja všetky)
+const DATA_PATHS = ['tables', 'menu', 'categories', 'orders', 'employees/list', 'access', 'queue', 'attractions', 'sessions', 'queueLog', 'board',
+  'meta/guests', 'meta/tempGone', 'meta/staffTables', 'meta/soldOut', 'meta/payPct', 'settings/hubAccess', 'meta/payroll'];
+const liveReady = () => !(live.tables === null || live.menu === null || live.orders === null || live.categories === null || live.employees === null || live.access === null || live.queue === null || live.attractions === null || live.sessions === null || live.queueLog === null || live.board === null);
+// ⚡ (2026-11-26) doplnkový uzol sa zmenil: S sa neprestavuje, stačí prekresliť. Viac zmien za sebou (pri štarte ich príde 7) = jedno
+// prekreslenie v ďalšom snímku. Pred načítaním hlavných dát nič – prvé plné vykreslenie ich už bude mať.
+let auxRq = 0;
+function auxChanged() {
+  if (!liveReady() || auxRq) return;
+  const go = () => { auxRq = 0; safeRender(); };
+  // skrytá stránka (bar tablet v pozadí) nekreslí snímky → poistka časovačom, nech sa prekreslí aj tak
+  auxRq = document.hidden ? setTimeout(go, 50) : requestAnimationFrame(go);
+}
 function tryRender() {
-  if (live.tables === null || live.menu === null || live.orders === null || live.categories === null || live.employees === null || live.access === null || live.queue === null || live.attractions === null || live.sessions === null || live.queueLog === null || live.board === null) return;
+  if (!liveReady()) return;
+  // 🌙 zabudnutý / budúci pracovný deň zrušiť hneď, nielen pri vykreslení hlavnej obrazovky (tá sa pri písaní alebo pri otvorenom
+  // formulári Ukončiť odkladá – a platby by medzitým dostali zlý deň)
+  if (serverOffset !== null && expireBizDay()) toast('🌙 Pracovný deň sa vrátil na automatický (dnešok)');
   onData({ tables: live.tables, menu: live.menu, orders: live.orders, categories: live.categories, employees: live.employees, access: live.access, queue: live.queue, attractions: live.attractions, sessions: live.sessions, queueLog: live.queueLog, board: live.board });
   checkClock();
   if (!pruned && serverOffset !== null) { pruned = true; prune(); }
-  if (serverOffset !== null) expireOldQueue();
+  if (serverOffset !== null) { expireOldQueue(); ordPaidCheck(); }
 }
 // (2026-11-19) 🧹 rezervácia z dňa, ktorý už skončil (pracovný deň 6:00–6:00), sa sama zmaže – želanie majiteľa (staré
 // „▶ Na rade“ z minulých dní zavadzali). Deň = qDayKey (bez času deň zapísania). Do histórie ide ako ⌛ (action 'expired').
@@ -1429,7 +1575,9 @@ function tryRender() {
 let queueExpiring = false, queueExpireAt = 0;
 async function expireOldQueue() {
   if (queueExpiring || serverOffset === null || now() - queueExpireAt < 60e3) return;
-  const today = curBizKey(), old = S.queue.filter(q => qDayKey(q) < today);
+  // (2026-11-26) hranica najviac dnešný pracovný deň podľa servera: 🌙 = včera nechá včerajšie, ale budúci 🌙 deň (zo staršej verzie,
+  // zlé hodiny) nesmie zmazať dnešné rezervácie (⌛ sa nedá vrátiť)
+  const auto = bizTodayISO(), today = bizDay && bizDay < auto ? bizDay : auto, old = S.queue.filter(q => qDayKey(q) < today);
   if (!old.length) return;
   queueExpiring = true; queueExpireAt = now();
   const u = {};
@@ -1440,7 +1588,7 @@ async function expireOldQueue() {
   try { await db.ref().update(u); } catch (e) { console.warn('[rezervácie] staré sa nepodarilo zmazať', e); }
   queueExpiring = false;
 }
-setInterval(() => { if (listening) expireOldQueue(); }, 5 * 60e3);
+setInterval(() => { if (listening) { expireOldQueue(); if (serverOffset !== null) ordPaidCheck(); } }, 5 * 60e3);
 // Neskúša to znova dookola, ak to raz zlyhá (napr. spoločný účet ešte nie je vo Firebase vytvorený) -
 // vtedy sa automaticky ponúkne prihlásenie vedúceho namiesto donekonečna opakovaných neúspešných pokusov.
 async function attemptDeviceLogin() {
@@ -1524,7 +1672,11 @@ function connect() {
     if (role === 'nastavenia' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (role === 'uzavierka' && !isManager) { role = 'casnik'; store.set('role', role); }
     if (!user) {
-      if (listening) { db.ref('tables').off(); db.ref('menu').off(); db.ref('orders').off(); db.ref('categories').off(); db.ref('employees/list').off(); db.ref('access').off(); db.ref('queue').off(); db.ref('attractions').off(); db.ref('sessions').off(); db.ref('queueLog').off(); db.ref('board').off(); db.ref('meta/guests').off(); tableGuests = {}; db.ref('meta/payroll').off(); sharedPay = {}; listening = false; }
+      // (2026-11-26) odpojiť VŠETKÝCH 18 odberov – predtým 5 ostalo (tempGone, staffTables, soldOut, payPct, hubAccess) a pri ďalšom
+      // prihlásení sa pripojili druhýkrát (každá ich zmena potom spustila prekreslenie 2×, 3×…)
+      // (2026-11-26) aj doplnkové mapy (predtým ich vynulovali chybové callbacky neodpojených odberov): stará kópia soldOut by pri
+      // ďalšom prihlásení vedúceho v prune() zmazala dnešné „vypredané“ skôr, než príde čerstvá
+      if (listening) { DATA_PATHS.forEach(p => db.ref(p).off()); ordersOff(); tableGuests = {}; sharedPay = {}; soldOut = {}; tempGone = {}; staffTables = {}; hubAccess = {}; listening = false; }
       live = { tables: null, menu: null, orders: null, categories: null, employees: null, access: null, queue: null, attractions: null, sessions: null, queueLog: null, board: null }; pruned = false;
       // Nikto nie je prihlásený - skús automaticky prihlásiť toto zariadenie na spoločný účet, nech
       // zamestnanec nemusí poznať žiadne heslo (identifikuje sa až potom menom + svojím kódom).
@@ -1534,14 +1686,19 @@ function connect() {
     }
     deviceLoginAttempted = false; deviceLoginFailed = false; wantManagerLogin = false; pruned = false;
     render();
-    try { await seedIfEmpty(); } catch (e) { console.warn(e); }
+    // ⚡ (2026-11-26) zmena účtu bez odhlásenia (vedúci sa prihlási na zariadení zamestnancov): odbery už bežia a oba účty čítajú
+    // tie isté uzly → nepripájať znova (predtým sa pripojilo 18 odberov druhýkrát, 18× celé prekreslenie naraz a potom každá
+    // zmena 2×, kým sa niekto neodhlásil – bar tablet sa tým postupne spomaľoval)
+    if (listening) { tryRender(); return; }
+    // (2026-11-26) seedIfEmpty už nečaká pred odbermi (bol to +1 round trip pri každom otvorení); len vedúci, na pozadí
+    if (isMgrAuth) setTimeout(() => seedIfEmpty().catch(e => console.warn(e)), 0);
     const errH = () => {
       toast('Nemáte prístup k dátam – skontrolujte pravidlá databázy');
     };
     db.ref('tables').on('value', s => { live.tables = s.val() || {}; tryRender(); }, errH);
     db.ref('menu').on('value', s => { live.menu = s.val() || {}; tryRender(); }, errH);
     db.ref('categories').on('value', s => { live.categories = s.val() || {}; tryRender(); }, errH);
-    db.ref('orders').on('value', s => { live.orders = s.val() || {}; tryRender(); }, errH);
+    ordersOn(errH);   // ⚡ nezaplatené + zaplatené za ~2 dni (staršie dni na požiadanie)
     db.ref('employees/list').on('value', s => { live.employees = s.val() || []; tryRender(); }, () => { live.employees = []; tryRender(); });
     db.ref('access').on('value', s => { live.access = s.val() || {}; tryRender(); }, () => { live.access = {}; tryRender(); });
     db.ref('queue').on('value', s => { live.queue = s.val() || {}; tryRender(); }, () => { live.queue = {}; tryRender(); errH(); });
@@ -1550,15 +1707,18 @@ function connect() {
     db.ref('queueLog').on('value', s => { live.queueLog = s.val() || {}; tryRender(); }, () => { live.queueLog = {}; tryRender(); errH(); });
     db.ref('board').on('value', s => { live.board = s.val() || {}; tryRender(); }, () => { live.board = {}; tryRender(); errH(); });
     // mená k účtom stolov (nepovinné - keď sa nenačítajú, appka funguje ďalej bez nich)
-    db.ref('meta/guests').on('value', s => { tableGuests = s.val() || {}; tryRender(); }, () => { tableGuests = {}; });
-    db.ref('meta/tempGone').on('value', s => { tempGone = s.val() || {}; tryRender(); }, () => { tempGone = {}; });
-    db.ref('meta/staffTables').on('value', s => { staffTables = s.val() || {}; tryRender(); }, () => { staffTables = {}; });
-    db.ref('meta/soldOut').on('value', s => { soldOut = s.val() || {}; tryRender(); }, () => { soldOut = {}; });
-    db.ref('meta/payPct').on('value', s => { sharedPayPct = s.val(); sharedPayPctLoaded = true; sharePayPctIfNeeded(); tryRender(); }, () => {});
-    db.ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; tryRender(); }, () => { hubAccess = {}; });
+    // ⚡ (2026-11-26) tieto doplnkové uzly do S nevstupujú → auxChanged() len prekreslí (zlúčené), nie celé onData. Predtým každý z nich
+    // po prvom vykreslení spustil celé onData + render (7× za sebou, na lacnom mobile 1–4 s zamrznutia po otvorení).
+    db.ref('meta/guests').on('value', s => { tableGuests = s.val() || {}; auxChanged(); }, () => { tableGuests = {}; });
+    db.ref('meta/tempGone').on('value', s => { tempGone = s.val() || {}; auxChanged(); }, () => { tempGone = {}; });
+    db.ref('meta/staffTables').on('value', s => { staffTables = s.val() || {}; auxChanged(); }, () => { staffTables = {}; });
+    db.ref('meta/soldOut').on('value', s => { soldOut = s.val() || {}; auxChanged(); }, () => { soldOut = {}; });
+    // % z tržby: pred načítaním hlavných dát (S.access) sa nič nezapisuje – onData ho zavolá samo
+    db.ref('meta/payPct').on('value', s => { sharedPayPct = s.val(); sharedPayPctLoaded = true; if (liveReady()) sharePayPctIfNeeded(); auxChanged(); }, () => {});
+    db.ref('settings/hubAccess').on('value', s => { hubAccess = s.val() || {}; auxChanged(); }, () => { hubAccess = {}; });
     // výplaty (hodiny + trinkgeľ) zdieľané medzi zariadeniami; pri prvom načítaní sa prenesú staré lokálne údaje
     let payFirst = true;
-    db.ref('meta/payroll').on('value', s => { sharedPay = s.val() || {}; if (payFirst) { payFirst = false; migrateLocalPayroll(); } tryRender(); }, () => { sharedPay = {}; });
+    db.ref('meta/payroll').on('value', s => { sharedPay = s.val() || {}; if (payFirst) { payFirst = false; migrateLocalPayroll(); } auxChanged(); }, () => { sharedPay = {}; });
     listening = true;
   });
 }
@@ -1598,7 +1758,7 @@ function safeRender() {
   // by prípadná živá zmena z iného zariadenia (ktokoľvek z tímu) prepísala rozostavaný input naspäť
   // na predvyplnenú/prázdnu hodnotu tesne predtým, než čašník klikne "Potvrdiť" - a suma sa buď stratí,
   // alebo sa potichu odošle nula namiesto zadanej sumy (presne bug nahlásený pri biliarde).
-  if (finishSessionId) { pending = true; return; }
+  if (finishFormOpen()) { pending = true; return; }
   // ani kým je otvorený výber stola pri "Prepísať na iný stôl" (inak by sa rozbalený výber pri živej zmene zavrel)
   if (moveOrderId) { pending = true; return; }
   // okienko "presunúť účet" má výber stola - neprekresľovať, kým je otvorené (inak by sa výber zavrel)
@@ -1606,8 +1766,14 @@ function safeRender() {
   render();
 }
 document.addEventListener('focusout', () => setTimeout(() => {
-  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId && !menuDrag && !finishSessionId && !moveOrderId && tblModal !== 'move') { pending = false; render(); }
+  if (pending && document.activeElement?.tagName !== 'INPUT' && !attrDragId && !tableDragId && !menuDrag && !finishFormOpen() && !moveOrderId && tblModal !== 'move') { pending = false; render(); }
 }, 50));
+// (2026-11-26) formulár „Ukončiť“ (suma za hru) je naozaj na obrazovke a hra ešte beží? Inak (iná záložka, zatvorené okienko stola,
+// hru ukončilo / zrušilo iné zariadenie) ho zabudnúť – predtým ďalej blokoval živé prekresľovanie celej appky (aj Baru)
+function finishFormOpen() {
+  if (finishSessionId && S.sessions.some(s => s.id === finishSessionId) && $('#finPrice-' + slug(finishSessionId))) return true;
+  finishSessionId = null; return false;
+}
 
 // ---------- zvuk ----------
 let actx;
@@ -1631,7 +1797,50 @@ function toast(msg) {
   const d = document.createElement('div'); d.className = 'toast'; d.textContent = msg;
   document.body.appendChild(d); setTimeout(() => d.remove(), 2200);
 }
-const ago = t => { const m = Math.floor((now() - t) / 60000); return m < 1 ? 'teraz' : m + ' min'; };
+// ---------- 🕐 (2026-11-26) čas ťuknutím, vždy 24 h ----------
+// Natívne políčko času ukazovalo na niektorých mobiloch len 1–12 (AM/PM) a pri písaní „8“, „30“ klávesnica ponúkla len „Ďalej“
+// (želanie majiteľa: „ťuknem a hotovo“). Políčko .tpin je obyčajný <input readonly> s hodnotou „HH:MM“ (oninput / onchange ostali),
+// ťuk otvorí okno: hodina (06–05, po polnoci modré) → minúty po 5 = hotovo. Okno je mimo #app, živé prekreslenie ho nezavrie.
+// Políčko sa nefokusuje → čas musí byť uložený v stave formulára (qForm, qfS, attrPick, stPick), nie len v DOM.
+const TP_H = [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 0, 1, 2, 3, 4, 5];
+const TPIN = 'class="tpin" type="text" readonly inputmode="none" placeholder="--:--" autocomplete="off"';
+const tp2 = n => String(n).padStart(2, '0');
+let tp = null;   // otvorený výber času {el, id, h, m}
+function tpOpen(el) {
+  // predošlé políčko (napr. Počet osôb) by inak nechalo otvorenú klávesnicu cez spodok okna
+  try { const a = document.activeElement; if (a && a !== document.body && a !== el && a.blur) a.blur(); } catch (e) {}
+  const v = /^([0-2]\d):([0-5]\d)$/.exec(el.value || '');
+  tp = { el, id: el.id || '', h: v ? +v[1] % 24 : null, m: v ? +v[2] : null };
+  tpDraw(); syncNavHistory();   // strážny záznam v histórii – Späť zavrie výber
+}
+function tpDraw() {
+  let box = document.getElementById('tpRoot');
+  if (!tp) { if (box) box.remove(); return; }
+  if (!box) { box = document.createElement('div'); box.id = 'tpRoot'; document.body.appendChild(box); }
+  const hh = tp.h === null ? '--' : tp2(tp.h), mm = tp.m === null || tp.h === null ? '--' : tp2(tp.m);
+  box.innerHTML = `<div class="tpov" onclick="if(event.target===this)tpClose()"><div class="tpbox" role="dialog" aria-label="Vyber čas">
+    <div class="tphd"><b>${hh}:${mm}</b><button type="button" class="tpx" onclick="tpClose()" aria-label="Zavrieť">✕</button></div>
+    <div class="tpl">Hodina</div>
+    <div class="tpg">${TP_H.map(h => `<button type="button" class="${h === tp.h ? 'on' : ''}${h < 6 ? ' late' : ''}" onclick="tpHour(${h})">${tp2(h)}</button>`).join('')}</div>
+    <div class="tpl">Minúty <small>${tp.h === null ? '– najprv ťukni hodinu' : '– ťuk = hotovo'}</small></div>
+    <div class="tpg">${[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map(m => `<button type="button" class="${m === tp.m && tp.h !== null ? 'on' : ''}"${tp.h === null ? ' disabled' : ''} onclick="tpMin(${m})">:${tp2(m)}</button>`).join('')}</div>
+    <div class="tpa"><button type="button" onclick="tpSet('')">Vymazať čas</button><button type="button" onclick="tpClose()">Zrušiť</button></div>
+  </div></div>`;
+}
+function tpHour(h) { if (!tp) return; tp.h = h; tpDraw(); }
+function tpMin(m) { if (!tp || tp.h === null) return; tpSet(tp2(tp.h) + ':' + tp2(m)); }
+function tpClose() { tp = null; tpDraw(); syncNavHistory(); }
+function tpSet(v) {
+  const t = tp; if (!t) return; tp = null; tpDraw(); syncNavHistory();
+  const el = (t.id && document.getElementById(t.id)) || t.el; if (!el) return;   // políčko mohlo byť medzitým prekreslené
+  el.value = v;
+  ['input', 'change'].forEach(n => el.dispatchEvent(new Event(n, { bubbles: true })));
+}
+// ťuk na políčko: bez fokusu (žiadna klávesnica) → okno s časom
+document.addEventListener('mousedown', e => { if (e.target && e.target.closest && e.target.closest('input.tpin')) e.preventDefault(); });
+document.addEventListener('click', e => { const el = e.target && e.target.closest && e.target.closest('input.tpin'); if (el) { e.preventDefault(); tpOpen(el); } });
+document.addEventListener('keydown', e => { if (tp && e.key === 'Escape') { e.stopImmediatePropagation(); tpClose(); } });   // Esc len pre výber času
+const ago =t => { const m = Math.floor((now() - t) / 60000); return m < 1 ? 'teraz' : m + ' min'; };
 const open = () => S.orders.filter(o => o.status !== 'zaplatena');
 // (2026-11-07) 💶 Zaplatené hneď: lístok na bar k už zaplatenej platbe (paidIn = kľúč platby, dest = cieľový stôl, guest = meno).
 // Je na Bare a v Odniesť, ale nie je to účet stola – nepočíta sa do účtu, platby, „ešte nezaplatené“, % ani do tržby (peniaze sú v platbe).
@@ -1653,9 +1862,11 @@ const ticketOf = (o, items, payKey, guest) => ({ no: o.no || 0, ...(o.tableId ? 
 const PN_ID = '_zaplatene', PN_NAME = '💶 Zaplatené hneď';   // dlaždica na Stoloch (nie je to stôl, len obrazovka na objednanie)
 const PN_PICKUP = '🙋 Vyzdvihne si';   // lístok bez stola a bez mena – zákazník si to vyzdvihne na bare
 // upozornenie pri − / 🗑 na zaplatenom lístku: podľa platby, ku ktorej patrí (je v tržbe / zamestnanecký účet / platbu už zmazali)
+// (2026-11-26) lístok starší ako živé okno zaplatených (~50 h): jeho platba tu môže chýbať, hoci je v tržbe – nevieme, či ju zmazali
+const tkUnsure = o => ordMode === 'idx' && (o.createdAt || 0) < ordPaidFrom;
 const paidWarn = (o, sum) => {
   const p = S.orders.find(x => x.id === o.paidIn && x.status === 'zaplatena');
-  if (!p) return '\n\n💶 Bolo to zaplatené hneď (platba už v Uzávierke nie je).';
+  if (!p) return tkUnsure(o) ? '\n\n💶 Bolo to zaplatené hneď. Ak peniaze zákazníkovi vraciaš, povedz to vedúcemu.' : '\n\n💶 Bolo to zaplatené hneď (platba už v Uzávierke nie je).';
   if (p.staff) return `\n\n💶 Je to už zapísané na zamestnanecký účet (${sum}, mimo tržby). Ak to rušíš, povedz to vedúcemu.`;
   return `\n\n💶 Je to UŽ ZAPLATENÉ – ${sum} je v tržbe. Ak peniaze zákazníkovi vraciaš, povedz to vedúcemu.`;
 };
@@ -1669,7 +1880,8 @@ const STAV = { nova: 'Na bare', hotova: 'Hotová – odniesť', vydana: 'Vydaná
 // ho zoberie a appka urobí jeden krok dozadu (platba -> stôl -> zoznam stolov). Na hlavnej obrazovke funguje
 // šípka normálne (napr. späť do Smien).
 let navGuard = false, navIgnorePop = false;
-const inSubView = () => !!(showBoard || moveOrderId || tblModal || (role === 'casnik' && (tableId || showHist || showQueue || showQuickCash)) || (role === 'atrakcie' && showQueueHist));
+// (2026-11-26) aj otvorený výber času (tp) – systémové Späť ho zavrie aj na hlavnej obrazovke (Atrakcie, Uzávierka), nie odíde z Objednávok
+const inSubView = () => !!(tp || showBoard || moveOrderId || tblModal || (role === 'casnik' && (tableId || showHist || showQueue || showQuickCash)) || (role === 'atrakcie' && showQueueHist));
 function navBackStep() {
   if (tblModal) tblModal = null;   // najprv zavrieť okienko na stole
   else if (moveOrderId) moveOrderId = null;
@@ -1692,6 +1904,9 @@ window.addEventListener('popstate', () => {
   if (navIgnorePop) { navIgnorePop = false; return; }
   if (!navGuard) return;            // na hlavnej obrazovke - nech prehliadač ide normálne späť
   navGuard = false;
+  // (2026-11-26) otvorený výber času: Späť zavrie len ten, obrazovka pod ním ostane – bez render(), inak by zmazal rozpísanú
+  // sumu vo formulári „Ukončiť“ (tpClose sám zosynchronizuje strážny záznam)
+  if (tp) { tpClose(); return; }
   navBackStep();
   render(); scrollTo(0, 0);         // render() podľa potreby pridá nový strážny záznam
 });
@@ -1962,7 +2177,8 @@ function tableResTag(tId) {
   const rs = S.queue.filter(q => q.tableId === tId && qDayKey(q) === curBizKey())   // (2026-11-19) len dnešný pracovný deň
     .sort((a, b) => (a.reserveAt || a.createdAt || 0) - (b.reserveAt || b.createdAt || 0));
   if (!rs.length) return { html: '', soon: false };
-  const r = rs[0], who = `${r.pre ? '⏳ predbežná ' : ''}${esc(r.name || 'rezervácia')}${r.people ? ` (${r.people})` : ''}`;
+  const r = rs[0], ppl = r.people || (r.join ? r.pg : ''), jt = qJoinTxt(r);
+  const who = `${r.pre ? '⏳ predbežná ' : ''}${esc(r.name || 'rezervácia')}${ppl ? ` (${esc(ppl)})` : ''}${jt ? ` · <b>${esc(jt)}</b>` : ''}`;
   const soon = !r.reserveAt || r.reserveAt - nowT <= 3600e3;
   const when = r.reserveAt ? new Date(r.reserveAt).toLocaleTimeString('sk-SK', { hour: '2-digit', minute: '2-digit' }) : 'čaká';
   const more = rs.length > 1 ? ` +${rs.length - 1}` : '';
@@ -2121,9 +2337,13 @@ async function delBoardItem(id) {
 const SEAT_LABEL = { gauc: '🛋 Gauč', stolik: '🪑 Stolík', any: '📍 Miesto' };
 // (2026-10-28) rezervácia z Rezervácií môže mať aj konkrétnu atrakciu (stationId, napr. Biliard 8)
 const queueStation = q => q.stationId ? S.attractions.find(a => a.id === q.stationId) || null : null;
+// (2026-11-26) 🔗 spojené stoly z Rezervácií: každý stôl má vlastný záznam, spolu ich drží grp a join: true → pri stole „spojiť s P4“
+const qJoinSibs = q => q && q.grp && q.join ? S.queue.filter(x => x.grp === q.grp && x.id !== q.id && x.tableId) : [];
+const qJoinTxt = q => { const n = qJoinSibs(q).map(x => (S.tables.find(t => t.id === x.tableId) || {}).name).filter(Boolean); return n.length ? '🔗 spojiť s ' + n.join(', ') : ''; };
 const queueTargetLabel = q => [
   q.tableId ? (S.tables.find(t => t.id === q.tableId)?.name || '') : (q.seat ? SEAT_LABEL[q.seat] || '' : (queueStation(q) ? (queueStation(q).name.toLowerCase().startsWith(String(q.type || '').toLowerCase()) ? queueStation(q).name : q.type + ' ' + queueStation(q).name) : (q.type || ''))),
-  q.people ? `👥 ${q.people} os.` : ''
+  qJoinTxt(q),
+  q.people || (q.join && q.pg) ? `👥 ${q.people || q.pg} os.` : ''
 ].filter(Boolean).join(' · ');
 // rozpísaná nová rezervácia - drží sa mimo DOM, nech ju živá zmena z iného zariadenia (prekreslenie) nevymaže
 let qForm = { kind: 'place', name: '', seat: '', people: '', tableId: '', attr: '', date: '', time: '', note: '', pre: false };
@@ -2211,7 +2431,7 @@ function renderQueue() {
         <input type="number" min="1" max="200" inputmode="numeric" placeholder="napr. 4" style="width:110px" value="${esc(f.people)}" oninput="qForm.people=this.value">
       </div>
       <label class="muted" style="font-size:13px;margin-top:10px;display:block">Na presný dátum a čas (voliteľné - keď sa nezadá čas, ide rovno "teraz")</label>
-      <div class="row" style="margin-top:4px;gap:6px"><input type="date" value="${esc(f.date || todayISO())}" style="flex:1" onchange="qForm.date=this.value"><input type="time" value="${esc(f.time)}" style="flex:1" onchange="qForm.time=this.value"></div>
+      <div class="row" style="margin-top:4px;gap:6px"><input type="date" value="${esc(f.date || todayISO())}" style="flex:1" onchange="qForm.date=this.value"><input id="qTimeIn" ${TPIN} value="${esc(f.time)}" style="flex:1" onchange="qForm.time=this.value"></div>
       <input placeholder="Poznámka (nepovinné, napr. oslava, pri okne)" style="margin-top:6px" value="${esc(f.note)}" oninput="qForm.note=this.value">
       ${qPreCheck('qForm', f.pre)}
       <button class="btn" style="margin-top:8px" onclick="addQueue()">📌 Pridať rezerváciu</button>
@@ -2220,6 +2440,13 @@ function renderQueue() {
   queuePrefillTable = null; // len na jedno otvorenie tejto obrazovky, nech nezostane "prilepené" pri ďalšej návšteve
 }
 let addingQueue = false;   // zámok proti dvojitému pridaniu (dvojťuk)
+// (2026-11-26) čas 00:00–05:59 bez zvoleného dňa, zadaný večer = po polnoci TEJTO noci (ako v Rezerváciách). Predtým padol na dnešné
+// ráno, ktoré už bolo → rezervácia na včerajší pracovný deň, ktorá sa do 5 min sama zmazala. Po polnoci ostáva dnešný dátum.
+function qDefDate(t) {
+  const d0 = todayISO();
+  if (!(+String(t).slice(0, 2) < DAY_START_H) || new Date(now()).getHours() < DAY_START_H) return d0;
+  const x = parseISODate(d0); x.setDate(x.getDate() + 1); return dateKey(x);
+}
 async function addQueue() {
   const f = qForm, name = f.name.trim();
   if (!name) return toast('Zadaj meno');
@@ -2232,7 +2459,7 @@ async function addQueue() {
   else if (f.kind === 'attr') body.type = f.attr;
   else body.seat = f.seat || 'any';
   if (String(f.people).trim()) body.people = f.people;
-  if (f.time) { body.time = f.time; body.date = f.date || todayISO(); }
+  if (f.time) { body.time = f.time; body.date = f.date || qDefDate(f.time); }
   if (f.pre) body.pre = true;
   addingQueue = true;
   try {
@@ -2298,13 +2525,17 @@ async function preLinkPatch(qid, q) {
 }
 async function queueArrived(id) {
   const q = S.queue.find(x => x.id === id); if (!q) return;
-  if (!confirm(`${q.name} – prišli? Rezervácia sa odklikne.`)) return;
+  // 🔗 (2026-11-26) spojené stoly: partia prišla naraz → odkliknú sa všetky jej stoly
+  const sibs = qJoinSibs(q), jt = qJoinTxt(q);
+  if (!confirm(`${q.name} – prišli? Rezervácia sa odklikne${sibs.length ? ` aj na spojených stoloch (${jt.replace('🔗 spojiť s ', '')})` : ''}.`)) return;
   try { await call('DELETE', '/api/queue/' + id, { action: 'served' }); } catch (e) { return; }
+  for (const s of sibs) { try { await call('DELETE', '/api/queue/' + s.id, { action: 'served' }); } catch (e) {} }
   toast(`✓ ${q.name} – prišli`);
 }
 async function delQueue(id) {
   const q = S.queue.find(x => x.id === id); if (!q) return;
-  if (!confirm(`Zrušiť rezerváciu "${q.name}"?${isLaserQ(q) ? '\n\nZruší sa len stôl – laser game v Rezerváciách ostane.' : ''}`)) return;
+  const jt = qJoinTxt(q);
+  if (!confirm(`Zrušiť rezerváciu "${q.name}"?${jt ? `\n\nZruší sa len tento stôl – spojené stoly (${jt.replace('🔗 spojiť s ', '')}) ostanú rezervované.` : ''}${isLaserQ(q) ? '\n\nZruší sa len stôl – laser game v Rezerváciách ostane.' : ''}`)) return;
   try { await call('DELETE', '/api/queue/' + id, { action: 'removed' }); } catch (e) { return; }
   toast('Rezervácia zrušená');
 }
@@ -2336,17 +2567,29 @@ function queueDoneOn(k) {
 async function restoreQueue(logId) {
   const L = S.queueLog.find(x => x.id === logId);
   if (!L || L.restoredAt) return;
-  if (!confirm(`Vrátiť "${L.name}" späť medzi rezervácie?`)) return;
   const rec = L.q && typeof L.q === 'object' ? { ...L.q }
     : { name: L.name, type: L.type || '', createdAt: L.createdAt || now(), ...(L.tableId ? { tableId: L.tableId } : {}), ...(L.seat ? { seat: L.seat } : {}), ...(L.people ? { people: L.people } : {}) };
   const qid = L.qid && !S.queue.some(x => x.id === L.qid) ? L.qid : db.ref('queue').push().key;
+  // 🔗 (2026-11-26) spojené stoly sa pri „✓ Prišli“ odkliknú naraz → vrátia sa tiež naraz: ostatné nevrátené záznamy toho istého
+  // odkliknutia (rovnaká grp, do 10 min – DELETE idú za sebou a pri slabom signáli sa časy rozídu), každý pod svojím pôvodným id
+  const more = [];
+  if (L.action === 'served' && rec.join && rec.grp) S.queueLog.filter(x => x.id !== logId && !x.restoredAt && x.action === 'served' && x.q && typeof x.q === 'object' && x.q.grp === rec.grp
+    && x.qid && x.qid !== qid && !S.queue.some(y => y.id === x.qid) && Math.abs((x.endedAt || 0) - (L.endedAt || 0)) < 10 * 60e3)
+    .sort((a, b) => b.endedAt - a.endedAt).forEach(x => { if (!more.some(m => m.qid === x.qid)) more.push(x); });
+  const tNames = more.map(x => (S.tables.find(t => t.id === x.q.tableId) || {}).name).filter(Boolean);
+  if (!confirm(`Vrátiť "${L.name}" späť medzi rezervácie?${more.length ? `\n\nVrátia sa aj spojené stoly${tNames.length ? ` (${tNames.join(', ')})` : ''}.` : ''}`)) return;
+  const recs = [{ id: qid, r: rec }, ...more.map(x => ({ id: x.qid, r: { ...x.q } }))];
   // (2026-11-05) stôl sa vracia k aktuálnemu menu, času a počtu skupiny: skupinu mohli medzitým upraviť
-  const sibs = rec.grp ? S.queue.filter(x => x.grp === rec.grp && x.id !== qid) : [];
+  const sibs = rec.grp ? S.queue.filter(x => x.grp === rec.grp && !recs.some(y => y.id === x.id)) : [];
   if (sibs.length) {
-    ['name', 'note', 'reserveAt', 'pre', 'pg'].forEach(k => { if (sibs[0][k] === undefined) delete rec[k]; else rec[k] = sibs[0][k]; });
-    if (!sibs.some(x => x.people) && rec.pg) rec.people = rec.pg; else delete rec.people;
+    recs.forEach(({ r }) => ['name', 'note', 'reserveAt', 'pre', 'pg'].forEach(k => { if (sibs[0][k] === undefined) delete r[k]; else r[k] = sibs[0][k]; }));
+    // počet osôb (people) len na jednom stole skupiny, inak pg
+    recs.forEach(({ r }, i) => { if (i === 0 && !sibs.some(x => x.people) && r.pg) r.people = r.pg; else delete r.people; });
   }
-  try { await db.ref().update({ ['queue/' + qid]: rec, ['queueLog/' + logId + '/restoredAt']: now() }); }
+  const u = {}, t0 = now();
+  recs.forEach(({ id, r }) => { u['queue/' + id] = r; });
+  [logId, ...more.map(x => x.id)].forEach(id => { u['queueLog/' + id + '/restoredAt'] = t0; });
+  try { await db.ref().update(u); }
   catch (e) { return toast('Nepodarilo sa vrátiť, skús znova'); }
   // (2026-11-01) „Prišli“ označilo aj laser game v Rezerváciách → vrátiť jej pôvodný stav (ak ho medzitým nikto nezmenil)
   if (L.bk && L.bk.p) db.ref(L.bk.p + '/status').once('value').then(s => s.val() === 'arrived' ? s.ref.set(L.bk.st) : null).catch(() => {});
@@ -2403,17 +2646,20 @@ function sessionFinishBlock(s) {
     </div>`;
 }
 // Inline formulár na spustenie hry - buď "teraz", alebo vlastný čas (napr. keď sa zabudlo zapísať a hrajú už od 9).
+// (2026-11-26) režim a čas sú v stPick (nie len v DOM): čas sa ťuká bez fokusu, živé prekreslenie z iného zariadenia by ho inak
+// zmazalo a hra by sa spustila „teraz“
+let stPick = {};   // sid → { mode: 'now' | 'custom', time: 'HH:MM' }
 function sessionStartBlock(stationId, tableId) {
   const sid = slug(stationId + '_' + (tableId || ''));
-  const tArg = tableId ? `'${tableId}'` : 'null';
-  return `<select id="stMode-${sid}" style="margin-top:2px" onchange="$('#stCustom-${sid}').style.display=this.value==='custom'?'block':'none'">
-      <option value="now">🕐 Teraz</option>
-      <option value="custom">✎ Iný čas (napr. zabudol som zapísať)</option>
+  const tArg = tableId ? `'${tableId}'` : 'null', P = stPick[sid] || { mode: 'now', time: '' };
+  return `<select id="stMode-${sid}" style="margin-top:2px" onchange="stPick['${sid}']={...(stPick['${sid}']||{time:''}),mode:this.value};$('#stCustom-${sid}').style.display=this.value==='custom'?'block':'none'">
+      <option value="now" ${P.mode === 'custom' ? '' : 'selected'}>🕐 Teraz</option>
+      <option value="custom" ${P.mode === 'custom' ? 'selected' : ''}>✎ Iný čas (napr. zabudol som zapísať)</option>
     </select>
-    <input id="stCustom-${sid}" type="time" style="margin-top:2px;display:none">
+    <input id="stCustom-${sid}" ${TPIN} value="${esc(P.time)}" style="margin-top:2px;display:${P.mode === 'custom' ? 'block' : 'none'}" onchange="stPick['${sid}']={mode:'custom',time:this.value}">
     <div class="row" style="gap:6px;margin-top:2px;flex-wrap:wrap">
       <button class="btn ok" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();confirmStartSession('${stationId}',${tArg},'${sid}')">Spustiť</button>
-      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();startFormStation=null;render()">Zrušiť</button>
+      <button class="btn ghost" style="width:auto;padding:6px 10px;font-size:13px" onclick="event.stopPropagation();startFormStation=null;delete stPick['${sid}'];render()">Zrušiť</button>
     </div>`;
 }
 // na ktorý stôl je hra zapísaná (zobrazí sa na dlaždici atrakcie) - aj s menom k účtu, ak je zadané
@@ -2432,12 +2678,14 @@ function nextInQueueTag(st) {
 }
 function stationTile(st) {
   const s = S.sessions.find(x => x.stationId === st.id);
+  // (2026-11-26) stanicu medzitým spustilo iné zariadenie → rozpísaný „Iný čas“ zabudnúť (inak by sa neskôr ukázal prednastavený)
+  if (s && startFormStation === st.id) { startFormStation = null; delete stPick[slug(st.id + '_')]; }
   if (!s) {
     if (startFormStation === st.id) {
       return `<div class="tbl" style="display:flex;flex-direction:column;gap:6px;text-align:left;cursor:default">
         <b>${esc(st.name)}</b><small>voľná</small>${sessionStartBlock(st.id, null)}</div>`;
     }
-    return `<button class="tbl" onclick="startFormStation='${st.id}';render()"><b>${esc(st.name)}</b><small>voľná</small></button>`;
+    return `<button class="tbl" onclick="stPick={};startFormStation='${st.id}';render()"><b>${esc(st.name)}</b><small>voľná</small></button>`;
   }
   if (finishSessionId === s.id) {
     return `<div class="tbl busy" style="display:flex;flex-direction:column;gap:6px;text-align:left;cursor:default">
@@ -2495,7 +2743,7 @@ function queueFormBlock(type) {
       <input type="number" min="1" max="200" inputmode="numeric" placeholder="nepovinné" style="width:110px" value="${esc(f.people)}" oninput="qfS.people=this.value">
     </div>
     <label class="muted" style="font-size:13px;margin-top:6px;display:block">Na presný dátum a čas (voliteľné - keď sa nezadá čas, ide rovno "teraz")</label>
-    <div class="row" style="margin-top:4px;gap:6px"><input type="date" value="${esc(f.date || todayISO())}" style="flex:1" onchange="qfS.date=this.value"><input type="time" value="${esc(f.time)}" style="flex:1" onchange="qfS.time=this.value"></div>
+    <div class="row" style="margin-top:4px;gap:6px"><input type="date" value="${esc(f.date || todayISO())}" style="flex:1" onchange="qfS.date=this.value"><input id="qfsTimeIn" ${TPIN} value="${esc(f.time)}" style="flex:1" onchange="qfS.time=this.value"></div>
     ${qPreCheck('qfS', f.pre)}
     <button class="btn" style="margin-top:8px" onclick="addStationQueue('${esc(type).replace(/'/g, "\\'")}')">Pridať</button>
   </div>`;
@@ -2567,7 +2815,7 @@ async function confirmStartSession(stationId, tableId, sid) {
   let ok = false;
   try { ok = await doStartSession(stationId, tableId, mode, timeVal); } catch (e) { return; }
   if (!ok) return;
-  startFormStation = null;
+  startFormStation = null; delete stPick[sid];
   toast('Hra spustená ✓');
   render();
 }
@@ -2586,7 +2834,8 @@ async function confirmStartOnTable(tableId) {
 let finishingSession = false; // zámok proti dvojitému odoslaniu (napr. rýchly dvojklik/dvojťuk), kým beží predošlé ukladanie
 async function confirmFinishSession(id, restart) {
   if (finishingSession) return; // predošlé potvrdenie ešte prebieha - ignoruj ďalší klik/ťuk
-  const s = S.sessions.find(x => x.id === id); if (!s) return;
+  const s = S.sessions.find(x => x.id === id);
+  if (!s) { finishSessionId = null; toast('Hru medzitým ukončilo alebo zrušilo iné zariadenie'); return render(); }
   const sid = slug(id);
   const priceStr = $('#finPrice-' + sid) ? $('#finPrice-' + sid).value : '';
   const price = parseFloat(String(priceStr).replace(/\s|€/g, '').replace(',', '.'));
@@ -2620,7 +2869,7 @@ async function addStationQueue(type) {
   if (addingStationQueue) return;
   const body = { name, note: '', type, tableId: table ? table.id : null, waiter: store.get('waiter', '') };
   if (String(f.people).trim()) body.people = f.people;
-  if (f.time) { body.time = f.time; body.date = f.date || todayISO(); }
+  if (f.time) { body.time = f.time; body.date = f.date || qDefDate(f.time); }
   if (f.pre) body.pre = true;
   addingStationQueue = true;
   try {
@@ -2640,6 +2889,17 @@ function renderHistory() {
   const wasFocused = document.activeElement && document.activeElement.id === 'histFilterInput';
   const selPos = wasFocused ? document.activeElement.selectionStart : null;
   const isToday = dateKey(histDate) === bizTodayISO();
+  // ⚡ (2026-11-26) starší deň sa stiahne až teraz (živé sú len posledné ~2 dni)
+  const hk = dateKey(histDate), hSt = paidDayState(hk);
+  if (hSt !== 'ok') {
+    $('#app').innerHTML = `<div class="row" style="justify-content:space-between;margin-bottom:6px">
+        <button class="btn ghost" style="width:auto" onclick="shiftHist(-1)">‹ Deň</button><b style="text-align:center;flex:1">${fmtDay(histDate)}</b>
+        <button class="btn ghost" style="width:auto" onclick="shiftHist(1)" ${isToday ? 'disabled' : ''}>Deň ›</button></div>
+      <div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="histDate=bizTodayDate();render()">Dnes</button></div>
+      ${paidDayWaitHtml(hk, hSt)}
+      <button class="btn ghost" style="margin-top:14px;width:100%" onclick="showHist=false;render()">← Späť na stoly</button>`;
+    return;
+  }
   let paid = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(histDate))).sort((a, b) => b.paidAt - a.paidAt);
   const total = sumOrders(paid.filter(o => !o.staff));   // zamestnanecké účty nie sú tržba
   const q = fold(histFilter || '');
@@ -2700,7 +2960,7 @@ function attractionsOnTableBlock(id) {
         <div class="row" style="gap:6px">
           <button class="btn ${P.mode === 'custom' ? 'ghost' : ''}" style="padding:10px" onclick="attrPick.mode='now';render()">🕐 Teraz</button>
           <button class="btn ${P.mode === 'custom' ? '' : 'ghost'}" style="padding:10px" onclick="attrPick.mode='custom';render()">✎ Iný čas</button></div>
-        ${P.mode === 'custom' ? `<input type="time" style="margin-top:6px" value="${esc(P.time)}" onchange="attrPick.time=this.value" oninput="attrPick.time=this.value">` : ''}
+        ${P.mode === 'custom' ? `<input id="attrPickTime" ${TPIN} style="margin-top:6px" value="${esc(P.time)}" onchange="attrPick.time=this.value" oninput="attrPick.time=this.value">` : ''}
         <button class="btn ok" style="margin-top:8px" onclick="confirmStartOnTable('${id}')">▶ Spustiť na tomto stole</button>`;
     } else if (P.type) {
       const list = S.attractions.filter(a => typeOf(a) === P.type);
@@ -2743,7 +3003,7 @@ function tableReservationsBlock(id) {
     </div></div>
     <div style="padding:10px 14px 14px">${rs.map(q => `
       <div class="row" style="justify-content:space-between;align-items:center;margin-top:6px;flex-wrap:wrap;gap:6px">
-        <span style="cursor:pointer" onclick="toggleQInfo('${q.id}')">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${qWhen(q)}</b> ` : `<span class="muted">${qWhen(q)} ·</span> `}${esc(q.name)}${qPreTag(q)}${q.people ? ` <small class="muted">· 👥 ${q.people} os.</small>` : ''}${q.note ? ` <small class="muted">· ${esc(q.note)}</small>` : ''}${qInfo(q.id, q)}</span>
+        <span style="cursor:pointer" onclick="toggleQInfo('${q.id}')">${q.reserveAt ? `<b>${q.reserveAt > nowT ? '🕐 ' : '▶ '}${qWhen(q)}</b> ` : `<span class="muted">${qWhen(q)} ·</span> `}${esc(q.name)}${qPreTag(q)}${q.people || (q.join && q.pg) ? ` <small class="muted">· 👥 ${esc(q.people || q.pg)} os.</small>` : ''}${qJoinTxt(q) ? ` <small><b>· ${esc(qJoinTxt(q))}</b></small>` : ''}${q.note ? ` <small class="muted">· ${esc(q.note)}</small>` : ''}${qInfo(q.id, q)}</span>
         <div class="row" style="gap:6px">${queueBtns(q, true)}</div>
       </div>`).join('')}</div>
   </div>`;
@@ -3168,13 +3428,16 @@ function closeItemOptions() {
 }
 // ---------- pracovný deň (zápis tržby cez polnoc pod predošlý deň) - dostupné komukoľvek prihlásenému ----------
 function openBizDayModal() {
-  const inp = $('#bizDayInput'); if (inp) inp.value = bizDay || bizTodayISO();
+  const inp = $('#bizDayInput'); if (inp) { inp.min = bizYesterdayISO(); inp.max = bizTodayISO(); inp.value = bizDay || bizTodayISO(); }
   $('#bizDayModal').classList.remove('hide');
 }
 function closeBizDayModal() { $('#bizDayModal').classList.add('hide'); }
 function saveBizDay() {
   const v = $('#bizDayInput').value;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return toast('Vyber platný dátum');
+  // (2026-11-26) budúci deň nie (platby po polnoci by dostali deň, ktorý ešte nebol – a Uzávierka toho dňa by ich nenašla)
+  if (v > bizTodayISO()) return toast('Pracovný deň nemôže byť neskôr ako dnes');
+  if (v < bizYesterdayISO()) return toast('Dá sa nastaviť len dnešný alebo včerajší pracovný deň');   // starší by sa hneď zrušil
   bizDay = v; store.set('bizDay', v); store.set('bizDaySetAt', Date.now());
   closeBizDayModal();
   toast(`Pracovný deň: ${fmtDay(parseISODate(v))} – nové platby sa zapíšu pod tento deň ✓`);
@@ -4135,6 +4398,17 @@ function renderUzavierka() {
   // trinkgeľ a hodiny) – staršie dni len vedúci
   if (!isManager) { const base = bizDay ? parseISODate(bizDay) : bizTodayDate(); uzavDate = uzavEmpYesterday ? new Date(base.getFullYear(), base.getMonth(), base.getDate() - 1) : base; }
   const isToday = dateKey(uzavDate) === bizTodayISO();
+  const uzHead = () => `<div class="row" style="justify-content:space-between;margin-bottom:6px">
+      ${isManager ? `<button class="btn ghost" style="width:auto" onclick="shiftDay(-1)">‹ Deň</button>`
+        : `<button class="btn ghost" style="width:auto" onclick="uzavEmpYesterday=true;render()" ${uzavEmpYesterday ? 'disabled' : ''}>‹ Včera</button>`}
+      <b style="text-align:center;flex:1">${fmtDay(uzavDate)}</b>
+      ${isManager ? `<button class="btn ghost" style="width:auto" onclick="shiftDay(1)" ${isToday ? 'disabled' : ''}>Deň ›</button>`
+        : `<button class="btn ghost" style="width:auto" onclick="uzavEmpYesterday=false;render()" ${uzavEmpYesterday ? '' : 'disabled'}>Dnes ›</button>`}
+    </div>
+    ${isManager && !isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="uzavManual=false;uzavDate=bizTodayDate();render()">Dnes</button></div>` : ''}`;
+  // ⚡ (2026-11-26) starší deň sa stiahne až teraz (živé sú len posledné ~2 dni)
+  const uk = dateKey(uzavDate), uSt = paidDayState(uk);
+  if (uSt !== 'ok') { $('#app').innerHTML = uzHead() + paidDayWaitHtml(uk, uSt); return; }
   // prázdne "zaplatené" objednávky (staré zvyšky po rozdelení platby, 0,00 €) sa nezobrazujú ani nerátajú
   const paidAll = splitDupFilter(S.orders.filter(o => o.status === 'zaplatena' && o.items.length && orderDayKey(o) === dateKey(uzavDate)));
   // 👤 zamestnanecké účty sa do tržby (ani do % pre personál) NErátajú – sú zvlášť nižšie
@@ -4188,8 +4462,8 @@ function renderUzavierka() {
           oninput="setPayrollHours('${e.name.replace(/'/g, "\\'")}',this.value)" onchange="sortPayRow(${i})" onkeydown="if(event.key==='Enter')this.blur()">
       </div>
       ${wOpen ? `<div class="row" style="gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px;font-size:13px">
-        <span class="muted">⏰ bol tu od</span><input id="payWf-${i}" type="time" value="${wn ? wn.f : ''}" style="width:auto;padding:6px" onchange="setPayrollWin(${i})">
-        <span class="muted">do</span><input id="payWt-${i}" type="time" value="${wn ? wn.t : ''}" style="width:auto;padding:6px" onchange="setPayrollWin(${i})">
+        <span class="muted">⏰ bol tu od</span><input id="payWf-${i}" ${TPIN} value="${wn ? wn.f : ''}" style="width:76px;padding:6px" onchange="setPayrollWin(${i})">
+        <span class="muted">do</span><input id="payWt-${i}" ${TPIN} value="${wn ? wn.t : ''}" style="width:76px;padding:6px" onchange="setPayrollWin(${i})">
         ${wn ? `<button class="btn ghost" title="Zrušiť čas (celý deň)" style="width:auto;padding:5px 10px" onclick="setPayrollWin(${i},true)">✕</button>` : ''}
         ${wn && wn.bad ? '<small style="color:var(--warn);font-weight:700;width:100%">⚠ „do“ musí byť neskôr ako „od“ – zatiaľ sa ráta celý deň</small>'
           : `<small class="muted" style="width:100%">% len z toho, čo hostia objednali v tomto čase${tipI.mode === 'time' ? ', trinkgeľ za hodiny v tomto čase' : ''}${wn ? '' : ' (prázdne = celý deň)'}</small>`}
@@ -4203,14 +4477,7 @@ function renderUzavierka() {
       <p class="muted" style="font-size:12px;margin:4px 0 0" id="payEmpNote-${i}">${on ? payNoteHtml(hourly, shares(e.name), shareOf(e.name), tip, tipFor(e.name), empTotal, wn, tipHowOf(tipI, e.name)) : ''}</p>
     </div>`; }).join('');
   $('#app').innerHTML = `
-    <div class="row" style="justify-content:space-between;margin-bottom:6px">
-      ${isManager ? `<button class="btn ghost" style="width:auto" onclick="shiftDay(-1)">‹ Deň</button>`
-        : `<button class="btn ghost" style="width:auto" onclick="uzavEmpYesterday=true;render()" ${uzavEmpYesterday ? 'disabled' : ''}>‹ Včera</button>`}
-      <b style="text-align:center;flex:1">${fmtDay(uzavDate)}</b>
-      ${isManager ? `<button class="btn ghost" style="width:auto" onclick="shiftDay(1)" ${isToday ? 'disabled' : ''}>Deň ›</button>`
-        : `<button class="btn ghost" style="width:auto" onclick="uzavEmpYesterday=false;render()" ${uzavEmpYesterday ? '' : 'disabled'}>Dnes ›</button>`}
-    </div>
-    ${isManager && !isToday ? `<div style="text-align:center;margin-bottom:10px"><button class="btn ghost" style="width:auto" onclick="uzavManual=false;uzavDate=bizTodayDate();render()">Dnes</button></div>` : ''}
+    ${uzHead()}
     <div class="card"><div class="total"><span>Tržba za deň</span><span>${eur(total)}</span></div>
       ${uzSectors().map(sec => `<div class="row" style="justify-content:space-between;font-size:14px;margin-top:4px"><span class="muted">z toho 📍 ${esc(sec.n)}</span><b>${eur(sectorStats(paid, sec).total)}</b></div>`).join('')}
       <p class="muted" style="margin:4px 0 0">${paid.length} zaplaten${paid.length === 1 ? 'á objednávka' : (paid.length >= 2 && paid.length <= 4 ? 'é objednávky' : 'ých objednávok')}</p>
@@ -6095,7 +6362,7 @@ function confirmGateLogin() {
 
 // ---------- navigácia ----------
 document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => {
-  role = b.dataset.role; store.set('role', role); tableId = null; showHist = false; showQueue = false; moveOrderId = null; tblModal = null; addToBar = false; render(); scrollTo(0, 0);
+  role = b.dataset.role; store.set('role', role); tableId = null; showHist = false; showQueue = false; moveOrderId = null; tblModal = null; addToBar = false; startFormStation = null; stPick = {}; finishSessionId = null; sessTablePickId = null; render(); scrollTo(0, 0);
 });
 $('#backBtn').onclick = () => { tableId = null; showBoard = false; moveOrderId = null; tblModal = null; addToBar = false; render(); };
 setInterval(() => { if (role !== 'nastavenia') safeRender(); }, 30000); // obnoví "pred X min"

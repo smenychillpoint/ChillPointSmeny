@@ -10,6 +10,7 @@
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app">
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
@@ -332,7 +333,7 @@
     if (loadErr) html += `<div class="warn">${esc(loadErr)}</div>`;
     if (!loaded && !loadErr) html += '<p class="empty">Načítavam šablóny…</p>';
     else html += view === 'tpl' ? tplHtml() : view === 'set' ? settingsHtml() : replyHtml();
-    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-11-05</footer>`;
+    html += `<footer>✉️ Odpovede na e-maily (odpovede.html) · verzia 2026-11-26</footer>`;
     if (tf) html += tplFormHtml();
     const ovScroll = document.querySelector('.ov') ? document.querySelector('.ov').scrollTop : 0;
     app.innerHTML = html;
@@ -359,6 +360,9 @@
       messagingSenderId: "251580957782",
       appId: "1:251580957782:web:801f838e4cd65abb4027f7"
     });
+    // ⚡ (2026-11-26) bez Google iframe pri štarte (Auth ho na mobiloch a v Safari pri každom otvorení načítaval kvôli prihláseniu
+    // cez Google okno, ktoré appka nepoužíva). Hneď za prvým firebase.auth(); viazané na SDK 10.13.2.
+    try { const r = firebase.auth()._delegate._popupRedirectResolver; if (r && firebase.SDK_VERSION === '10.13.2') Object.defineProperty(r, '_shouldInitProactively', { get: () => false, configurable: true }); } catch (e) {}
     // vedúci je prihlásený z úvodu (Firebase Auth je spoločné); v režime 👁 sa správa ako zamestnanec
     // zamestnanci: keď nikto nie je prihlásený, prihlási sa zariadenie (ako na úvode)
     let watching = false;

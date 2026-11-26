@@ -15,6 +15,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app">
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
@@ -513,7 +514,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" oninput="ui.lCode=this.value" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-25</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-26</footer>`;
       // (2026-11-04) Rovnaký obsah sa neprekresľuje: iPhone po výbere zo zoznamu stratí fokus, focusout zavolá render() a nové políčka
       // by zmazali vybrané meno aj rozpísaný kód či heslo – zamestnanec sa potom nevedel prihlásiť. Keď sa obsah naozaj zmení, meno a kód vráti ui.
       homeHtml = '';
@@ -527,7 +528,7 @@
     loginHtml = '';
     // (2026-11-15) ⚙ Nastavenia – samostatná stránka, len vedúci (openSet)
     if (isMgr && ui.page === 'set') {
-      const html = head + setPageHtml() + `<footer>🏠 Úvod (index.html) · verzia 2026-11-25</footer>`;
+      const html = head + setPageHtml() + `<footer>🏠 Úvod (index.html) · verzia 2026-11-26</footer>`;
       if (html !== homeHtml) { writeApp(app, html); homeHtml = html; }
       return;
     }
@@ -667,7 +668,7 @@
         <button class="tile" style="border-left-color:var(--muted)" onclick="openSet()"><span class="ic">⚙</span><span class="tx"><b>Nastavenia</b><span>Objednávky, Smeny, Rezervácie a prístupy zamestnancov – všetko na jednom mieste</span></span><span class="arr">›</span></button>`;
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-11-25</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-11-26</footer>`;
     if (html !== homeHtml) { writeApp(app, html); homeHtml = html; }   // rovnaký obsah sa neprekresľuje (ťuknutie po skrytí klávesnice by sa stratilo)
   }
 
@@ -682,13 +683,20 @@
       messagingSenderId: "251580957782",
       appId: "1:251580957782:web:801f838e4cd65abb4027f7"
     });
+    // ⚡ (2026-11-26) bez Google iframe pri štarte: Auth ho na mobiloch a v Safari pri každom otvorení najprv načítaval
+    // (apis.google.com + __/auth/iframe, namerané 1,2–1,9 s) kvôli prihláseniu cez Google okno, ktoré appka nepoužíva.
+    // Musí byť hneď za prvým firebase.auth(); viazané na SDK 10.13.2. Pri prihlásení cez Google/popup zmazať.
+    try { const r = firebase.auth()._delegate._popupRedirectResolver; if (r && firebase.SDK_VERSION === '10.13.2') Object.defineProperty(r, '_shouldInitProactively', { get: () => false, configurable: true }); } catch (e) {}
     const db = firebase.database();
     // (2026-10-31) Dáta čítajú LEN prihlásené účty personálu (vedúci, zariadenie) – cudzí ich už nevidí. Odbery sa
     // preto pripoja až po prihlásení; po odhlásení ich Firebase zruší, preto ich zrušíme aj my a pri ďalšom prihlásení
     // (napr. zariadenie po odhlásení vedúceho) sa pripoja znova.
     let subs = [];
     const watch = (ref, ok, bad) => { const cb = ref.on('value', ok, bad); subs.push(() => ref.off('value', cb)); };
-    const on = (path, set) => watch(db.ref(path), s => { set(s.val()); render(); }, () => { set(null); render(); });
+    // ⚡ (2026-11-26) dáta prichádzajú po jednom uzle (~15 pri otvorení) → prekresliť raz za snímok, nie po každom
+    let rsQ = 0;
+    const renderSoon = () => { if (rsQ) return; const go = () => { rsQ = 0; render(); }; rsQ = document.hidden ? setTimeout(go, 50) : requestAnimationFrame(go); };
+    const on = (path, set) => watch(db.ref(path), s => { set(s.val()); renderSoon(); }, () => { set(null); renderSoon(); });
     // deň sa mení o 6:00 - pri zmene sa prepojí na nový deň
     let dayKey = '';
     const watchDay = () => { const k = iso(bizDate()); if (!subs.length || k === dayKey) return; if (dayKey) db.ref('schedule/days/' + dayKey).off(); dayKey = k; on('schedule/days/' + k, v => { day = v || {}; }); };
@@ -705,13 +713,13 @@
       dayKey = ''; watchDay();
       // (2026-10-19) 📅 Moje najbližšie smeny + 📋 Na vybavenie – dni od 60 dní dozadu (kvôli „vzal/a som si“) dopredu
       const from = new Date(); from.setDate(from.getDate() - 60);
-      watch(db.ref('schedule/days').orderByKey().startAt(iso(from)).limitToFirst(150), s => { upcoming = s.val() || {}; render(); }, () => { upcoming = {}; });
+      watch(db.ref('schedule/days').orderByKey().startAt(iso(from)).limitToFirst(150), s => { upcoming = s.val() || {}; renderSoon(); }, () => { upcoming = {}; });
       on('swaps', v => { swaps = v || {}; });
       on('settings/min', v => { minCfg = v || {}; });
       on('settings/weekdays', v => { weekCfg = v || {}; });
       on('settings/features', v => { featCfg = v || {}; });
       on('queue', v => { queue = v || {}; }); on('meta/handover', v => { handover = v || {}; }); on('meta/worklist', v => { worklist = v || {}; });
-      laserBk = {}; watch(db.ref(`laser/${laserEnv}/bookings`), s => { laserBk = s.val() || {}; render(); }, () => { laserBk = null; });
+      laserBk = {}; watch(db.ref(`laser/${laserEnv}/bookings`), s => { laserBk = s.val() || {}; renderSoon(); }, () => { laserBk = null; });
     }
     function stopData() { subs.forEach(f => f()); subs = []; dayKey = ''; }
     // bez prihláseného účtu sa prihlási zariadenie uloženým heslom; starý účet sa najprv odhlási (signOut sem príde znova s u = null)
