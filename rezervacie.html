@@ -137,6 +137,19 @@
     .cr small{color:#c9cbce}
     .cr small.mut{color:var(--muted)}
     .cr small.cb,.cbx .cb{color:#ffd66b}
+    /* ⚙ (2026-11-27b) Nastavenia po častiach – každá časť zbalená, rozbalí sa ťuknutím (ako ⚙ Nastavenia na úvode a v Smenách) */
+    .sx{background:var(--panel);border:1px solid var(--line);margin-bottom:8px}
+    .sx>summary{display:flex;align-items:center;gap:12px;padding:12px 14px;cursor:pointer;list-style:none;-webkit-tap-highlight-color:transparent}
+    .sx>summary::-webkit-details-marker{display:none}
+    .sx>summary::after{content:'▾';color:var(--yellow);font-size:20px;flex:none}
+    .sx[open]>summary::after{content:'▴'}
+    .sx[open]>summary{border-bottom:1px solid var(--line)}
+    .sxi{font-size:21px;width:28px;text-align:center;flex:none}
+    .sxt{flex:1;min-width:0}
+    .sxt b{display:block;font-size:15px}
+    .sxt small{display:block;margin-top:2px;color:var(--muted);font-size:12.5px;line-height:1.35;overflow-wrap:anywhere}
+    .sxd{color:#ffd66b}
+    .sxb{padding:12px 14px 14px}
     .cbx{background:#2a1414;border:1px solid #7a3434;color:#f0c8c8;font-size:13px;padding:10px;margin:10px 0 0;line-height:1.5}
     .lnk{color:var(--blue);cursor:pointer;text-decoration:underline}
     .nb.pre{background:#ffb347}
@@ -456,7 +469,7 @@
   const dayTitle = k => { const d = new Date(k + 'T12:00:00'); return `${DAY_NAMES[d.getDay()]} ${d.getDate()}. ${d.getMonth() + 1}.`; };
   const addDays = (k, n) => { const d = new Date(k + 'T12:00:00'); d.setDate(d.getDate() + n); return iso(d); };
   const ls = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} } };
-  function toast(m) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+  function toast(m, ms = 2600) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = m; document.body.appendChild(t); setTimeout(() => t.remove(), ms); }
   const blurNow = () => { try { document.activeElement && document.activeElement.blur(); } catch (e) {} };
   // ---- 🕐 (2026-11-26) čas ťuknutím, vždy 24 h – natívne políčko času ukazovalo na niektorých mobiloch len 1–12 (AM/PM)
   // a pri písaní „8“, „30“ klávesnica ponúkla len „Ďalej“ (želanie majiteľa: „ťuknem a hotovo“). Políčko .tpin je obyčajný
@@ -559,6 +572,14 @@
   let env = ls.get('cp_laserEnv') === 'live' ? 'live' : 'test';
   let authReady = false, isMgr = false, bookings = {}, slots = {}, tableNames = [], loaded = false, loadErr = '';
   let cfgRaw = null, cfgLoaded = false, cfgF = null, cfgDirty = false, cfgErr = '';   // nastavenia (config) a ich rozpísaný formulár
+  // ⚙ (2026-11-27b) Nastavenia po častiach (želanie majiteľa): každá časť je zbalená a rozbalí sa ťuknutím – ako ⚙ Nastavenia na úvode
+  // a v Smenách. Otvorené časti si pamätá setOpen, aby ostali otvorené aj po prekreslení (živé dáta, uloženie, chyba pri uložení).
+  const setOpen = new Set();
+  // zbalenie časti stránku prekreslí (nový prehľad, napr. po zmene adresy e-mailu); rozbalenie nie – toggle príde aj pri vykreslení
+  // otvorenej časti, takže prekreslenie pri rozbalení by sa opakovalo dookola. Zatvorená časť sa vykreslí bez toggle.
+  function setSec(k, on) { if (on) setOpen.add(k); else { setOpen.delete(k); setTimeout(renderWhenUp, 50); } }
+  // sub = krátky prehľad pod nadpisom (hodnoty už ošetrené cez esc), body = obsah časti
+  const secHtml = (k, ic, title, sub, body) => `<details class="sx" id="sx_${k}"${setOpen.has(k) ? ' open' : ''} ontoggle="setSec('${k}',this.open)"><summary><span class="sxi">${ic}</span><span class="sxt"><b>${title}</b>${sub ? `<small>${sub}</small>` : ''}</span></summary><div class="sxb">${body}</div></details>`;
   const VIEWS = ['cal', 'sheet', 'play', 'list', 'set'];
   let view = VIEWS.includes(ls.get('cp_resView')) ? ls.get('cp_resView') : 'cal', sheetDay = bizOfTs(Date.now()).date;
   let calMonth = sheetDay.slice(0, 7);
@@ -702,10 +723,11 @@
     if (await pkWrite(rest, `Balíček ${p.name} zmazaný`)) { delete pkEdit[id]; render(); }
   }
   function pkgSettingsHtml() {
-    const all = pkgs();
+    const all = pkgs(), ids = Object.keys(all), nDirty = ids.filter(id => pkEdit[id]).length;
     const num = (id, k, label, hint) => `<div><label class="f">${label}</label><input id="pk_${id}_${k}" type="number" inputmode="numeric" value="${esc(pkVal(id)[k])}" oninput="pkSet('${id}','${k}',this.value)">${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
-    return `<h2>🎁 Balíčky (Monster Chill a pod.)</h2>
-      <p class="hint" style="margin:0 0 8px">Pri rezervácii balíčka appka sama rozpíše hry laser game (každá ďalšia o ${esc(Math.max(B.rest, BLOCK))} min) a ukáže čas atrakcií. Dva balíčky nepustí mať atrakcie naraz (pri balíčku bez atrakcií platí rozostup začiatkov).</p>
+    return secHtml('pkg', '🎁', 'Balíčky (Monster Chill a pod.)', (ids.length ? esc(ids.map(id => `${all[id].icon} ${all[id].name}`).join(', ')) : 'žiadny')
+      + (nDirty ? ' · <span class="sxd">✎ neuložené zmeny</span>' : ''),
+      `<p class="hint" style="margin:0 0 8px">Pri rezervácii balíčka appka sama rozpíše hry laser game (každá ďalšia o ${esc(Math.max(B.rest, BLOCK))} min) a ukáže čas atrakcií. Dva balíčky nepustí mať atrakcie naraz (pri balíčku bez atrakcií platí rozostup začiatkov).</p>
       ${Object.keys(all).map(id => { const v = pkVal(id), dirty = !!pkEdit[id];
         return `<div class="card" style="border-left:5px solid var(--purple)">
           <div style="display:grid;grid-template-columns:72px minmax(0,1fr);gap:8px">
@@ -725,7 +747,7 @@
           <div class="acts" style="margin-top:4px"><button class="btn sm" onclick="savePkg('${id}')">💾 Uložiť${dirty ? ' *' : ''}</button>
             ${dirty ? `<button class="btn ghost sm" onclick="delete pkEdit['${id}'];render()">↺ Zahodiť</button>` : ''}
             <button class="btn red sm" onclick="delPkg('${id}')">🗑 Zmazať</button></div></div>`; }).join('')}
-      <button class="btn ghost" style="width:100%;margin-bottom:6px" onclick="addPkg()">➕ Pridať balíček</button>`;
+      <button class="btn ghost" style="width:100%;margin:0" onclick="addPkg()">➕ Pridať balíček</button>`);
   }
   // ---- 🎨 úprava ikoniek (len vedúci) ----
   function icVal(k) { return icEdit && icEdit[k] !== undefined ? icEdit[k] : (iconsRaw && iconsRaw[k]) || ''; }
@@ -755,13 +777,12 @@
   function iconsSettingsHtml() {
     const inp = (id, val, ph, on) => `<input id="${id}" maxlength="12" value="${esc(val)}" placeholder="${esc(ph)}" oninput="${on}">`;
     const row = (label, input) => `<label class="icr">${input}<span>${label}</span></label>`;
-    return `<h2>🎨 Ikonky v rezerváciách</h2>
-      <div class="card">
+    return secHtml('icons', '🎨', 'Ikonky v rezerváciách', (iconsRaw ? 'upravené' : 'pôvodné') + (icEdit ? ' · <span class="sxd">✎ neuložené zmeny</span>' : ''), `
         <div class="icg">${Object.keys(ICON_DEF).map(k => row(esc(ICON_DEF[k][1]), inp('ic_' + k, icVal(k), ICON_DEF[k][0], `icSet('${k}',this.value)`))).join('')}</div>
         <h3 style="font-size:14px;margin:14px 0 6px">Atrakcie podľa druhu</h3>
         <div class="icg">${attrTypes().map((t, i) => row(esc(t), inp('ict_' + i, icTVal(tKey(t)), IC('attr'), `icSetT('${tKey(t)}',this.value)`))).join('')}</div>
         <p class="hint" style="margin:8px 0 0">Ťukni do políčka a vyber emoji (na mobile 😊 na klávesnici, na počítači Win + bodka). Prázdne = pôvodná ikonka. Ikonku balíčka zmeníš hore pri balíčku. Červený ❗ je vždy len pri chybe (napr. hry sa prekrývajú).</p>
-        <div class="acts"><button class="btn sm" onclick="saveIcons()">💾 Uložiť ikonky${icEdit ? ' *' : ''}</button>${icEdit ? '<button class="btn ghost sm" onclick="icEdit=null;render()">↺ Zahodiť</button>' : ''}${iconsRaw ? '<button class="btn red sm" onclick="resetIcons()">Vrátiť pôvodné</button>' : ''}</div></div>`;
+        <div class="acts"><button class="btn sm" onclick="saveIcons()">💾 Uložiť ikonky${icEdit ? ' *' : ''}</button>${icEdit ? '<button class="btn ghost sm" onclick="icEdit=null;render()">↺ Zahodiť</button>' : ''}${iconsRaw ? '<button class="btn red sm" onclick="resetIcons()">Vrátiť pôvodné</button>' : ''}</div>`);
   }
   // zaškrtnúť / odškrtnúť konkrétneho človeka; rezAll sa drží zapnuté, keď má prístup aspoň jeden (kvôli starším verziám úvodu)
   async function setRezPerson(name, on) {
@@ -2355,6 +2376,12 @@
     const D = mailDefs(MAIL_NOTE_DEF), ks = who === 'cust' ? ['mailCustSubj', 'mailCustBody'] : ['mailUsSubj', 'mailUsBody'];
     ks.forEach(k => { cfgF[k] = D[k]; }); cfgDirty = true; cfgErr = ''; render();
   }
+  // (2026-11-27b) značky v ✉️ E-maily z webu idú len do políčok tejto časti (ak kurzor nebol v nej, do textu zákazníkovi) –
+  // inak by značka mohla potichu skončiť v zbalenom e-maile pri zmene / zrušení
+  function mailTagW(k) {
+    if (!/^c_mail(Cust|Us)(Subj|Body)$/.test(mailFocus) || !$(mailFocus)) mailFocus = 'c_mailCustBody';
+    mailTag(k);
+  }
   // značky pri e-mailoch o zmene / zrušení idú do políčka v tej časti (ak kurzor nebol v nej, do textu zákazníkovi)
   function chgTag(k) {
     if (!/^c_mail(Chg|Can)/.test(mailFocus) || !$(mailFocus)) mailFocus = `c_${chgKind === 'can' ? 'mailCan' : 'mailChg'}CustBody`;
@@ -2413,16 +2440,21 @@
   async function saveCfg() {
     blurNow();
     if (!cfgF || busyAct || !isMgr) return;
-    const c = cfgF, fail = m => { cfgErr = m; render(); };
+    // (2026-11-27b) s = časť nastavení s chybným políčkom – rozbalí sa a posunie na obrazovku; text chyby aj v hláške dole
+    // (pri ťuknutí na 💾 v lište by sa riadok chyby nad lištou mohol odsunúť mimo obrazovky)
+    const c = cfgF, fail = (m, s) => {
+      cfgErr = m; if (s) setOpen.add(s); render(); toast('⚠ ' + m, 6000);
+      if (s) requestAnimationFrame(() => { const d = $('sx_' + s); if (d) d.scrollIntoView({ block: 'start' }); });
+    };
     const NUMS = [['step', 'Krok (začiatky hier)', 5, 120], ['game', 'Dĺžka hry', 5, 120], ['change', 'Výmena partií', 0, 60], ['rest', 'Oddych partie', 0, 240],
       ['minPlayers', 'Najmenej hráčov', 1, 30], ['maxPlayers', 'Najviac hráčov', 1, 30], ['maxGames', 'Najviac hier v rezervácii', 1, 30], ['leadMinutes', 'Rezervácia najneskôr pred hrou', 0, 1440]];
     const out = {};
     for (const [k, label, lo, hi] of NUMS) {
       const v = Number(c[k]);
-      if (!Number.isInteger(v) || v < lo || v > hi) return fail(`${label}: zadaj celé číslo ${lo}–${hi}.`);
+      if (!Number.isInteger(v) || v < lo || v > hi) return fail(`${label}: zadaj celé číslo ${lo}–${hi}.`, /Players$/.test(k) ? 'players' : 'games');
       out[k] = v;
     }
-    if (out.maxPlayers < out.minPlayers) return fail('Najviac hráčov musí byť aspoň toľko ako najmenej.');
+    if (out.maxPlayers < out.minPlayers) return fail('Najviac hráčov musí byť aspoň toľko ako najmenej.', 'players');
     out.hours = {};
     for (const i of DAY_ORDER) {
       const h = c.hours[i]; if (!h.open) continue;
@@ -2430,21 +2462,21 @@
       // [od, '24:00', 'HH:MM'] – plugin 1.9.4 ho berie ako „do polnoci“. NIKDY [od, do ≤ od] ani [od, '>24:00']: 1.9.4 by taký deň
       // zavrel alebo ponúkol časy pod iným dátumom ako appka. Neplatný čas (NaN) neprejde žiadnou kontrolou.
       const a = isHm(h.from) ? toMin(h.from) : NaN, b = isHm(h.to) ? toMin(h.to) || 1440 : NaN;
-      if (!(a < 1440)) return fail(`${DAY_NAMES[i]}: začiatok môže byť najneskôr 23:45.`);
-      if (!(b > a)) return fail(`${DAY_NAMES[i]}: koniec musí byť po začiatku.`);
-      if (b > LATE_END) return fail(`${DAY_NAMES[i]}: po polnoci sa dá rezervovať najneskôr do 02:00.`);
+      if (!(a < 1440)) return fail(`${DAY_NAMES[i]}: začiatok môže byť najneskôr 23:45.`, 'hours');
+      if (!(b > a)) return fail(`${DAY_NAMES[i]}: koniec musí byť po začiatku.`, 'hours');
+      if (b > LATE_END) return fail(`${DAY_NAMES[i]}: po polnoci sa dá rezervovať najneskôr do 02:00.`, 'hours');
       out.hours[i] = b > 1440 ? [toTime(a), '24:00', toTime(b - 1440)] : [toTime(a), toTime(b)];
     }
-    if (!Object.keys(out.hours).length) return fail('Aspoň jeden deň musí byť otvorený (na zatvorenie konkrétnych dní použi Dni voľna).');
+    if (!Object.keys(out.hours).length) return fail('Aspoň jeden deň musí byť otvorený (na zatvorenie konkrétnych dní použi Dni voľna).', 'hours');
     // prázdne pole by Firebase vynechal a web by vzal dni voľna z WordPressu → "" (plugin z neho spraví [])
     out.daysOff = c.daysOff.length ? [...c.daysOff].sort() : '';
     const offers = [];
     for (const [i, x] of c.offers.entries()) {
       const o = { minPlayers: Number(x.minPlayers), paid: Number(x.paid), free: Number(x.free) }, lbl = `Ponuka č. ${i + 1}`;
-      if (!Number.isInteger(o.minPlayers) || o.minPlayers < 1 || o.minPlayers > 30) return fail(`${lbl}: od koľkých hráčov 1–30.`);
-      if (!Number.isInteger(o.paid) || o.paid < 1 || o.paid > 10) return fail(`${lbl}: platených hier 1–10.`);
-      if (!Number.isInteger(o.free) || o.free < 1 || o.free > 5) return fail(`${lbl}: zadarmo 1–5.`);
-      if (offers.some(y => y.paid === o.paid && y.free === o.free)) return fail(`Ponuka ${o.paid}+${o.free} je v zozname dvakrát.`);
+      if (!Number.isInteger(o.minPlayers) || o.minPlayers < 1 || o.minPlayers > 30) return fail(`${lbl}: od koľkých hráčov 1–30.`, 'offers');
+      if (!Number.isInteger(o.paid) || o.paid < 1 || o.paid > 10) return fail(`${lbl}: platených hier 1–10.`, 'offers');
+      if (!Number.isInteger(o.free) || o.free < 1 || o.free > 5) return fail(`${lbl}: zadarmo 1–5.`, 'offers');
+      if (offers.some(y => y.paid === o.paid && y.free === o.free)) return fail(`Ponuka ${o.paid}+${o.free} je v zozname dvakrát.`, 'offers');
       offers.push(o);
     }
     offers.sort((a, b) => a.minPlayers - b.minPlayers);
@@ -2457,13 +2489,13 @@
     const wp = {}; Object.keys(c.webPkgs || {}).forEach(id => { if (c.webPkgs[id] && pkgs()[id]) wp[id] = true; });
     out.webPkgs = Object.keys(wp).length ? wp : '';
     const mailUs = String(c.mailUs || '').trim(), mailNote = String(c.mailNote || '').trim().slice(0, 400);
-    if (mailUs && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mailUs)) return fail('E-mail pre nás nie je v poriadku (napr. info@chillpoint.sk).');
+    if (mailUs && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mailUs)) return fail('E-mail pre nás nie je v poriadku (napr. info@chillpoint.sk).', 'mail');
     // texty e-mailov: prázdne = predvolené; neznáma značka by v e-maile ostala ako {xyz} → radšej upozorniť
     for (const k of MAIL_TPL_KEYS) {
       const v = String(c[k] || '').replace(/\r/g, '').trim(), subj = k.endsWith('Subj'), what = `${subj ? 'Predmet' : 'Text'} e-mailu ${k.startsWith('mailCust') ? 'zákazníkovi' : 'nám'}`;
-      if (v.length > (subj ? 150 : 3000)) return fail(`${what} môže mať najviac ${subj ? 150 : 3000} znakov.`);
+      if (v.length > (subj ? 150 : 3000)) return fail(`${what} môže mať najviac ${subj ? 150 : 3000} znakov.`, 'mail');
       const bad = (v.match(/\{[^{}\n]*\}/g) || []).find(t => !MAIL_TAGS.some(([x]) => `{${x}}` === t));
-      if (bad) return fail(`${what}: neznáma značka ${bad} – použi len značky zo zoznamu (napr. {meno}).`);
+      if (bad) return fail(`${what}: neznáma značka ${bad} – použi len značky zo zoznamu (napr. {meno}).`, 'mail');
       // nezmenený predvolený text sa uloží ako "" → keď sa predvolený text v plugine zmení, platí nový
       out[k] = v === mailDefs(mailNote)[k].trim() ? '' : v;
     }
@@ -2472,9 +2504,10 @@
     for (const k of CHG_TPL_KEYS) {
       const v = String(c[k] || '').replace(/\r/g, '').trim(), subj = k.endsWith('Subj');
       const what = `${subj ? 'Predmet' : 'Text'} e-mailu ${k.includes('Cust') ? 'zákazníkovi' : 'nám'} pri ${k.startsWith('mailCan') ? 'zrušení' : 'zmene'}`;
-      if (v.length > (subj ? 150 : 3000)) return fail(`${what} môže mať najviac ${subj ? 150 : 3000} znakov.`);
+      const failC = m => { chgKind = k.startsWith('mailCan') ? 'can' : 'chg'; return fail(m, 'chgmail'); };   // ukáže text (zmena / zrušenie) s chybou
+      if (v.length > (subj ? 150 : 3000)) return failC(`${what} môže mať najviac ${subj ? 150 : 3000} znakov.`);
       const bad = (v.match(/\{[^{}\n]*\}/g) || []).find(t => t !== '{stav_potvrdenia}' && !CHG_TAGS.some(([x]) => `{${x}}` === t));
-      if (bad) return fail(`${what}: značka ${bad} tu nefunguje – použi len značky zo zoznamu pri týchto e-mailoch (napr. {meno}).`);
+      if (bad) return failC(`${what}: značka ${bad} tu nefunguje – použi len značky zo zoznamu pri týchto e-mailoch (napr. {meno}).`);
       out[k] = v === CD[k].trim() ? '' : v;
     }
     // (2026-11-01) texty formulára na webe: uloží sa len to, čo sa líši od pôvodného ("" = všetko pôvodné)
@@ -2482,16 +2515,16 @@
     for (const [k, label, def, tags, multi] of WEB_TEXTS) {
       const v = String((c.texts || {})[k] || '').replace(/\r/g, '').trim();
       if (!v || v === def) continue;
-      if (v.length > (multi ? 400 : 150)) return fail(`Text na webe „${label}“ môže mať najviac ${multi ? 400 : 150} znakov.`);
+      if (v.length > (multi ? 400 : 150)) return fail(`Text na webe „${label}“ môže mať najviac ${multi ? 400 : 150} znakov.`, 'texts');
       const bad = (v.match(/\{[^{}\n]*\}/g) || []).find(t => !tags.some(x => `{${x}}` === t));
-      if (bad) return fail(`Text na webe „${label}“: značka ${bad} tu nefunguje${tags.length ? ` (môžeš: ${tags.map(x => `{${x}}`).join(' ')})` : ''}.`);
+      if (bad) return fail(`Text na webe „${label}“: značka ${bad} tu nefunguje${tags.length ? ` (môžeš: ${tags.map(x => `{${x}}`).join(' ')})` : ''}.`, 'texts');
       texts[k] = v;
     }
     out.texts = Object.keys(texts).length ? texts : '';
     // (2026-10-31b) zmena / zrušenie zákazníkom cez odkaz v e-maile – najneskôr X hodín pred hrou, 0 = vypnuté
     if (c.selfOn) {
       const h = Number(c.selfHours);
-      if (!Number.isInteger(h) || h < 1 || h > 168) return fail('Zmena zákazníkom: zadaj celé číslo hodín 1–168 (napr. 3).');
+      if (!Number.isInteger(h) || h < 1 || h > 168) return fail('Zmena zákazníkom: zadaj celé číslo hodín 1–168 (napr. 3).', 'self');
       out.selfHours = h;
     } else out.selfHours = 0;
     // mailNote ostáva len pre prípad prázdneho textu (predvolený text ho obsahuje)
@@ -2500,19 +2533,19 @@
     busyAct = true;
     try { await firebase.database().ref(`${base()}/config`).set(out); cfgF = null; cfgDirty = false; cfgErr = ''; toast('Nastavenia uložené – web ich použije pri ďalšom načítaní ✓'); }
     catch (e) { console.error(e); cfgErr = String(e.code || e.message || '').toUpperCase().includes('PERMISSION')
-      ? 'Firebase to nedovolil – nastavenia smie meniť len vedúci a vo Firebase musia byť vložené pravidlá „laser“ (firebase-rules.json).' : 'Nepodarilo sa uložiť, skús znova.'; }
+      ? 'Firebase to nedovolil – nastavenia smie meniť len vedúci a vo Firebase musia byť vložené pravidlá „laser“ (firebase-rules.json).' : 'Nepodarilo sa uložiť, skús znova.'; toast('⚠ ' + cfgErr, 6000); }
     busyAct = false; render();
   }
   function settingsHtml() {
     const has = e => { const w = rezWho(), k = encName(e.name); return w ? w[k] === true : (rezAll() && !(hubAccess.e && hubAccess.e[k] && hubAccess.e[k].rezervacie === false)); };
     const nOn = emps.filter(has).length;
-    const who = `<h2>👥 Kto vidí rezervácie · ${nOn ? nOn + ' ' + plural(nOn, 'človek', 'ľudia', 'ľudí') : 'len vedúci'}</h2>
-      <div class="card">
+    const who = secHtml('who', '👥', 'Kto vidí rezervácie', !emps.length ? 'načítavam…' : nOn ? nOn + ' ' + plural(nOn, 'človek', 'ľudia', 'ľudí') : 'len vedúci', `
         ${emps.length ? `<div class="who">${emps.map(e => `<label class="chk"><input type="checkbox" ${has(e) ? 'checked' : ''} onchange="setRezPerson(decodeURIComponent('${encodeURIComponent(e.name)}'),this.checked)"> ${esc(e.name)}</label>`).join('')}</div>
           <div class="acts" style="margin-top:8px"><button class="btn ghost sm" onclick="setRezEveryone(true)">Zaškrtnúť všetkých</button><button class="btn ghost sm" onclick="setRezEveryone(false)">🔐 Len vedúci</button></div>`
           : '<p class="hint" style="margin:0">Načítavam zamestnancov…</p>'}
-        <p class="hint" style="margin:8px 0 0">Zaškrtnutý človek uvidí na úvode dlaždicu 🎯 Rezervácie, hárok, kalendár a zoznam a môže rezervovať a označovať 🚶 prišli / 🏁 odohraté. Telefón, e-mail, nastavenia a mazanie má len vedúci. Nový zamestnanec prístup nemá, kým ho tu nezaškrtneš.</p></div>`;
-    if (!cfgLoaded) return who + pkgSettingsHtml() + iconsSettingsHtml() + '<p class="empty">Načítavam nastavenia…</p>';
+        <p class="hint" style="margin:8px 0 0">Zaškrtnutý človek uvidí na úvode dlaždicu 🎯 Rezervácie, hárok, kalendár a zoznam a môže rezervovať a označovať 🚶 prišli / 🏁 odohraté. Telefón, e-mail, nastavenia a mazanie má len vedúci. Nový zamestnanec prístup nemá, kým ho tu nezaškrtneš.</p>`);
+    const appPart = who + pkgSettingsHtml() + iconsSettingsHtml();
+    if (!cfgLoaded) return appPart + '<p class="empty">Načítavam nastavenia…</p>';
     if (!cfgF) { cfgF = cfgFromB(B); cfgDirty = false; }
     const c = cfgF, K = chgKind === 'can' ? 'mailCan' : 'mailChg';
     // (2026-11-08) každá možnosť má value (po polnoci value 24:15 … 26:00, text 00:15 … 02:00); uložená hodnota mimo zoznamu sa doplní
@@ -2529,53 +2562,57 @@
     const nights = DAY_ORDER.map(i => [i, dayHoursMin(((cfgRaw && cfgRaw.hours) || {})[i])]).filter(([, m]) => m && m[1] > 1440);
     const num = (k, label, hint) => `<div><label class="f">${label}</label><input id="c_${k}" type="number" inputmode="numeric" value="${esc(c[k])}" oninput="cfgSet('${k}',this.value)">${hint ? `<div class="hint">${hint}</div>` : ''}</div>`;
     const tk = todayKey(), offs = c.daysOff.filter(k => k >= addDays(tk, -1)), oldOffs = c.daysOff.length - offs.length;
-    return who + pkgSettingsHtml() + iconsSettingsHtml() + `<h2>🌐 Rezervácia na webe</h2><div class="${cfgRaw ? 'card' : 'warn'}" style="font-size:13px;line-height:1.5">${cfgRaw
-        ? `✓ Web (${env === 'test' ? '🧪 test' : '🟢 ostrý'}) používa tieto nastavenia z appky.${cfgRaw.updatedAt ? ` Uložené ${new Date(cfgRaw.updatedAt).toLocaleString('sk-SK')}.` : ''}<br>🌙 Po polnoci: ${nights.length ? nights.map(([i, m]) => `${DAY_SHORT[i]} do ${showM(m[1])}`).join(' · ') + ' (na webe až s pluginom 1.9.5)' : 'žiadny deň (najneskôr do 24:00)'}`
-        : `⚠ Pre ${env === 'test' ? '🧪 test' : '🟢 ostrý web'} zatiaľ nie sú nastavenia uložené – web berie nastavenia z WordPressu. Nižšie sú predvolené hodnoty; po uložení ich web začne používať.`}
-        <br><span class="mut">Test a Ostré majú nastavenia zvlášť.</span></div>
+    // krátke prehľady pod nadpismi zbalených častí; ⚠ pri časti, v ktorej je upozornenie (aby sa nestratilo v zbalenej časti)
+    const webSt = cfgRaw
+      ? `✓ Web (${env === 'test' ? '🧪 test' : '🟢 ostrý'}) používa tieto nastavenia z appky.${cfgRaw.updatedAt ? ` Uložené ${new Date(cfgRaw.updatedAt).toLocaleString('sk-SK')}.` : ''}<br>🌙 Po polnoci: ${nights.length ? nights.map(([i, m]) => `${DAY_SHORT[i]} do ${showM(m[1])}`).join(' · ') + ' (na webe až s pluginom 1.9.5)' : 'žiadny deň (najneskôr do 24:00)'}`
+      : `⚠ Pre ${env === 'test' ? '🧪 test' : '🟢 ostrý web'} zatiaľ nie sú nastavenia uložené – web berie nastavenia z WordPressu. Nižšie sú predvolené hodnoty; po uložení ich web začne používať.`;
+    const warnSub = t => ` · <span class="sxd">⚠ ${t}</span>`;
+    const nOpen = DAY_ORDER.filter(i => c.hours[i].open).length, hWarn = DAY_ORDER.some(i => c.hours[i].open && c.hours[i].warn);
+    // 🌙 noci hneď v prehľade: uložené na webe (nights – keď noc zmizne, hneď to vidno) a vo formulári
+    const nightsTxt = nights.length ? nights.map(([i, m]) => `${DAY_SHORT[i]} do ${showM(m[1])}`).join(', ') : 'nič po polnoci';
+    const fNights = DAY_ORDER.filter(i => c.hours[i].open && isHm(c.hours[i].to) && toMin(c.hours[i].to) > 1440);
+    const webOn = Object.keys(c.webPkgs || {}).filter(id => c.webPkgs[id] && pkgs()[id]);
+    const selfWarn = (c.selfOn && !/\{(zmena|odkaz)\}/.test(mailUpgrade(String(c.mailCustBody || '')))) || selfOk === false;
+    const nTexts = WEB_TEXTS.filter(([k, , def]) => { const v = String((c.texts || {})[k] || '').trim(); return v && v !== def; }).length;
+    return appPart + `<h2>🌐 Rezervácia na webe · ukladá sa tlačidlom 💾 dole</h2>
+      ${cfgRaw ? secHtml('web', '🌐', 'Stav webu', `✓ ${env === 'test' ? '🧪 test' : '🟢 ostrý'} web používa tieto nastavenia${cfgRaw.updatedAt ? ' · uložené ' + esc(new Date(cfgRaw.updatedAt).toLocaleDateString('sk-SK')) : ''} · 🌙 ${esc(nightsTxt)}`,
+          `<div style="font-size:13px;line-height:1.5">${webSt}<br><span class="mut">Test a Ostré majú nastavenia zvlášť.</span></div>`)
+        : `<div class="warn" style="font-size:13px;line-height:1.5">${webSt}<br><span class="mut">Test a Ostré majú nastavenia zvlášť.</span></div>`}
       ${cfgDirty ? '<div class="warn">✎ Máš neuložené zmeny.</div>' : ''}
-      <h2>🕐 Otváracie hodiny (kedy sa dá rezervovať)</h2>
-      <div class="card">${hours}<p class="hint" style="margin:6px 0 0">Koniec 00:15–02:00 patrí ešte k tomuto dňu (piatok 15:00–02:00 = aj noc z piatka na sobotu). Posledná hra začína tak, aby skončila do zatvorenia (hra ${esc(c.game)} min). Na webe sa časy po polnoci ukážu až s pluginom 1.9.5, dovtedy web ponúka najviac do polnoci. V appke môžeš po polnoci zapisovať do 02:00 vždy, keď je deň otvorený aspoň do polnoci.</p></div>
-      <h2>📅 Dni voľna (zatvorené)</h2>
-      <div class="card">
+      ${secHtml('hours', '🕐', 'Otváracie hodiny', `kedy sa dá rezervovať · ${nOpen ? `otvorené ${nOpen} ${plural(nOpen, 'deň', 'dni', 'dní')} v týždni` : 'všetky dni zatvorené'}${fNights.length ? ' · 🌙 ' + fNights.map(i => DAY_SHORT[i]).join(', ') + ' po polnoci' : ''}${hWarn ? warnSub('skontroluj') : ''}`,
+        `${hours}<p class="hint" style="margin:6px 0 0">Koniec 00:15–02:00 patrí ešte k tomuto dňu (piatok 15:00–02:00 = aj noc z piatka na sobotu). Posledná hra začína tak, aby skončila do zatvorenia (hra ${esc(c.game)} min). Na webe sa časy po polnoci ukážu až s pluginom 1.9.5, dovtedy web ponúka najviac do polnoci. V appke môžeš po polnoci zapisovať do 02:00 vždy, keď je deň otvorený aspoň do polnoci.</p>`)}
+      ${secHtml('off', '📅', 'Dni voľna (zatvorené)', offs.length ? `${offs.length} ${plural(offs.length, 'deň', 'dni', 'dní')}: ${esc(offs.slice(0, 3).map(k => dayTitle(k)).join(', '))}${offs.length > 3 ? ' …' : ''}` : 'žiadne', `
         <div class="chips">${offs.length ? offs.map(k => `<button class="chip" onclick="cfgDelOff('${k}')">${esc(dayTitle(k))} ${k.slice(0, 4)} ✕</button>`).join('') : '<span class="mut" style="font-size:14px">žiadne</span>'}</div>
         ${oldOffs ? `<p class="hint">+ ${oldOffs} starších (už prešli)</p>` : ''}
-        <div class="row2"><input id="cOff" type="date" min="${tk}"><button class="btn ghost" onclick="cfgAddOff()">+ Pridať deň voľna</button></div></div>
-      <h2>⏱ Hry a časy</h2>
-      <div class="card"><div class="row2">
+        <div class="row2"><input id="cOff" type="date" min="${tk}"><button class="btn ghost" onclick="cfgAddOff()">+ Pridať deň voľna</button></div>`)}
+      ${secHtml('games', '⏱', 'Hry a časy', esc(`hra ${c.game} min · začiatky každých ${c.step} min`), `<div class="row2">
         ${num('step', 'Krok – začiatky hier každých (min)', 'napr. 20 → 15:00, 15:20, 15:40…')}
         ${num('game', 'Dĺžka hry (min)')}
         ${num('change', 'Výmena partií (min)', `iná partia najskôr o hra + výmena = ${(+c.game || 0) + (+c.change || 0)} min`)}
         ${num('rest', 'Oddych tej istej partie (min)', 'medzi dvoma hrami jednej partie')}
         ${num('maxGames', 'Najviac hier v jednej rezervácii')}
         ${num('leadMinutes', 'Rezervovať najneskôr (min pred hrou)')}
-      </div></div>
-      <h2>👥 Hráči (na webe)</h2>
-      <div class="card"><div class="row2">${num('minPlayers', 'Najmenej hráčov')}${num('maxPlayers', 'Najviac hráčov')}</div>
-        <p class="hint" style="margin:0">Vedúci tu v appke môže zapísať 1–30 hráčov bez ohľadu na toto.</p></div>
-      <h2>🧭 Poradie krokov na webe</h2>
-      <div class="card">
+      </div>`)}
+      ${secHtml('players', '👥', 'Hráči (na webe)', esc(`${c.minPlayers}–${c.maxPlayers} hráčov`), `<div class="row2">${num('minPlayers', 'Najmenej hráčov')}${num('maxPlayers', 'Najviac hráčov')}</div>
+        <p class="hint" style="margin:0">Vedúci tu v appke môže zapísať 1–30 hráčov bez ohľadu na toto.</p>`)}
+      ${secHtml('steps', '🧭', 'Poradie krokov na webe', c.stepOrder === 'term' ? 'najprv termín' : 'najprv počet hráčov', `
         <div class="seg" style="flex-wrap:wrap"><button class="${c.stepOrder !== 'term' ? 'on' : ''}" onclick="cfgSetR('stepOrder','players')">👥 Najprv počet hráčov</button><button class="${c.stepOrder === 'term' ? 'on' : ''}" onclick="cfgSetR('stepOrder','term')">📅 Najprv termín</button></div>
-        <p class="hint" style="margin:0">Zákazník uvidí: <b>${esc(webStepsTxt(c))}</b></p></div>
-      <h2>🎁 Balíčky na webe${Object.keys(c.webPkgs).filter(id => pkgs()[id]).length ? ' · ' + Object.keys(c.webPkgs).filter(id => pkgs()[id]).map(id => esc(pkgs()[id].name)).join(', ') : ''}</h2>
-      <div class="card">
+        <p class="hint" style="margin:0">Zákazník uvidí: <b>${esc(webStepsTxt(c))}</b></p>`)}
+      ${secHtml('webpkg', '🎁', 'Balíčky na webe', (webOn.length ? webOn.map(id => esc(pkgs()[id].name)).join(', ') : 'žiadny') + (pkOk === false ? warnSub('chýbajú pravidlá') : ''), `
         ${Object.entries(pkgs()).map(([id, p]) => `<label class="chk" style="margin:6px 0"><input type="checkbox" ${c.webPkgs[id] ? 'checked' : ''} onchange="cfgWebPkg('${id}',this.checked)"><span>${esc(p.icon)} <b>${esc(p.name)}</b> <span class="mut">· ${p.games} ${plural(p.games, 'hra', 'hry', 'hier')}${p.attrMin ? ` + ${esc(p.attrText)} ${p.attrMin} min` : ''} · na webe ${p.webMin || c.minPlayers}–${p.webMax || c.maxPlayers} ľudí</span></span></label>`).join('')}
         <p class="hint" style="margin:8px 0 0">Zaškrtnutý balíček si zákazník vyberie hneď v 1. kroku („Čo si rezervujete“), zvolí len začiatok a web sám rozpíše hry (každá o ${esc(Math.max(+c.rest || 0, (+c.game || 15) + (+c.change || 0)))} min) a ukáže čas atrakcií. Dva balíčky s atrakciami naraz web nepustí. Ikonku, názov, hry, atrakcie a popis pre zákazníka upravíš hore v 🎁 Balíčky, nový pridáš cez ➕ Pridať balíček.</p>
-        ${pkOk === false ? '<div class="warn" style="margin:8px 0 0">⚠ Kým nie sú vo Firebase vložené nové pravidlá (firebase-rules.json – pribudlo „pk“), balíček sa na webe rezervovať nedá. Najprv pravidlá, potom zaškrtni.</div>' : ''}</div>
-      <h2>🔁 Zmena a zrušenie zákazníkom${c.selfOn ? ` · do ${esc(c.selfHours)} h pred hrou` : ' · vypnuté'}</h2>
-      <div class="card">
+        ${pkOk === false ? '<div class="warn" style="margin:8px 0 0">⚠ Kým nie sú vo Firebase vložené nové pravidlá (firebase-rules.json – pribudlo „pk“), balíček sa na webe rezervovať nedá. Najprv pravidlá, potom zaškrtni.</div>' : ''}`)}
+      ${secHtml('self', '🔁', 'Zmena a zrušenie zákazníkom', (c.selfOn ? `do ${esc(c.selfHours)} h pred hrou` : 'vypnuté') + (selfWarn ? warnSub('skontroluj') : ''), `
         <label class="chk"><input type="checkbox" ${c.selfOn ? 'checked' : ''} onchange="cfgSetR('selfOn',this.checked)"> Zákazník si môže rezerváciu sám zmeniť alebo zrušiť cez odkaz v e-maile</label>
         ${c.selfOn ? `<div class="row2" style="margin-top:6px"><div><label class="f">Najneskôr koľko hodín pred prvou hrou</label><input id="c_selfHours" type="number" inputmode="numeric" min="1" max="168" value="${esc(c.selfHours)}" oninput="cfgMail('selfHours',this.value)"></div></div>` : ''}
         <p class="hint" style="margin:6px 0 0">${c.selfOn
           ? `Zákazník môže zmeniť deň, čas, počet hráčov (pri balíčku začiatok a počet ľudí) alebo rezerváciu zrušiť – najneskôr ${esc(c.selfHours)} h pred prvou hrou, potom už len telefonicky. Vyberá len z voľných časov. O zmene príde e-mail nám (adresa nižšie) aj zákazníkovi, v appke bude rezervácia znova 🆕 nová s poznámkou, čo bolo predtým. Odkaz je v e-maile zákazníkovi na mieste značky <b>{zmena}</b> (alebo {odkaz}).`
           : 'Zákazník dostane v e-maile len vetu „zavolajte nám“ (značka {zmena}).'} Funguje od pluginu 1.7.0 a s novými pravidlami Firebase.</p>
         ${c.selfOn && !/\{(zmena|odkaz)\}/.test(mailUpgrade(String(c.mailCustBody || ''))) ? '<div class="warn" style="margin:8px 0 0">⚠ V texte e-mailu zákazníkovi nie je značka {zmena} ani {odkaz} – zákazník odkaz na zmenu nedostane. Doplň ju nižšie (ťukni na {zmena}).</div>' : ''}
-        ${selfOk === false ? '<div class="warn" style="margin:8px 0 0">⚠ Vo Firebase ešte nie sú nové pravidlá (firebase-rules.json – pribudlo „self“). Kým ich nevložíš, rezervácie z webu sa ukladajú bez odkazu na zmenu.</div>' : ''}
-      </div>
-      <h2>✉️ E-maily z webu</h2>
-      <div class="card">
+        ${selfOk === false ? '<div class="warn" style="margin:8px 0 0">⚠ Vo Firebase ešte nie sú nové pravidlá (firebase-rules.json – pribudlo „self“). Kým ich nevložíš, rezervácie z webu sa ukladajú bez odkazu na zmenu.</div>' : ''}`)}
+      ${secHtml('mail', '✉️', 'E-maily z webu', `zákazníkovi ${c.mailCustomer ? 'áno' : 'nie'} · nám ${String(c.mailUs || '').trim() ? esc(String(c.mailUs).trim()) : 'nie'}`, `
         <p class="hint" style="margin:0 0 8px">E-maily posiela WordPress (plugin 1.6.0, odkaz na zmenu od 1.7.0) po rezervácii na chillpoint.sk. Texty si napíš, ako chceš; <b>značky v {zátvorkách}</b> sa nahradia údajmi z rezervácie. Ťukni na značku a vloží sa tam, kde práve píšeš. Ukážka dole sa mení hneď, platí po 💾 Uložiť.</p>
-        <div class="chips" style="margin-bottom:4px">${MAIL_TAGS.map(([k, d]) => `<button class="chip" title="${esc(d)}" onmousedown="event.preventDefault()" onclick="mailTag('${k}')">{${k}}</button>`).join('')}</div>
+        <div class="chips" style="margin-bottom:4px">${MAIL_TAGS.map(([k, d]) => `<button class="chip" title="${esc(d)}" onmousedown="event.preventDefault()" onclick="mailTagW('${k}')">{${k}}</button>`).join('')}</div>
         <p class="hint" style="margin:0 0 10px">${MAIL_TAGS.map(([k, d]) => `<b>{${k}}</b> ${esc(d)}`).join(' · ')}</p>
         <label class="f"><b>📨 E-mail zákazníkovi</b></label>
         <label class="chk"><input type="checkbox" ${c.mailCustomer ? 'checked' : ''} onchange="cfgSetR('mailCustomer',this.checked)"> Posielať zákazníkovi potvrdenie</label>
@@ -2593,10 +2630,8 @@
         <textarea id="c_mailUsBody" rows="11" maxlength="3000" onfocus="mailFocus=this.id" oninput="cfgMail('mailUsBody',this.value)">${esc(c.mailUsBody)}</textarea>
         <button class="btn ghost sm" style="margin:6px 0 4px" onclick="mailReset('us')">↺ Pôvodný text nám</button>
         <label class="f" style="margin-top:10px"><b>👀 Ukážka</b> <span class="mut">(v teste má predmet navyše [TEST])</span></label>
-        ${mailPreviewHtml(c)}
-      </div>
-      <h2>✉️ E-maily pri zmene a zrušení zákazníkom</h2>
-      <div class="card">
+        ${mailPreviewHtml(c)}`)}
+      ${secHtml('chgmail', '✉️', 'E-maily pri zmene a zrušení zákazníkom', c.selfOn ? 'keď si zákazník rezerváciu sám zmení alebo zruší' : 'neposielajú sa – zmena zákazníkom je vypnutá', `
         <p class="hint" style="margin:0 0 8px">Odídu, keď si zákazník rezerváciu cez odkaz v e-maile sám zmení alebo zruší (plugin 1.8.0). Zákazníkovi len keď je zapnuté „Posielať zákazníkovi potvrdenie“, nám na adresu z časti vyššie.${c.selfOn ? '' : ' <b>Zmena zákazníkom je teraz vypnutá, takže sa neposielajú.</b>'}</p>
         <div class="seg" style="margin:0 0 8px"><button class="${chgKind !== 'can' ? 'on' : ''}" onclick="chgKind='chg';render()">✎ Zmena</button><button class="${chgKind === 'can' ? 'on' : ''}" onclick="chgKind='can';render()">✕ Zrušenie</button></div>
         <div class="chips" style="margin-bottom:4px">${CHG_TAGS.map(([k, d]) => `<button class="chip" title="${esc(d)}" onmousedown="event.preventDefault()" onclick="chgTag('${k}')">{${k}}</button>`).join('')}</div>
@@ -2615,18 +2650,14 @@
         <button class="btn ghost sm" style="margin:6px 0 4px" onclick="chgReset('Us')">↺ Pôvodný text nám</button>
         <label class="f" style="margin-top:10px"><b>👀 Ukážka</b> <span class="mut">(${chgKind === 'can' ? 'zrušenie' : 'zmena'})</span></label>
         ${mailSample === 'night' ? MAIL_NIGHT_NOTE : ''}
-        <div class="mails" id="chgPrev">${chgBoxesHtml(c)}</div>
-      </div>
-      <h2>📝 Texty na webe</h2>
-      <div class="card">
+        <div class="mails" id="chgPrev">${chgBoxesHtml(c)}</div>`)}
+      ${secHtml('texts', '📝', 'Texty na webe', nTexts ? `${nTexts} ${plural(nTexts, 'upravený', 'upravené', 'upravených')}, ostatné pôvodné` : 'všetky pôvodné', `
         <p class="hint" style="margin:0 0 8px">Nadpisy, tlačidlá a vety v rezervačnom formulári na webe (plugin 1.8.0). Prázdne políčko = pôvodný text. <b>Značky v {zátvorkách}</b> doplní web. Ako to vyzerá, uvidíš na súkromnej stránke s rezervačným formulárom na webe, keď ich uložíš pre 🧪 test.</p>
         ${WEB_TEXTS.map(([k, label, def, tags, multi]) => `<label class="f">${esc(label)}${tags.length ? ` <span class="mut">· ${tags.map(t => `{${t}} ${esc(WEB_TAG_INFO[t])}`).join(', ')}</span>` : ''}</label>
         ${multi ? `<textarea id="c_t_${k}" rows="2" maxlength="400" placeholder="${esc(def)}" oninput="cfgText('${k}',this.value)">${esc(c.texts[k])}</textarea>`
           : `<input id="c_t_${k}" maxlength="150" placeholder="${esc(def)}" value="${esc(c.texts[k])}" oninput="cfgText('${k}',this.value)">`}`).join('')}
-        <button class="btn ghost sm" style="margin-top:10px" onclick="textsReset()">↺ Všetky pôvodné texty</button>
-      </div>
-      <h2>🎁 Ponuky na webe${c.offers.length ? ' · ' + c.offers.map(o => esc(o.paid) + '+' + esc(o.free)).join(', ') : ''}</h2>
-      <div class="card">
+        <button class="btn ghost sm" style="margin-top:10px" onclick="textsReset()">↺ Všetky pôvodné texty</button>`)}
+      ${secHtml('offers', '🎁', 'Ponuky na webe', c.offers.length ? c.offers.map(o => esc(o.paid) + '+' + esc(o.free)).join(', ') : 'žiadna', `
         ${c.offers.length ? c.offers.map((o, i) => `<div style="border:1px solid var(--line);padding:10px;margin-bottom:8px">
           <div class="row" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><b>🎁 ${esc(o.paid)}+${esc(o.free)}</b><button class="btn red sm" onclick="cfgDelOffer(${i})">✕ Odstrániť</button></div>
           <div class="row3">
@@ -2639,7 +2670,7 @@
         ${c.offers.length > 1 ? '<p class="hint" style="margin:8px 0 0">Keď sa na partiu hodí viac ponúk, web jej dá tú najvýhodnejšiu (ak si ju nevyberá sám).</p>' : ''}
         ${c.offers.length ? `<h3 style="font-size:14px;margin:14px 0 6px">Zákazník si vyberá ponuku na webe</h3>
           <div class="seg" style="flex-wrap:wrap"><button class="${c.offerStep === 'off' ? 'on' : ''}" onclick="cfgSetR('offerStep','off')">Nie</button><button class="${c.offerStep === 'before' ? 'on' : ''}" onclick="cfgSetR('offerStep','before')">Pred počtom hráčov</button><button class="${c.offerStep === 'after' ? 'on' : ''}" onclick="cfgSetR('offerStep','after')">Po počte hráčov</button></div>
-          <p class="hint" style="margin:0">${c.offerStep === 'off' ? 'Zákazník si nič nevyberá – web mu sám ponúkne najvýhodnejšiu ponuku.' : 'Na prvej obrazovke si zákazník vyberie ponuku alebo „Len laser game“. Výber uvidíš pri rezervácii v appke.'}</p>` : ''}</div>
+          <p class="hint" style="margin:0">${c.offerStep === 'off' ? 'Zákazník si nič nevyberá – web mu sám ponúkne najvýhodnejšiu ponuku.' : 'Na prvej obrazovke si zákazník vyberie ponuku alebo „Len laser game“. Výber uvidíš pri rezervácii v appke.'}</p>` : ''}`)}
       <div class="err">${esc(cfgErr)}</div>
       <div class="acts" style="position:sticky;bottom:0;background:var(--black);padding:10px 0;flex-wrap:nowrap">
         <button class="btn" style="flex:1" onclick="saveCfg()">💾 Uložiť pre ${env === 'test' ? '🧪 test' : '🟢 ostrý web'}</button>
@@ -2852,7 +2883,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? preBoxHtml() + calHtml() : view === 'sheet' ? preBoxHtml() + sheetHtml() : view === 'play' ? playHtml() : preBoxHtml() + listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-27</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-27b</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
@@ -3121,7 +3152,8 @@
   window.addEventListener('pointerdown', () => { ptrDown = true; }, true);
   ['pointerup', 'pointercancel'].forEach(t => window.addEventListener(t, () => { ptrDown = false; }, true));
   const renderWhenUp = () => { if (ptrDown) setTimeout(renderWhenUp, 40); else render(); };
-  window.addEventListener('focusout', e => { if (!/^c_mail/.test((e.target && e.target.id) || '')) setTimeout(renderWhenUp, 50); });
+  // polia e-mailov so značkami sa po opustení neprekresľujú (ťuknutie na značku ich opustí); adresa c_mailUs značky nemá → prekreslí sa (prehľad časti)
+  window.addEventListener('focusout', e => { if (!/^c_mail(?!Us$)/.test((e.target && e.target.id) || '')) setTimeout(renderWhenUp, 50); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && (f || sel || af || tf || cf || more || qv || zv)) closeOv(); });
   // 🎮 „hrá 35 min“ / „čaká 10 min“ pri dnešku sa obnovia každú minútu (nie počas písania – stráži render; nie nad formulárom rezervácie)
   setInterval(() => { if (!document.hidden && sessOk && !f && !tf && !cf && (view === 'cal' || view === 'sheet') && sheetDay === todayKey()) render(); }, 60000);
