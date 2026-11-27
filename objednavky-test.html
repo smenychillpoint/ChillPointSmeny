@@ -173,7 +173,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-26c</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-27</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -1223,6 +1223,7 @@ async function callInner(m, [col, id, action], body) {
       }
       await db.ref('queue/' + id).remove();
       if (bk) await db.ref(bk.p + '/status').set('arrived').catch(e => console.warn('[rezervácie] laser game prišli', e));
+      if (q && !served && q.reserveAt && !q.rezAttr) zrLogQ(id, q);
       return;
     }
   }
@@ -2554,6 +2555,21 @@ async function laserBookingOfQ(qid, q) {
   };
   // bez internetu by čítanie čakalo na spojenie → po 4 s sa rezervácia odklikne aj bez označenia laser game
   return Promise.race([find(), new Promise(r => setTimeout(() => r(null), 4000))]);
+}
+// 🕘 (2026-11-27) zrušená rezervácia s časom (stôl, atrakcia, miesto) aj do histórie zrušených v Rezerváciách (laser/live/zrusene –
+// stoly sú spoločné pre Test aj Ostré): čo mala mať, kto a kedy ju zrušil. Atrakcia z Rezervácií (rezAttr) nie – tá tam ostáva ako
+// vybavená. Len doplnok: bez nových pravidiel Firebase sa nezapíše a nič sa nezasekne (história poradovníka tu ostáva ako doteraz).
+function zrLogQ(id, q) {
+  try {
+    const rec = {};
+    ['name', 'tableId', 'reserveAt', 'people', 'pg', 'note', 'join', 'grp', 'by', 'createdAt', 'pre', 'type', 'seat', 'stationId'].forEach(k => { const v = q[k]; if (v !== undefined && v !== null && v !== '') rec[k] = v; });
+    const t = S.tables.find(x => x.id === q.tableId); if (t && t.name) rec.tn = String(t.name);
+    const dt = new Date(q.reserveAt), m0 = dt.getHours() * 60 + dt.getMinutes(), m = m0 < DAY_START_H * 60 ? m0 + 1440 : m0;   // po polnoci 24:xx (deň 6–6)
+    const e = { k: 'q', at: firebase.database.ServerValue.TIMESTAMP, by: (isManager ? 'Vedúci' : str(store.get('waiter', '') || '', 40)) || 'zariadenie', d: qBizKey(q),
+      t: String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'), name: str(q.name, 80) || '?', ref: str(q.grp || id, 40), src: 'obj', rec: { [id]: rec } };
+    if (q.pre === true) e.pre = true;
+    Promise.resolve(db.ref('laser/live/zrusene').push(e)).catch(err => console.warn('[zrušené] nezapísané (treba nové pravidlá Firebase)', err));
+  } catch (err) { console.warn('[zrušené]', err); }
 }
 // (2026-10-31) zadné dvierka: odkliknuté rezervácie dňa (✓ Prišli / Odbaviť / ✕) – odkliknuté v ten pracovný deň (6:00–6:00)
 // alebo rezervované na ten deň. Vrátená sa v histórii označí restoredAt a tu sa už neukáže.
