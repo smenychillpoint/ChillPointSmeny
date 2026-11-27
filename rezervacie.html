@@ -2883,7 +2883,7 @@
     else if (!loaded && !loadErr) { app.innerHTML = html + '<p class="empty">Načítavam rezervácie…</p>'; return; }
     else html += view === 'cal' ? preBoxHtml() + calHtml() : view === 'sheet' ? preBoxHtml() + sheetHtml() : view === 'play' ? playHtml() : preBoxHtml() + listHtml();
     html += `<p class="empty" style="font-size:12px;margin-top:14px">${env === 'test' ? '🧪 Testovacia časť – sem idú rezervácie z webu, kým je plugin v režime „Test“.' : '🟢 Ostré rezervácie zákazníkov z webu.'} Čo tu pridáš, upravíš alebo zrušíš, sa hneď ukáže na webe (obsadené / voľné časy).</p>
-      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-27b</footer>`;
+      <footer>🎯 Rezervácie laser game (rezervacie.html) · verzia 2026-11-28</footer>`;
     if (f) html += formHtml();
     else if (af) html += attrFormHtml();
     else if (tf) html += tblFormHtml();
@@ -3106,6 +3106,14 @@
     // (apis.google.com + __/auth/iframe, namerané 1,2–1,9 s) kvôli prihláseniu cez Google okno, ktoré appka nepoužíva.
     // Musí byť hneď za prvým firebase.auth(); viazané na SDK 10.13.2. Pri prihlásení cez Google/popup zmazať.
     try { const r = firebase.auth()._delegate._popupRedirectResolver; if (r && firebase.SDK_VERSION === '10.13.2') Object.defineProperty(r, '_shouldInitProactively', { get: () => false, configurable: true }); } catch (e) {}
+    // ⚡ (2026-11-28) overenie účtu na serveri (accounts:lookup, namerané ~340 ms na PC, na mobile viac) už nebrzdí otvorenie – predtým až po
+    // ňom Auth pustil databázu. Uložený používateľ sa použije hneď (ako bez internetu) a účet sa overí na pozadí: ako pôvodne v SDK ho ponechá
+    // len chyba siete; zmenené heslo / zakázaný / zmazaný účet → odhlásiť (SDK 10.13.2 sa pri neúspešnej obnove tokenu samo neodhlási).
+    // Hneď za prvým firebase.auth() (inicializácia beží až v ďalšej mikroúlohe); viazané na SDK 10.13.2. Rovnako v Smenách.
+    try { const a = firebase.auth(), d = a._delegate; if (d && firebase.SDK_VERSION === '10.13.2' && typeof d.reloadAndSetCurrentUserOrClear === 'function' && typeof d.directlySetCurrentUser === 'function') {
+      d.reloadAndSetCurrentUserOrClear = function (u) { return this.directlySetCurrentUser(u); };
+      const off = a.onAuthStateChanged(u => { off(); if (u) u.reload().catch(e => { if ((e && e.code) !== 'auth/network-request-failed' && a.currentUser && a.currentUser.uid === u.uid) a.signOut().catch(() => {}); }); });
+    } } catch (e) {}
     // stránka vrátená z pamäte prehliadača (Späť, bfcache) by ukazovala staré rezervácie → načítať znova
     window.addEventListener('pageshow', e => { if (e.persisted) location.reload(); });
     // vedúci je prihlásený z úvodu (Firebase Auth je spoločné pre celú appku); v režime 👁 sa správa ako zamestnanec

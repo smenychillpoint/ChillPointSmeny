@@ -17,6 +17,8 @@
   <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
   <link rel="preconnect" href="https://chillpoint-smeny-350c4-default-rtdb.europe-west1.firebasedatabase.app">
   <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+  <!-- ⚡ (2026-11-28) obnova prihlásenia (token platí 1 h, zamestnanci otvárajú Smeny zvyčajne neskôr) – spojenie vopred -->
+  <link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-database-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
@@ -447,7 +449,8 @@
 
   <main class="wrap">
     <div id="offlineBanner" class="offline-banner" hidden></div>
-    <section class="hero" id="hero"></section>
+    <!-- ⚡ (2026-11-28) kým prídu dáta, namiesto prázdneho žltého pásu „Načítavam“ (prepíše ho prvé renderAll s dátami alebo výzva na prihlásenie zariadenia) -->
+    <section class="hero" id="hero"><div><span class="tag">SMENY</span><h1>NAČÍTAVAM<span>SMENY…</span></h1></div></section>
 
     <section class="critical" id="noticeSection" style="display:none;">
       <div class="head"><b id="noticeTitle">OZNAMY</b></div>
@@ -674,7 +677,7 @@
     <div class="legend" id="legend"></div>
     <footer>Každý deň je otvorený na prihlásenie, kým ho vedúci nezavrie. Potom už zmeny robí iba vedúci.
       <!-- pri nahrávaní na GitHub skontroluj: tento súbor = smeny.html (Smeny); index.html je úvodná stránka; pri každej úprave zmeň dátum -->
-      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-11-26· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
+      <div style="margin-top:8px;font-size:11px;opacity:.55;">📅 Appka SMENY (smeny.html) · verzia 2026-11-28· <a href="./" style="color:inherit">🏠 Úvod</a></div></footer>
   </main>
 
   <!-- všetky nastavenia vedúceho pokope (tlačidlo ⚙ Nastavenia hore); obsah #settingsSection sa sem presunie pri štarte -->
@@ -1521,6 +1524,16 @@
         // (apis.google.com + __/auth/iframe, namerané 1,2–1,9 s) kvôli prihláseniu cez Google okno, ktoré appka nepoužíva.
         // Musí byť hneď za prvým firebase.auth(); viazané na SDK 10.13.2. Pri prihlásení cez Google/popup zmazať.
         try{ const r=auth._delegate._popupRedirectResolver; if(r && firebase.SDK_VERSION==='10.13.2') Object.defineProperty(r,'_shouldInitProactively',{ get:()=>false, configurable:true }); }catch(e){}
+        // ⚡ (2026-11-28) overenie účtu na serveri už nebrzdí otvorenie: Auth pri štarte najprv volal accounts:lookup (namerané 340 ms na PC,
+        // na mobile viac) a až potom pustil databázu. Uložený používateľ sa použije hneď – ako to Auth robí bez internetu – a účet sa overí
+        // na pozadí (u.reload): ako pôvodne v SDK ho ponechá len chyba siete; zmenené heslo, zakázaný alebo zmazaný účet → odhlásiť → appka
+        // pokračuje ako bez účtu (zariadenie sa prihlási uloženým heslom alebo si vypýta nové). Samo by sa to nestalo: SDK 10.13.2 sa pri
+        // neúspešnej obnove tokenu neodhlási (_logoutIfInvalidated bez await) a appka by ostala navždy „bez internetu“.
+        // Musí byť hneď za prvým firebase.auth() (inicializácia beží až v ďalšej mikroúlohe); viazané na SDK 10.13.2.
+        try{ const d=auth._delegate; if(d && firebase.SDK_VERSION==='10.13.2' && typeof d.reloadAndSetCurrentUserOrClear==='function' && typeof d.directlySetCurrentUser==='function'){
+          d.reloadAndSetCurrentUserOrClear=function(u){ return this.directlySetCurrentUser(u); };
+          const off=auth.onAuthStateChanged(u=>{ off(); if(u) u.reload().catch(e=>{ if((e&&e.code)!=='auth/network-request-failed' && auth.currentUser && auth.currentUser.uid===u.uid) auth.signOut().catch(()=>{}); }); });
+        } }catch(e){}
         // LOCAL = vedúci ostane prihlásený aj po zavretí appky (predtým SESSION → odhlasovalo) – 2026-10-16
         try{ await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(e){}
         auth.onAuthStateChanged(u=>{
@@ -2009,9 +2022,12 @@
   function detachHistory(){ try{ if(historyQuery) historyQuery.off(); }catch(e){} historyQuery=null; historyAttached=false; history=[]; }
   function renderHistory(){
     if(!manager){ $('historyList').innerHTML=''; return; }
+    $('historySummary').textContent=`📜 História zmien (${history.length})`;
+    // ⚡ (2026-11-28) zoznam (až 150 riadkov) len v rozbalenej časti – pri štarte sa vedúcemu prekresľuje 2–3× (namerané ~27 ms z ~95 ms renderAll
+    // na PC); po rozbalení ho nakreslí udalosť toggle (väzby pri histFilter nižšie)
+    if(!$('historyBox').open) return;
     const q=($('histFilter').value||'').trim().toLowerCase();
     const rows=history.filter(h=>!q || `${h.who||''} ${h.text||''} ${h.day||''} ${fmtDayNum(h.day)}`.toLowerCase().includes(q));
-    $('historySummary').textContent=`📜 História zmien (${history.length})`;
     $('historyList').innerHTML = rows.length
       ? rows.slice(0,150).map(h=>`<div class="hrow"><span class="ht">${esc(fmtTs(h.t))}</span><span class="hw">${esc(h.who||'')}</span><span class="hx">${esc(h.text||'')}${h.day?` <em>(${esc(fmtDayNum(h.day))})</em>`:''}</span></div>`).join('') + (rows.length>150?`<p class="sub">Zobrazených 150 z ${rows.length}.</p>`:'')
       : '<p class="sub">Zatiaľ žiadne záznamy.</p>';
@@ -2053,6 +2069,7 @@
     const {ym,label}=rosterYM();
     $('smLabel').textContent=label; $('smClosed').checked=rosterOnlyClosed;
     $('statsSummary').textContent=`📊 Prehľad za mesiac (${label})`;
+    if(!$('statsBox').open) return;   // ⚡ (2026-11-28) tabuľka len v rozbalenej časti (nakreslí ju toggle pri rozbalení)
     const av=feat('avail');   // (2026-11-15) stĺpec ZAKLIKOL: ✓ môže · ★ chce · ✗ nemôže (avStats), triedi sa podľa počtu zakliknutých dní
     const rows=employees.list.map(e=>({name:e.name, rating:getRating(e.name), target:getTarget(e.name), want:getWeekWant(e.name), ...empStats(e.name, ym, rosterOnlyClosed), av:av?avStats(e.name, ym):null}));
     rows.forEach(r=>{ r.marked=r.av?r.av.marked:0; });
@@ -5235,6 +5252,7 @@
     const mn=MONTHS[rd.getMonth()];
     $('rmLabel').textContent=mn.charAt(0).toUpperCase()+mn.slice(1)+' '+rd.getFullYear();
     $('rmClosed').checked=rosterOnlyClosed;
+    if(!$('rosterBox').open) return;   // ⚡ (2026-11-28) zoznam (štatistiky každého za mesiac) len v rozbalenej časti; nakreslí ho toggle pri rozbalení
     $('rosterList').innerHTML=employees.list.map(e=>`
       <div class="rrow">
         <div class="rname"><span class="avatar">${esc(e.name[0]||'?')}</span><span class="pname" data-person="${esc(e.name)}">${esc(e.name)}</span>${isPersonDone(e.name)?' <span class="done-mark" title="Označené ako hotovo">✅</span>':''}</div>
@@ -5732,6 +5750,10 @@
   $('smClosed').onchange=e=>{ rosterOnlyClosed=e.target.checked; refreshRosterViews(); };
   $('pastMineBtn').onclick=()=>{ showPastMine=!showPastMine; renderMine(); };
   $('histFilter').addEventListener('input',renderHistory);
+  // ⚡ (2026-11-28) zbalené časti vedúceho sa kreslia až po rozbalení (ťuknutím aj odkazom z úvodu – openSettingsSec nastaví open → toggle)
+  $('rosterBox').addEventListener('toggle',()=>{ if($('rosterBox').open) renderRoster(); });
+  $('statsBox').addEventListener('toggle',()=>{ if($('statsBox').open) renderStats(); });
+  $('historyBox').addEventListener('toggle',()=>{ if($('historyBox').open) renderHistory(); });
   $('histClear').onclick=clearHistory;
   $('multiCant').onclick=multiCant;
   $('multiOk').onclick=()=>multiMark('can');

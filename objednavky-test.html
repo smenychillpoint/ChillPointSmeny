@@ -173,7 +173,7 @@ body:has(.login:not(.hide)){overflow:hidden}
 <!-- 🎯 Rezervácie laser game (rezervacie.html) – odkaz dole, len pre vedúceho (2026-10-26) -->
 <div id="resLinkBox" class="hide" style="text-align:center;padding:22px 12px 0"><a href="rezervacie.html" style="display:inline-block;padding:12px 18px;border:1px solid #6fb3ff;color:#6fb3ff;font-weight:700;text-decoration:none;border-radius:10px">🎯 Rezervácie laser game ›</a></div>
 <!-- pri nahrávaní na GitHub skontroluj: tento súbor = objednavky.html (Objednávky); pri každej úprave zmeň dátum -->
-<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-27</div>
+<div style="text-align:center;font-size:11px;opacity:.5;padding:18px 0 150px;">🍹 Appka OBJEDNÁVKY (objednavky.html) · verzia 2026-11-28</div>
 <div id="cart" class="cart hide"></div>
 
 <div id="employeeGate" class="login hide">
@@ -244,6 +244,17 @@ function cpFastAuth() {
   try {
     const r = firebase.auth()._delegate._popupRedirectResolver;
     if (r && firebase.SDK_VERSION === '10.13.2') Object.defineProperty(r, '_shouldInitProactively', { get: () => false, configurable: true });
+  } catch (e) {}
+  // ⚡ (2026-11-28) overenie účtu na serveri (accounts:lookup, namerané ~340 ms na PC, na mobile viac) už nebrzdí otvorenie – predtým až po
+  // ňom Auth pustil databázu. Uložený používateľ sa použije hneď (ako bez internetu) a účet sa overí na pozadí: ako pôvodne v SDK ho ponechá
+  // len chyba siete; zmenené heslo / zakázaný / zmazaný účet → odhlásiť (SDK 10.13.2 sa pri neúspešnej obnove tokenu samo neodhlási).
+  // Hneď za prvým firebase.auth() (inicializácia beží až v ďalšej mikroúlohe); viazané na SDK 10.13.2. Rovnako v Smenách.
+  try {
+    const a = firebase.auth(), d = a._delegate;
+    if (d && firebase.SDK_VERSION === '10.13.2' && typeof d.reloadAndSetCurrentUserOrClear === 'function' && typeof d.directlySetCurrentUser === 'function') {
+      d.reloadAndSetCurrentUserOrClear = function (u) { return this.directlySetCurrentUser(u); };
+      const off = a.onAuthStateChanged(u => { off(); if (u) u.reload().catch(e => { if ((e && e.code) !== 'auth/network-request-failed' && a.currentUser && a.currentUser.uid === u.uid) a.signOut().catch(() => {}); }); });
+    }
   } catch (e) {}
 }
 try { if (!firebase.apps.length) firebase.initializeApp(window.FIREBASE_CONFIG); cpFastAuth(); } catch (e) { console.warn('[firebase]', e); }

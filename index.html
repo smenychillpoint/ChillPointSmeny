@@ -514,7 +514,7 @@
           <input id="lCode" inputmode="numeric" placeholder="Tvoj kód (rovnaký ako v Smenách)" autocomplete="off" oninput="ui.lCode=this.value" onkeydown="if(event.key==='Enter')empLogin()">
           <div class="err">${esc(ui.err)}</div><button class="btn" style="width:100%" onclick="empLogin()">Prihlásiť</button>
           <button class="link" onclick="ui.mgrForm=true;ui.err='';render()">Prihlásiť ako vedúci</button>`}
-        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-26</footer>`;
+        </div>${installTile()}<footer>🏠 Úvod (index.html) · verzia 2026-11-28</footer>`;
       // (2026-11-04) Rovnaký obsah sa neprekresľuje: iPhone po výbere zo zoznamu stratí fokus, focusout zavolá render() a nové políčka
       // by zmazali vybrané meno aj rozpísaný kód či heslo – zamestnanec sa potom nevedel prihlásiť. Keď sa obsah naozaj zmení, meno a kód vráti ui.
       homeHtml = '';
@@ -528,7 +528,7 @@
     loginHtml = '';
     // (2026-11-15) ⚙ Nastavenia – samostatná stránka, len vedúci (openSet)
     if (isMgr && ui.page === 'set') {
-      const html = head + setPageHtml() + `<footer>🏠 Úvod (index.html) · verzia 2026-11-26</footer>`;
+      const html = head + setPageHtml() + `<footer>🏠 Úvod (index.html) · verzia 2026-11-28</footer>`;
       if (html !== homeHtml) { writeApp(app, html); homeHtml = html; }
       return;
     }
@@ -668,7 +668,7 @@
         <button class="tile" style="border-left-color:var(--muted)" onclick="openSet()"><span class="ic">⚙</span><span class="tx"><b>Nastavenia</b><span>Objednávky, Smeny, Rezervácie a prístupy zamestnancov – všetko na jednom mieste</span></span><span class="arr">›</span></button>`;
     }
     html += `<!-- pri nahrávaní na GitHub skontroluj: tento súbor = index.html (ÚVODNÁ stránka); Smeny = smeny.html -->
-      <footer>🏠 Úvod (index.html) · verzia 2026-11-26</footer>`;
+      <footer>🏠 Úvod (index.html) · verzia 2026-11-28</footer>`;
     if (html !== homeHtml) { writeApp(app, html); homeHtml = html; }   // rovnaký obsah sa neprekresľuje (ťuknutie po skrytí klávesnice by sa stratilo)
   }
 
@@ -687,6 +687,14 @@
     // (apis.google.com + __/auth/iframe, namerané 1,2–1,9 s) kvôli prihláseniu cez Google okno, ktoré appka nepoužíva.
     // Musí byť hneď za prvým firebase.auth(); viazané na SDK 10.13.2. Pri prihlásení cez Google/popup zmazať.
     try { const r = firebase.auth()._delegate._popupRedirectResolver; if (r && firebase.SDK_VERSION === '10.13.2') Object.defineProperty(r, '_shouldInitProactively', { get: () => false, configurable: true }); } catch (e) {}
+    // ⚡ (2026-11-28) overenie účtu na serveri (accounts:lookup, namerané ~340 ms na PC, na mobile viac) už nebrzdí otvorenie – predtým až po
+    // ňom Auth pustil databázu. Uložený používateľ sa použije hneď (ako bez internetu) a účet sa overí na pozadí: ako pôvodne v SDK ho ponechá
+    // len chyba siete; zmenené heslo / zakázaný / zmazaný účet → odhlásiť (SDK 10.13.2 sa pri neúspešnej obnove tokenu samo neodhlási).
+    // Hneď za prvým firebase.auth() (inicializácia beží až v ďalšej mikroúlohe); viazané na SDK 10.13.2. Rovnako v Smenách.
+    try { const a = firebase.auth(), d = a._delegate; if (d && firebase.SDK_VERSION === '10.13.2' && typeof d.reloadAndSetCurrentUserOrClear === 'function' && typeof d.directlySetCurrentUser === 'function') {
+      d.reloadAndSetCurrentUserOrClear = function (u) { return this.directlySetCurrentUser(u); };
+      const off = a.onAuthStateChanged(u => { off(); if (u) u.reload().catch(e => { if ((e && e.code) !== 'auth/network-request-failed' && a.currentUser && a.currentUser.uid === u.uid) a.signOut().catch(() => {}); }); });
+    } } catch (e) {}
     const db = firebase.database();
     // (2026-10-31) Dáta čítajú LEN prihlásené účty personálu (vedúci, zariadenie) – cudzí ich už nevidí. Odbery sa
     // preto pripoja až po prihlásení; po odhlásení ich Firebase zruší, preto ich zrušíme aj my a pri ďalšom prihlásení
